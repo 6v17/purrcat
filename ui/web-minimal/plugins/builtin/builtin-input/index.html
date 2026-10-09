@@ -529,7 +529,18 @@
   setInterval(refreshCtx, 5000);   // 与完整模式一致：5s 刷新一次
 
   // ---------- 发送 ----------
+  // 子代理分支视图只读：查看子代理分支时禁止发送（对齐完整模式「READ-ONLY SUB-BRANCH VIEW」，
+  // 否则消息会误发到主干）。分支状态由宿主 branch.switched 事件下发。
+  var DEFAULT_PH = '输入消息，Shift+Enter 换行';
+  var readOnly = false;
+  function applyBranchState(bId) {
+    readOnly = !!bId && bId !== 'main';
+    input.disabled = readOnly;
+    input.placeholder = readOnly ? '子代理分支视图（只读），回到 MAIN 可继续输入' : DEFAULT_PH;
+    sendBtn.disabled = readOnly;
+  }
   function send() {
+    if (readOnly) return;
     var text = input.value.trim();
     if (!text && !quotes.length) return;
     var events = [];
@@ -539,7 +550,7 @@
     callAction('chat.sendBatch', { events: events })
       .then(function () { input.value = ''; quotes = []; renderQuotes(); toggleRef(false); })
       .catch(function (e) { alert('发送失败: ' + e.message); })
-      .finally(function () { sendBtn.disabled = false; });
+      .finally(function () { sendBtn.disabled = readOnly; });
   }
   input.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
@@ -556,7 +567,8 @@
     if (m.type === 'configApply') { applyPanel(m.config); return; }
     if (m.type === 'event' && m.event === 'layout.empty') { setCentered(m.data && m.data.empty); return; }
     if (m.type === 'layout.empty') setCentered(m.empty);
-    if (m.type === 'event' && m.event === 'session.switched') { resyncEmpty(); loadMode(); return; }
+    if (m.type === 'event' && m.event === 'branch.switched') { applyBranchState(m.data && m.data.branch_id); return; }
+    if (m.type === 'event' && m.event === 'session.switched') { resyncEmpty(); loadMode(); refreshCtx(); return; }
     if (m.type === 'event' && m.event === 'conversation.updated') resyncEmpty();
   });
 
@@ -564,6 +576,8 @@
   markSel();
   resyncEmpty();
   loadMode();
+  // 初始化分支视图态：晚加载时宿主已补推 branch.switched，这里再对账一次兜底
+  callAction('state.get').then(function (s) { applyBranchState(s && s.activeBranchId); }).catch(function () {});
 })();
 </script>
 </body>

@@ -19,6 +19,7 @@
   /* 子代理分支视图切换栏：对齐完整模式的 MAIN / b1 / b2 分支标签（存在子分支时才出现） */
   .branch-bar { display: none; flex: none; align-items: center; gap: 8px; padding: 12px 20px 0; overflow-x: auto; }
   .branch-bar.on { display: flex; }
+  .branch-item { position: relative; flex: none; display: flex; align-items: center; }
   .branch-tab {
     flex: none; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .04em;
     padding: 5px 12px; border-radius: 999px; cursor: pointer;
@@ -28,6 +29,17 @@
   }
   .branch-tab:hover { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); }
   .branch-tab.active { background: var(--wm-accent, #16191d); color: #fff; border-color: transparent; }
+  .branch-tab.has-del { padding-right: 26px; }
+  /* 删除分支（含强制终止后台子代理）：hover 时浮现，对齐完整模式分支标签上的 × */
+  .branch-del {
+    position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+    width: 15px; height: 15px; padding: 0; border: none; border-radius: 50%; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    background: #bf616a; color: #fff; font-size: 11px; line-height: 1;
+    opacity: 0; transition: opacity .12s ease;
+  }
+  .branch-item:hover .branch-del { opacity: 1; }
+  .branch-del:hover { background: #a54e56; }
 
   .row { width: 100%; display: flex; }
   .attachments { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -855,20 +867,33 @@
 
   // ---------- 子代理分支视图切换（对齐完整模式：分支 > 1 时顶部出现 MAIN / b1 / b2 标签）----------
   var branchBarEl = document.getElementById('branchBar');
+  function branchLabel(bId) { return bId === 'main' ? 'MAIN' : (bId.split('_')[1] || bId); }
   function renderBranchBar() {
     var ids = Object.keys(branches);
     // 仅主干时不出切换栏（与完整模式一致）
     if (ids.length <= 1) { branchBarEl.classList.remove('on'); branchBarEl.innerHTML = ''; return; }
     branchBarEl.innerHTML = '';
     ids.forEach(function (bId) {
-      var label = bId === 'main' ? 'MAIN' : (bId.split('_')[1] || bId);
+      var item = document.createElement('div');
+      item.className = 'branch-item';
       var b = document.createElement('button');
       b.type = 'button';
-      b.className = 'branch-tab' + (bId === currentBranchId ? ' active' : '');
-      b.textContent = label;
+      b.className = 'branch-tab' + (bId === currentBranchId ? ' active' : '') + (bId === 'main' ? '' : ' has-del');
+      b.textContent = branchLabel(bId);
       b.title = bId;
       b.addEventListener('click', function () { switchBranch(bId); });
-      branchBarEl.appendChild(b);
+      item.appendChild(b);
+      // 非主干分支支持删除（后端会一并强制终止其后台子代理）
+      if (bId !== 'main') {
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'branch-del';
+        del.textContent = '×';
+        del.title = '删除分支（强制终止子代理）';
+        del.addEventListener('click', function (ev) { ev.stopPropagation(); deleteBranch(bId); });
+        item.appendChild(del);
+      }
+      branchBarEl.appendChild(item);
     });
     branchBarEl.classList.add('on');
   }
@@ -878,6 +903,25 @@
     localBuffer = [];        // 切换视图：本地乐观消息属于主分支，丢弃
     renderBranchBar();
     load(activeSessionId);
+    callAction('branch.select', { branch_id: bId }).catch(function () {});   // 通知宿主：输入框据此进入/退出只读
+  }
+  // 删除子代理分支：对齐后端 DELETE /api/sessions/{id}/branches/{branch_id}
+  // （后端先 cancel_sub_branch 斩断后台任务，再删除元数据与历史文件）
+  function deleteBranch(bId) {
+    if (!activeSessionId) return;
+    if (!window.confirm('删除子代理分支 ' + branchLabel(bId) + '？将强制终止其后台运行。')) return;
+    fetch('/api/sessions/' + encodeURIComponent(activeSessionId) + '/branches/' + encodeURIComponent(bId), { method: 'DELETE' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function () { return {}; }); })
+      .then(function () {
+        toast('已删除分支');
+        if (currentBranchId === bId) {
+          currentBranchId = 'main';
+          callAction('branch.select', { branch_id: 'main' }).catch(function () {});
+        }
+        loadBranches(activeSessionId);
+        load(activeSessionId);
+      })
+      .catch(function (e) { toast('删除失败：' + (e.message || e)); });
   }
   function loadBranches(sessionId) {
     if (!sessionId) { branches = {}; renderBranchBar(); return; }
@@ -965,6 +1009,15 @@
       renderBranchBar();
       ensurePoll();
       refresh();
+    } else if (m.event === 'branch.switched') {
+      // 宿主回推当前分支视图（含晚加载补推）：与本插件本地态对账，必要时重载
+      var bid = (m.data && m.data.branch_id) || 'main';
+      if (bid !== currentBranchId) {
+        currentBranchId = bid;
+        localBuffer = [];
+        renderBranchBar();
+        load(activeSessionId);
+      }
     } else if (m.event === 'conversation.updated') {
       ensurePoll();
       load(activeSessionId);

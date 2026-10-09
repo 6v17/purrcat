@@ -32,6 +32,7 @@
   const frameByPluginId = {}; // plugin_id -> iframe element
   const groupState = {
     activeSessionId: '',
+    activeBranchId: 'main',   // 当前查看的分支视图（main / 子代理分支），供输入框判定只读
     sessions: [],
     empty: true,
     plugins: [],              // manifest 注解后的插件列表（供设置面板使用）
@@ -301,6 +302,11 @@
   }
   // 会话状态变更事件需同时通知会话卡片(history)与侧栏(列表)，侧栏据此刷新选中高亮
   function broadcastSessions(event, data) {
+    // 切换会话：分支视图一律回到主干，并广播给输入框等插件（子代理视图只读）
+    if (event === 'session.switched') {
+      groupState.activeBranchId = 'main';
+      broadcastAll('branch.switched', { branch_id: 'main' });
+    }
     broadcast('conversation', event, data);
     broadcast('sidebar', event, data);
     broadcast('input', event, data);   // 输入框据此重新对账空态（欢迎语/居中）
@@ -1800,6 +1806,13 @@
         return openUrlInBrowserPanel(payload.url);
       case 'state.get':
         return { ...groupState, plugins: undefined };
+      // 子代理分支视图切换：历史插件据此切换查看分支，同时广播给输入框进入/退出只读
+      case 'branch.select': {
+        const bid = String(payload.branch_id || 'main');
+        groupState.activeBranchId = bid;
+        broadcastAll('branch.switched', { branch_id: bid });
+        return { status: 'ok' };
+      }
       // 输入插件展开引用菜单时，宿主腾出更高输入区，避免面板被容器裁切
       case 'input.dropdown':
         HOST.document.body.classList.toggle('input-menu', !!payload.open);
@@ -2338,6 +2351,13 @@
           );
         } catch (_) { /* noop */ }
       }
+      // 同步补推当前分支视图：晚加载的输入框据此判定是否只读
+      try {
+        iframe.contentWindow.postMessage(
+          { type: 'event', event: 'branch.switched', data: { branch_id: groupState.activeBranchId || 'main' } },
+          '*'
+        );
+      } catch (_) { /* noop */ }
       // 启动竞态修复：插件可能在「设置中心/模态弹窗已打开」之后才挂载，
       // 此时早先的 host.nativeCover 广播已经发过，插件会误以为未被遮挡而展示原生视图（覆盖设置）。
       // 给刚加载的插件补推一次当前遮挡状态。
