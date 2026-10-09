@@ -12,8 +12,22 @@
     font-family: var(--wm-font, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
     background: transparent;
     color: var(--wm-label, #16191d);
+    display: flex; flex-direction: column;
   }
-  .list { height: 100%; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* 子代理分支视图切换栏：对齐完整模式的 MAIN / b1 / b2 分支标签（存在子分支时才出现） */
+  .branch-bar { display: none; flex: none; align-items: center; gap: 8px; padding: 12px 20px 0; overflow-x: auto; }
+  .branch-bar.on { display: flex; }
+  .branch-tab {
+    flex: none; font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .04em;
+    padding: 5px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--wm-border, rgba(15,17,21,.12));
+    background: var(--wm-bl-0, #fff); color: var(--wm-label-2nd, #4c5560);
+    transition: background .12s ease, color .12s ease;
+  }
+  .branch-tab:hover { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); }
+  .branch-tab.active { background: var(--wm-accent, #16191d); color: #fff; border-color: transparent; }
 
   .row { width: 100%; display: flex; }
   .attachments { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -183,6 +197,7 @@
 </style>
 </head>
 <body>
+  <div class="branch-bar" id="branchBar"></div>
   <div class="list" id="list">
     <div class="empty">暂无消息</div>
   </div>
@@ -554,7 +569,8 @@
       // 消息区动作行（记忆压缩 / 会话分支 / trace2skill）：仅在有消息且 Agent 空闲时出现
       if (!thinking) listEl.appendChild(buildActions());
     }
-    if (thinking) appendLive(stick);
+    // 流式思考块只属于主干主 Agent 循环（/status 只回报主干），子代理分支视图不渲染，避免串台
+    if (thinking && currentBranchId === 'main') appendLive(stick);
     // 内部滚动位置放在所有节点都进 DOM 之后再恢复：折叠块 display:none 时设 scrollTop 会被夹成 0
     Object.keys(innerTop).forEach(function (fk) {
       var f = listEl.querySelector('.row.fold[data-fk="' + fk + '"]');
@@ -742,7 +758,7 @@
   }
   // 只增量刷新流式思考块（不重建整段历史）：思考期间的高频拍走这条路
   function updateLiveOnly() {
-    if (!thinking) return;
+    if (!thinking || currentBranchId !== 'main') return;
     var stick = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 40;
     var old = listEl.querySelector('.row.live');
     if (old) old.remove();
@@ -828,6 +844,8 @@
   var thinking = false;   // Agent 是否思考中（思考中隐藏动作行）
   var compressBusy = false;
   var branchBusy = false;
+  var branches = {};        // 当前会话的分支元数据（main + 子代理分支）
+  var currentBranchId = 'main';   // 当前查看的分支视图（对齐完整模式的 MAIN / b1 …）
   // 仅重绘动作行（不整段重建历史，避免打断滚动位置与折叠展开态）
   function rerenderActions() {
     var old = listEl.querySelector('.acts');
@@ -835,9 +853,48 @@
     if (lastRows && lastRows.length && !thinking) listEl.appendChild(buildActions());
   }
 
+  // ---------- 子代理分支视图切换（对齐完整模式：分支 > 1 时顶部出现 MAIN / b1 / b2 标签）----------
+  var branchBarEl = document.getElementById('branchBar');
+  function renderBranchBar() {
+    var ids = Object.keys(branches);
+    // 仅主干时不出切换栏（与完整模式一致）
+    if (ids.length <= 1) { branchBarEl.classList.remove('on'); branchBarEl.innerHTML = ''; return; }
+    branchBarEl.innerHTML = '';
+    ids.forEach(function (bId) {
+      var label = bId === 'main' ? 'MAIN' : (bId.split('_')[1] || bId);
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'branch-tab' + (bId === currentBranchId ? ' active' : '');
+      b.textContent = label;
+      b.title = bId;
+      b.addEventListener('click', function () { switchBranch(bId); });
+      branchBarEl.appendChild(b);
+    });
+    branchBarEl.classList.add('on');
+  }
+  function switchBranch(bId) {
+    if (bId === currentBranchId) return;
+    currentBranchId = bId;
+    localBuffer = [];        // 切换视图：本地乐观消息属于主分支，丢弃
+    renderBranchBar();
+    load(activeSessionId);
+  }
+  function loadBranches(sessionId) {
+    if (!sessionId) { branches = {}; renderBranchBar(); return; }
+    fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/branches')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        branches = (d && typeof d === 'object') ? d : { main: {} };
+        // 当前查看的分支被删除时回退到主干
+        if (!branches[currentBranchId]) currentBranchId = 'main';
+        renderBranchBar();
+      })
+      .catch(function () { branches = { main: {} }; currentBranchId = 'main'; renderBranchBar(); });
+  }
+
   function load(sessionId) {
     if (!sessionId) { localBuffer = []; renderMessages([]); return; }
-    fetch('/api/sessions/' + encodeURIComponent(sessionId))
+    fetch('/api/sessions/' + encodeURIComponent(sessionId) + '?branch_id=' + encodeURIComponent(currentBranchId))
       .then(function (r) { return r.json(); })
       .then(function (history) {
         var rows = Array.isArray(history) ? history
@@ -852,8 +909,9 @@
     callAction('state.get').then(function (st) {
       activeSessionId = (st && st.activeSessionId) || activeSessionId || '';
       load(activeSessionId);
+      loadBranches(activeSessionId);
       ensurePoll();
-    }).catch(function () { load(activeSessionId); ensurePoll(); });
+    }).catch(function () { load(activeSessionId); loadBranches(activeSessionId); ensurePoll(); });
   }
 
   // ---------- 轻量轮询刷新（与原 UI 一致的机制）----------
@@ -888,7 +946,7 @@
         live.text = t ? String((st && st.live_reasoning) || '') : '';
         live.phase = t ? String((st && st.phase) || 'thinking') : 'idle';
         setPoll(t ? POLL_FAST : POLL_SLOW);
-        if (pollHistory) load(activeSessionId);
+        if (pollHistory) { load(activeSessionId); loadBranches(activeSessionId); }
         else updateLiveOnly();
       })
       .catch(function () { setPoll(POLL_SLOW); });   // 会话暂不可用等：保持慢档，不轰炸
@@ -902,6 +960,9 @@
       activeSessionId = m.data && m.data.session_id;
       thinking = false;
       live.text = ''; live.phase = 'idle';
+      currentBranchId = 'main';   // 新会话从主干视图进入
+      branches = {};
+      renderBranchBar();
       ensurePoll();
       refresh();
     } else if (m.event === 'conversation.updated') {
@@ -909,6 +970,7 @@
       load(activeSessionId);
     } else if (m.event === 'conversation.local') {
       ensurePoll();   // 刚发送，后端即将 busy，立即进入快速轮询
+      if (currentBranchId !== 'main') return;   // 子代理分支视图只读，乐观消息属于主干，不渲染
       var evs = (m.data && Array.isArray(m.data.events)) ? m.data.events : [];
       evs.forEach(function (ev) {
         var txt = String(ev && ev.content || ''); if (!txt) return;
