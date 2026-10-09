@@ -1145,7 +1145,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     showModal, setShowModal, newAlias, setNewAlias, selectedParadigm, setSelectedParadigm, paradigmFiles: paradigms, confirmNewSession,
     showBranchModal, setShowBranchModal, branchAlias, setBranchAlias, confirmBranchSession,
     sessionToDelete, setSessionToDelete, confirmDeleteSession,
-    branchToDelete, setBranchToDelete, currentSessionId, loadSessionHistory, loadBranches, setCurrentBranchId,
+    branchToDelete, setBranchToDelete, currentSessionId, currentBranchId, loadSessionHistory, loadBranches, setCurrentBranchId,
     showAddCronModal, setShowAddCronModal, newCron, setNewCron, addCron,
     showInstallSkillModal, setShowInstallSkillModal, skillInstallUrl, setSkillInstallUrl, handleInstallSkill, isInstallingSkill,
     showInstallMcpModal, setShowInstallMcpModal, mcpInstallJson, setMcpInstallJson, handleInstallMcp, isInstallingMcp,

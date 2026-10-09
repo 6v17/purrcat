@@ -399,8 +399,9 @@ def delete_session_branch_api(session_id: str, branch_id: str):
     try:
         from src.agent.sub_runner import cancel_sub_branch
 
-        # 🌟 修复：删除分支前，如果该分支在后台跑，直接一刀斩断！
-        cancel_sub_branch(branch_id)
+        # 🌟 修复：删除分支前先一刀斩断后台任务，并【等待其真正收敛】后再删文件，
+        # 否则运行中的协程可能在 cancel 生效前再落一次盘，把删除的分支复活。
+        cancel_sub_branch(branch_id, wait=True)
 
         from src.agent.session_store import SessionStore
 

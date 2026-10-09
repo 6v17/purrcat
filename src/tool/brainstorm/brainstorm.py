@@ -3,8 +3,7 @@ import asyncio
 from pathlib import Path
 from src.tool.utils.format import text_response, error_response
 from src.agent.sub_runner import (
-    ACTIVE_SUB_TASKS,
-    SUB_TASK_LOCK,
+    cancel_sub_branch,
     run_dag_graph,
     ensure_sub_loop,
 )
@@ -92,11 +91,9 @@ def BrainStorm(
             if not target_branch_id:
                 return error_response("参数错误：缺少 target_branch_id")
 
-            with SUB_TASK_LOCK:
-                task_handle = ACTIVE_SUB_TASKS.get(target_branch_id)
-
-            if task_handle:
-                task_handle.cancel()
+            # 统一走 cancel_sub_branch：它同时兼容 display id（b1）与内部 id
+            # （{batch}_b1），并在并发多批次下跨批次匹配同名分支全部斩杀。
+            if cancel_sub_branch(target_branch_id):
                 return text_response(
                     f"✅ 斩杀信号已成功下发！后台分支 `{target_branch_id}` 已被强制终止。",
                     "🛑 分支已终止",

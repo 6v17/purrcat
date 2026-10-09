@@ -11,7 +11,7 @@ export default function ChatModals(props: any) {
     showModal, setShowModal, newAlias, setNewAlias, selectedParadigm, setSelectedParadigm, paradigmFiles, confirmNewSession,
     showBranchModal, setShowBranchModal, branchAlias, setBranchAlias, confirmBranchSession,
     sessionToDelete, setSessionToDelete, confirmDeleteSession,
-    branchToDelete, setBranchToDelete, currentSessionId, loadSessionHistory, loadBranches, setCurrentBranchId,
+    branchToDelete, setBranchToDelete, currentSessionId, currentBranchId, loadSessionHistory, loadBranches, setCurrentBranchId,
     showAddCronModal, setShowAddCronModal, newCron, setNewCron, addCron,
     showInstallSkillModal, setShowInstallSkillModal, skillInstallUrl, setSkillInstallUrl, handleInstallSkill, isInstallingSkill,
     showInstallMcpModal, setShowInstallMcpModal, mcpInstallJson, setMcpInstallJson, handleInstallMcp, isInstallingMcp,
@@ -183,7 +183,7 @@ export default function ChatModals(props: any) {
               <h3 className="text-2xl font-black tracking-widest text-[#bf616a]" style={{ fontFamily: '"Comic Sans MS", cursive' }}>{t('chat.destroyBranch')}</h3>
               <button onClick={() => setBranchToDelete(null)} className="hover:text-terracotta hover:scale-110 transition-all"><X size={28} strokeWidth={3}/></button>
             </div>
-            <p className="font-bold text-ink/70 rotate-1">{t('chat.destroyBranchPrefix')}{branchToDelete}{t('chat.destroyBranchSuffix')}</p>
+            <p className="font-bold text-ink/70 rotate-1">{t('chat.destroyBranchPrefix')}{branchToDelete.split('_')[1] || branchToDelete}{t('chat.destroyBranchSuffix')}</p>
             <div className="flex gap-4 rotate-1 mt-2">
               <button onClick={() => setBranchToDelete(null)} style={sketchyShape3} className="flex-1 bg-cream text-ink font-black py-3 border-4 border-ink hover:bg-sand transition-all shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] active:shadow-none active:translate-y-1">{t('common.cancel')}</button>
               <button onClick={async () => {
@@ -191,8 +191,11 @@ export default function ChatModals(props: any) {
                  try {
                      const res = await fetch(`/api/sessions/${currentSessionId}/branches/${branchToDelete}`, { method: 'DELETE' });
                      if (res.ok) {
-                       setCurrentBranchId('main');
-                       loadSessionHistory(currentSessionId, 'main');
+                       // 仅当删除的是当前正在查看的分支时才回退到主干，否则停留在原视图
+                       if (branchToDelete === currentBranchId) {
+                         setCurrentBranchId('main');
+                         loadSessionHistory(currentSessionId, 'main');
+                       }
                        loadBranches(currentSessionId);
                        setBranchToDelete(null);
                      }

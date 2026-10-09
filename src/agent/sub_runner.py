@@ -21,14 +21,49 @@ ACTIVE_SUB_TASKS = {}
 SUB_TASK_LOCK = threading.Lock()
 
 
-def cancel_sub_branch(branch_id: str) -> bool:
-    """提供给外部 API 调用的强制斩杀后台分支任务的方法"""
+def cancel_sub_branch(branch_id: str, wait: bool = False) -> bool:
+    """提供给外部 API 调用的强制斩杀后台分支任务的方法。
+
+    兼容两种 id：
+      - display id（如 ``b1``）：ACTIVE_SUB_TASKS 的键，BrainStorm cancel 工具用；
+      - 内部 id（如 ``ab12cd_b1``）：meta.json 里存储的分支键，删除分支 API 用。
+    内部 id 形如 ``{batch}_{display}``，故按 ``_`` 后缀反查即可命中同一任务，
+    保证「删除分支」能真正杀掉后台子代理，而不是只删掉元数据。
+
+    ``wait=True`` 时阻塞直到后台协程真正收敛（run_single_branch 的 finally 里会把
+    key 弹出）。删除分支必须先 wait 再删文件/元数据：否则 cancel 后协程仍可能在其
+    当前同步片段里执行一次 _save_history()，把刚删掉的分支「复活」。
+    """
+    if not branch_id:
+        return False
+    matched_keys = []
     with SUB_TASK_LOCK:
-        task_handle = ACTIVE_SUB_TASKS.get(branch_id)
-        if task_handle:
-            task_handle.cancel()
-            return True
-    return False
+        handles = []
+        if branch_id in ACTIVE_SUB_TASKS:
+            # 内部 id（{batch}_{display}）全局唯一，精确命中
+            handles.append(ACTIVE_SUB_TASKS[branch_id])
+            matched_keys.append(branch_id)
+        else:
+            # 传入 display id（如 b1）时：跨批次匹配所有 {batch}_b1
+            # （多个批次可能同时存在同名的 b1，此时全部取消）
+            for key, handle in ACTIVE_SUB_TASKS.items():
+                if key == branch_id or key.endswith("_" + branch_id):
+                    handles.append(handle)
+                    matched_keys.append(key)
+        if not handles:
+            return False
+        for h in handles:
+            h.cancel()
+
+    # 锁外轮询等待全部收敛，避免与 finally 抢锁造成死锁
+    if wait:
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            with SUB_TASK_LOCK:
+                if not any(k in ACTIVE_SUB_TASKS for k in matched_keys):
+                    break
+            time.sleep(0.02)
+    return True
 
 
 # ── 🌟 异步循环专用物理守护线程 ──
@@ -549,7 +584,9 @@ async def run_dag_graph(sub_branches: list, main_session_id: str, main_history: 
         loop_task = asyncio.create_task(runner.run())
 
         with SUB_TASK_LOCK:
-            ACTIVE_SUB_TASKS[display_id] = loop_task
+            # 🌟 以内部 id（{batch}_{display}，全局唯一）为键注册，避免并发批次
+            # 的同名 b1/b2 互相覆盖，导致取消/删除误伤或提前 pop。
+            ACTIVE_SUB_TASKS[internal_id] = loop_task
 
         try:
             await loop_task
@@ -557,7 +594,7 @@ async def run_dag_graph(sub_branches: list, main_session_id: str, main_history: 
             runner._notify_main(f"🛑 后台分支 `{display_id}` 已被取消。")
         finally:
             with SUB_TASK_LOCK:
-                ACTIVE_SUB_TASKS.pop(display_id, None)
+                ACTIVE_SUB_TASKS.pop(internal_id, None)
             events[internal_id].set()
 
     await asyncio.gather(*(run_single_branch(b) for b in sub_branches))
