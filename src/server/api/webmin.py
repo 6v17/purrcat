@@ -229,6 +229,24 @@ def _resolve_plugin_file(plugin_id: str, rel_path: str) -> str | None:
     return None
 
 
+def _resolve_plugin_subdir(plugin_id: str, rel_path: str) -> str | None:
+    """在用户/沙盒/内置插件根目录中定位插件内的某个目录（供列目录用，沙箱防穿越）。"""
+    rel_path = rel_path.replace("\\", "/").lstrip("/")
+    for root in PLUGIN_ROOTS:
+        if not os.path.isdir(root):
+            continue
+        plugin_dir = os.path.join(root, plugin_id)
+        if not os.path.isdir(plugin_dir):
+            continue
+        abs_root = os.path.abspath(plugin_dir)
+        abs_target = os.path.abspath(os.path.join(abs_root, rel_path)) if rel_path else abs_root
+        if os.path.commonpath([abs_root, abs_target]) != abs_root:
+            return None
+        if os.path.isdir(abs_target):
+            return abs_target
+    return None
+
+
 @router.get("/manifest")
 def api_webmin_manifest():
     """返回全局 ui_mode + 当前已扫描到的全部插件列表（未新增插件即热插拔可感知）。
@@ -445,6 +463,26 @@ def api_webmin_plugin(plugin_id: str, path: str):
     if target is None:
         raise HTTPException(status_code=404, detail=f"插件 {plugin_id} 资源不存在")
     return FileResponse(target)
+
+
+@router.get("/plugin-dir/{plugin_id}/{path:path}")
+def api_webmin_plugin_dir(plugin_id: str, path: str = ""):
+    """列出插件目录内某一层的子项（仅名字与是否目录），供插件自动扫描自身数据目录。
+
+    只返回一层、不含文件内容；沙箱到插件目录内防穿越。
+    """
+    target = _resolve_plugin_subdir(plugin_id, path)
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"插件 {plugin_id} 目录不存在")
+    entries = []
+    try:
+        for name in sorted(os.listdir(target)):
+            if name.startswith("."):
+                continue
+            entries.append({"name": name, "isDir": os.path.isdir(os.path.join(target, name))})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取目录失败: {e}")
+    return {"path": path, "entries": entries}
 
 
 @router.post("/action")

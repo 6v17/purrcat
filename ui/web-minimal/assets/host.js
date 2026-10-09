@@ -1681,11 +1681,21 @@
       // ---- 引用 ----
       case 'dialog.files': {
         if (!HOST.purrcat) throw new Error('本地文件选择仅在 Electron 内可用');
-        return HOST.purrcat.openDialog({ properties: ['openFile', 'multiSelections'] });
+        return HOST.purrcat.openDialog({ directory: false, properties: ['openFile', 'multiSelections'] });
       }
       case 'dialog.folder': {
         if (!HOST.purrcat) throw new Error('本地文件夹选择仅在 Electron 内可用');
-        return HOST.purrcat.openDialog({ properties: ['openDirectory'] });
+        return HOST.purrcat.openDialog({ directory: true, properties: ['openDirectory', 'multiSelections'] });
+      }
+      // 由插件用 <input type="file"> 选好 File 后，交给宿主解析真实绝对路径
+      case 'dialog.resolveFiles': {
+        if (!HOST.purrcat || !HOST.purrcat.getPathForFile) throw new Error('本地路径解析仅在 Electron 内可用');
+        const files = Array.isArray(payload.files) ? payload.files : [];
+        const paths = [];
+        for (const f of files) {
+          try { const p = HOST.purrcat.getPathForFile(f); if (p) paths.push(p); } catch (_) { /* 单个失败跳过 */ }
+        }
+        return { paths: paths };
       }
       case 'dialog.pickWallpaper': {
         if (!HOST.purrcat) throw new Error('本地壁纸选择仅在 Electron 内可用');

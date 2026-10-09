@@ -381,9 +381,13 @@ async function pollBackendAndLoad(targetUrl) {
 
 // ===== IPC: File Reference =====
 ipcMain.handle('dialog:open', async (_e, opts) => {
-  const directory = !!(opts && opts.directory);
-  // Windows/Linux 不能同框混选文件+文件夹，故按 directory 二选一
-  const properties = directory ? ['openDirectory', 'multiSelections'] : ['openFile', 'multiSelections'];
+  const o = opts || {};
+  const directory = !!o.directory;
+  // 优先用调用方显式给的 properties；否则按 directory 二选一
+  // （Windows/Linux 不能同框混选文件+文件夹）
+  const properties = Array.isArray(o.properties) && o.properties.length
+    ? o.properties
+    : (directory ? ['openDirectory', 'multiSelections'] : ['openFile', 'multiSelections']);
   const r = await dialog.showOpenDialog(mainWindow, { properties });
   return r.canceled ? [] : r.filePaths;
 });
