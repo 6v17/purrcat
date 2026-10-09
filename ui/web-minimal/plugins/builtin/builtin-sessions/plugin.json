@@ -1,5 +1,6 @@
 {
   "id": "builtin-sessions",
+  "root": "builtin",
   "name": "会话列表",
   "icon": "list",
   "slot": { "area": "sidebar" },

@@ -1,5 +1,6 @@
 {
   "id": "builtin-input",
+  "root": "builtin",
   "name": "输入框",
   "icon": "pencil",
   "slot": { "area": "input" },

@@ -538,6 +538,11 @@ body.settings-open [data-layer="settings"] { display: flex; }
 /* 设置面板通用控件（UI 插件卡片与配置中心卡片共用同一 cfg-card 体系） */
 .settings-subgroup { font-size: 12px; font-weight: 600; color: var(--wm-label-2nd); margin: 12px 0 6px; }
 .settings-body .p-tag { font-size: 11px; color: var(--wm-label-dim); }
+/* 插件卡片元信息行：来源 / 声明位置 / 依赖标签（plugin.json 的 root / dependency） */
+.cfg-card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 14px 0; }
+.cfg-card-meta .meta-label { font-size: 11px; color: var(--wm-label-dim); }
+.cfg-card-meta .p-tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--wm-bl-150); color: var(--wm-label-2nd); }
+.cfg-card-meta .p-tag.warn { background: rgba(224, 177, 67, 0.25); color: #9a7a24; }
 .settings-body .range-val { font-size: 11px; color: var(--wm-label-dim); text-align: right; margin-top: 2px; }
 .settings-body .switch { position: relative; width: 38px; height: 22px; }
 .settings-body .switch input { opacity: 0; width: 0; height: 0; }

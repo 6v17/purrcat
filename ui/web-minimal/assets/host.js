@@ -461,6 +461,37 @@
     container.appendChild(card);
   }
 
+  // 依赖类型 / 放置根 → 展示文案（plugin.json 的 dependency / root 字段）
+  const DEP_KIND_LABEL = { skill: '技能', plugin: '插件', mcp: 'MCP', agentloop: 'AgentLoop', sensor: '传感器', graph: '图谱' };
+  const ROOT_KIND_LABEL = { builtin: '内置', sandbox: '沙盒', user: '用户' };
+  // 插件卡片元信息行：实际来源（origin）/ 声明放置位置（root）与依赖清单（dependency）
+  function renderPluginMeta(card, p) {
+    const row = HOST.document.createElement('div');
+    row.className = 'cfg-card-meta';
+    const chip = (text, cls) => {
+      const el = HOST.document.createElement('span');
+      el.className = 'p-tag' + (cls ? ' ' + cls : '');
+      el.textContent = text;
+      return el;
+    };
+    const origin = ROOT_KIND_LABEL[p.origin] || p.origin || '';
+    if (origin) row.appendChild(chip('来源 ' + origin));
+    // 声明了 root 却与实际放置位置不符 → 标黄提示
+    if (p.root && p.rootOk === false) {
+      row.appendChild(chip('声明 ' + (ROOT_KIND_LABEL[p.root] || p.root), 'warn'));
+      row.appendChild(chip('⚠ 放置位置与声明不一致', 'warn'));
+    }
+    const deps = Array.isArray(p.dependency) ? p.dependency : [];
+    if (deps.length) {
+      const lb = HOST.document.createElement('span');
+      lb.className = 'meta-label';
+      lb.textContent = '依赖';
+      row.appendChild(lb);
+      deps.forEach((d) => row.appendChild(chip((DEP_KIND_LABEL[d.type] || d.type) + ' · ' + d.id)));
+    }
+    if (row.childNodes.length) card.appendChild(row);
+  }
+
   // 插件卡片（与配置中心统一的 cfg-card 风格）：标题/行为chip/状态chip + 打开关闭 + 抽屉菜单 + 可视化字段
   function renderPluginCard(container, p, cfg) {
     const type = (p.slotDef || {}).type || 'fixed';
@@ -487,6 +518,8 @@
     menuBtn.title = '更多操作';
     menuBtn.addEventListener('click', function (ev) { openPluginCardMenu(ev, menuBtn, p); });
     h.right.appendChild(menuBtn);
+    // 来源 / 声明位置 / 依赖（plugin.json 的 root / dependency 字段）
+    renderPluginMeta(card, p);
     // 配置字段
     if (p.configSchema && p.configSchema.length) {
       const body = HOST.document.createElement('div');

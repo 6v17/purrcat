@@ -1,5 +1,6 @@
 {
   "id": "builtin-browser",
+  "root": "builtin",
   "name": "浏览器",
   "icon": "globe",
   "slot": { "area": "panel" },

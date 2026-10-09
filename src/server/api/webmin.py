@@ -41,6 +41,14 @@ SANDBOX_PLUGIN_ROOT = os.path.join(AGENT_VM_DIR, "ui-plugin")
 USER_PLUGIN_ROOT = os.path.join(PURRCAT_DIR, "webmin-plugins")
 # 三个插件根目录，按优先级从高到低（同名 id 先命中者生效）
 PLUGIN_ROOTS = (USER_PLUGIN_ROOT, SANDBOX_PLUGIN_ROOT, BUILTIN_PLUGIN_ROOT)
+# plugin.json 的 root 字段（插件期望放置的位置）取值 → 对应的实际根目录
+ROOT_TO_DIR = {
+    "user": USER_PLUGIN_ROOT,
+    "sandbox": SANDBOX_PLUGIN_ROOT,
+    "builtin": BUILTIN_PLUGIN_ROOT,
+}
+# dependency 允许的依赖类型：技能 / 其它 UI 插件 / MCP / AgentLoop(paradigm) / 传感器 / 图谱
+DEP_TYPES = ("skill", "plugin", "mcp", "agentloop", "sensor", "graph")
 # 后台壁纸托管目录（用户选择的本地壁纸复制进来后自此统一静态托管）
 WALLPAPER_DIR = os.path.join(PURRCAT_DIR, "webmin-wallpapers")
 # 允许托管的壁纸扩展名
@@ -78,6 +86,38 @@ def _is_builtin(plugin_dir: str) -> bool:
         )
     except Exception:
         return False
+
+
+def _plugin_origin(plugin_dir: str) -> str:
+    """插件实际所在的根（回填 plugin.json 的 root）：user / sandbox / builtin。
+
+    与声明值比对即可发现「声明位置与实际放置位置不一致」。不在任何已知根内
+    （例如被移动到别处）返回空串。
+    """
+    try:
+        abs_dir = os.path.abspath(plugin_dir)
+        for name, root in ROOT_TO_DIR.items():
+            abs_root = os.path.abspath(root)
+            if os.path.commonpath([abs_root, abs_dir]) == abs_root:
+                return name
+    except Exception:
+        pass
+    return ""
+
+
+def _normalize_dependency(raw) -> list:
+    """归一化 dependency：只保留白名单类型，统一为 {"type", "id"} 结构。"""
+    out = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        dep_type = str(item.get("type") or "").strip()
+        dep_id = str(item.get("id") or "").strip()
+        if dep_type in DEP_TYPES and dep_id:
+            out.append({"type": dep_type, "id": dep_id})
+    return out
 
 
 # 可承载到后端的动作 id → 处理器
@@ -253,6 +293,8 @@ def api_webmin_manifest():
 
     每条插件附 configSchema（插件自声明）与 config（webminConfig 中的已存值），
     有效配置 = configSchema 默认值 ∪ config 覆盖；backend 表明该插件是否自带后端。
+    另附 root（声明的期望放置位置：builtin/sandbox/user）、origin（后端回填的实际
+    所在根）、rootOk（两者是否一致）与 dependency（归一化的依赖清单）。
     """
     stored_cfg = _load_webmin_config()
     stored = stored_cfg.get("plugins") or {}
@@ -263,6 +305,15 @@ def api_webmin_manifest():
         p["config"] = dict(stored.get(p["id"]) or {})
         p["builtin"] = _is_builtin(p.get("dir") or "")
         p["backend"] = _plugin_backend_info(p.get("dir") or "")
+        # root：插件声明的期望放置位置（builtin/sandbox/user，未声明为空）；
+        # origin：实际扫描到的根（由后端回填）；rootOk：声明与实际是否一致。
+        declared_root = str(p.get("root") or "").strip()
+        origin = _plugin_origin(p.get("dir") or "")
+        p["root"] = declared_root if declared_root in ROOT_TO_DIR else ""
+        p["origin"] = origin
+        p["rootOk"] = (not p["root"]) or (p["root"] == origin)
+        # dependency：归一化为 [{type,id}]，类型限定白名单
+        p["dependency"] = _normalize_dependency(p.get("dependency"))
         # slot 归一化：p["slot"] 始终为字符串(id)；完整语义放 p["slotDef"]。
         # 必须先基于原始 slot（仍为 dict）计算 slotDef，再把 slot 字符串化——
         # 否则 _slot_id 已把 slot 覆盖成 "panel"/"float:..." 字符串，

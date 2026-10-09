@@ -1,5 +1,6 @@
 {
   "id": "builtin-background",
+  "root": "builtin",
   "name": "背景",
   "icon": "image",
   "slot": { "area": "background" },
