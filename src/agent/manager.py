@@ -63,9 +63,9 @@ class AgentManager:
             paradigm_path=paradigm_path,
         )
 
-        # 恢复 Token 进度
+        # 恢复 Token 进度（权威来源为会话 meta.json，而非不含该字段的 index.json）
         if session_id in all_sessions:
-            self._agent.window_token = all_sessions[session_id].get("window_token", 0)
+            self._agent.window_token = SessionStore.get_session_window_token(session_id)
 
         self._sensor_thread = threading.Thread(
             target=self._agent.sensor, daemon=True, name="AgentSensorThread"
@@ -138,8 +138,8 @@ class AgentManager:
         with self._agent._history_lock:
             self._agent.session_id = target_session_id
             self._agent.current_history = new_history
-            self._agent.window_token = all_sessions.get(target_session_id, {}).get(
-                "window_token", 0
+            self._agent.window_token = SessionStore.get_session_window_token(
+                target_session_id
             )
 
         # 载入该会话绑定的范式（未绑定则回落默认 PARADIGM.yaml）

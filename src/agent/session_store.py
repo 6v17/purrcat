@@ -140,6 +140,22 @@ class SessionStore:
                     pass
 
     @classmethod
+    def get_session_window_token(cls, session_id):
+        """读取会话主干的上下文 Token 用量。
+
+        权威来源是会话文件夹内的 meta.json（`branches.main.window_token`，
+        由 save_session 落盘）；index.json 不保存该字段，故不能用 get_all_sessions。
+        供 manager 在重启恢复 / 切换会话时还原 Token 圆环进度。
+        """
+        meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            return int(meta.get("branches", {}).get("main", {}).get("window_token", 0) or 0)
+        except Exception:
+            return 0
+
+    @classmethod
     def load_session_history(cls, session_id, branch_id="main"):
         """🌟 重构：从会话文件夹内的特定分支文件加载历史"""
         filename = "main.json" if branch_id == "main" else f"sub_{branch_id}.json"
