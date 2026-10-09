@@ -518,9 +518,13 @@
       '已占用 <b>' + fmtNum(used) + ' / ' + fmtNum(max) + '</b>' +
       '（<b>' + pct.toFixed(1) + '%</b>）';
   }
+  var viewedSessionId = '';   // 当前“正在查看”的会话：圆环按会话展示其落盘用量
   function refreshCtx() {
-    // Token 用量是 Agent 的全局状态，不依赖当前会话，始终显示
-    fetch('/api/agent/token')
+    // 传入正在查看的会话：宿主点击会话不会切换后端 Agent，故由后端按会话读取落盘用量；
+    // 若该会话正是 Agent 当前会话，后端会返回实时内存值（对话中即时刷新）。
+    var url = '/api/agent/token';
+    if (viewedSessionId) url += '?session_id=' + encodeURIComponent(viewedSessionId);
+    fetch(url)
       .then(function (r) { return r.json(); })
       .then(function (d) { renderCtx(d && d.window_token, d && d.max_token); })
       .catch(function () {});
@@ -568,7 +572,7 @@
     if (m.type === 'event' && m.event === 'layout.empty') { setCentered(m.data && m.data.empty); return; }
     if (m.type === 'layout.empty') setCentered(m.empty);
     if (m.type === 'event' && m.event === 'branch.switched') { applyBranchState(m.data && m.data.branch_id); return; }
-    if (m.type === 'event' && m.event === 'session.switched') { resyncEmpty(); loadMode(); refreshCtx(); return; }
+    if (m.type === 'event' && m.event === 'session.switched') { viewedSessionId = (m.data && m.data.session_id) || ''; resyncEmpty(); loadMode(); refreshCtx(); return; }
     if (m.type === 'event' && m.event === 'conversation.updated') resyncEmpty();
   });
 
@@ -576,8 +580,12 @@
   markSel();
   resyncEmpty();
   loadMode();
-  // 初始化分支视图态：晚加载时宿主已补推 branch.switched，这里再对账一次兜底
-  callAction('state.get').then(function (s) { applyBranchState(s && s.activeBranchId); }).catch(function () {});
+  // 初始化分支视图态与查看中的会话：晚加载时宿主已补推 branch.switched，这里再对账一次兜底
+  callAction('state.get').then(function (s) {
+    applyBranchState(s && s.activeBranchId);
+    viewedSessionId = (s && s.activeSessionId) || '';
+    refreshCtx();
+  }).catch(function () {});
 })();
 </script>
 </body>

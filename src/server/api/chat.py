@@ -382,10 +382,25 @@ def _run_memory_compression():
 
 
 @router.get("/agent/token")
-def get_token_status_api():
-    """获取当前 Agent 的上下文 Token 使用进度"""
+def get_token_status_api(session_id: str = None):
+    """获取上下文 Token 使用进度。
+
+    传入 session_id（前端“正在查看”的会话）且它不是 Agent 当前挂载的会话时，
+    返回该会话【落盘】的用量 —— 因为点击会话并不会切换后端 Agent，若不这样处理，
+    历史会话的圆环永远显示的是别的会话（常常是 0）的用量。
+    指定的会话正好是 Agent 当前会话时，仍返回实时内存值，保证对话中即时刷新。
+    """
     try:
         _ensure_manager_initialized()
+        from src.agent.manager import AgentManager as _AM
+        from src.agent.session_store import SessionStore as _SS
+
+        agent = _AM()._agent
+        if session_id and (agent is None or agent.session_id != session_id):
+            return {
+                "window_token": _SS.get_session_window_token(session_id),
+                "max_token": get_agent_max_token(),
+            }
         return {"window_token": get_window_token(), "max_token": get_agent_max_token()}
     except Exception:
         import traceback

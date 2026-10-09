@@ -506,7 +506,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
 
   useEffect(() => {
     let tokenInterval: ReturnType<typeof setTimeout>;
-    const fetchToken = async () => { try { const res = await fetch('/api/agent/token'); if (res.ok) { const data = await res.json(); setTokenData({ window: data.window_token, max: data.max_token, cached: data.cached_token || 0 }); } } catch { /* noop */ } };
+    const fetchToken = async () => { try { const url = '/api/agent/token' + (currentSessionId ? `?session_id=${encodeURIComponent(currentSessionId)}` : ''); const res = await fetch(url); if (res.ok) { const data = await res.json(); setTokenData({ window: data.window_token, max: data.max_token, cached: data.cached_token || 0 }); } } catch { /* noop */ } };
     if (currentSessionId) { fetchToken(); tokenInterval = setInterval(fetchToken, 5000); }
     return () => { if (tokenInterval) clearInterval(tokenInterval); };
   }, [currentSessionId]);
