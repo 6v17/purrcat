@@ -55,6 +55,7 @@
     globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
     'panel-left': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
     'layout-panel-left': '<rect width="7" height="18" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
     settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
   };
   const ICON_SVG_ATTR = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"';
@@ -820,7 +821,7 @@
     }
     if (type === 'panel') {
       if (railState.hidden && railState.hidden['__panel__']) return false;
-      return !!panelState && panelState.activeId === p.id;
+      return panelTabs.indexOf(p.id) >= 0;   // 多标签：处于已打开标签页即视为生效
     }
     return true;   // float：未隐藏即生效
   }
@@ -866,12 +867,8 @@
     const slot = p.slot;
     const type = (p.slotDef || {}).type;
     if (type === 'panel') {
-      activeBySlot['panel'] = p.id;                 // 记住抽屉当前选中的面板插件（重启恢复）
-      if (panelState) { panelState.activeId = p.id; renderPanelContent(panelState); }
-      setContainerHidden(false);
-      if (railHidden(p.id)) setPluginHidden(p.id, false);
-      buildRail();
-      persistActive();
+      // 多标签容器：把该插件打开为标签页并激活（未打开则新增，已打开则聚焦）
+      openPanelTab(p.id);
       return;
     }
     if (type === 'fixed') activeBySlot[slot] = p.id;   // 记住该单例槽当前选中的插件
@@ -892,9 +889,14 @@
   }
   function togglePluginOpen(p) {
     const type = (p.slotDef || {}).type;
-    if (pluginVisible(p)) {   // 关闭：fixed=隐藏锚定区；panel=收起容器；float=隐藏实例
-      if (type === 'panel') setContainerHidden(true);
-      else { setPluginHidden(p.id, true); buildRail(); }
+    // 多标签容器：对某面板插件的开/关 = 新开 / 关闭它对应的标签页
+    if (type === 'panel') {
+      if (pluginVisible(p)) closePanelTab(p.id);
+      else openPanelTab(p.id);
+      return;
+    }
+    if (pluginVisible(p)) {   // 关闭：fixed=隐藏锚定区；float=隐藏实例
+      setPluginHidden(p.id, true); buildRail();
       return;
     }
     // 打开：fixed 单例槽拦截——同槽位已有其他插件运行时，必须先关闭它
@@ -905,7 +907,7 @@
         return;
       }
     }
-    activateSlotPlugin(p);   // panel/float 无单例约束；panel 切换抽屉，float 直接显示
+    activateSlotPlugin(p);   // float 无单例约束，直接显示
   }
 
   // ---- 原配置中心逐标签页复刻（卡片 + 裸 JSON 双模式）----
@@ -2031,9 +2033,12 @@
   }
 
   // ---- panel-container：宿主系统级单例中栏容器，非弹窗。容纳全部 type=panel
-  //     内容插件，右上角抽屉切换显示；宽度由中栏右缘分隔条拖动调整（--wm-panel-w）。
+  //     内容插件；顶部为多标签栏（Chrome 风格）：+ 按钮选择插件新开标签页，
+  //     每个标签页各驻留独立 iframe（切换仅显隐，不重载，保留各自状态）。
+  //     宽度由中栏右缘分隔条拖动调整（--wm-panel-w）。
   let panelBar = null;             // 中栏与聊天区之间的纵向分隔条
-  let panelState = null;           // 单例：{ plugins:[{p,def}], activeId, el, area:'panel' }
+  let panelState = null;           // 单例：{ plugins, pluginsById, activeId, el, head, body, strip, views:{}, frames:{}, area:'panel' }
+  let panelTabs = [];              // 打开的标签页（面板插件 id，按打开顺序）；持久化于 active.__panelTabs__
   // 待投递给内置浏览器面板的地址：目标 iframe 尚未加载完成时先挂起，
   // 由 mountFrame 的 load 回调补投（新挂载的面板帧收不到挂载前发出的广播）
   let pendingBrowserUrl = null;
@@ -2168,102 +2173,183 @@
     }
   }
 
-  // 关闭面板右上角抽屉下拉
+  // 关闭面板右上角下拉
   function closePanelMenus() {
     HOST.document.querySelectorAll('.wm-pp_menu').forEach((m) => m.remove());
     syncNativeCover();
   }
-  // panel 内容区重建：标题 + 抽屉 + 当前选中插件 iframe（切换即在容器内卸载旧图挂新图）
-  function renderPanelContent(st) {
+  // 持久化面板容器的标签列表与激活标签：标签列表序列化后与原 active 一并落盘
+  function savePanelSel() {
+    activeBySlot['__panelTabs__'] = JSON.stringify(panelTabs);
+    return persistActive();
+  }
+  // 单个标签页按钮（图标 + 名称 + 关闭 ×）；点击激活，× 关闭该标签
+  function makePanelTab(st, id, p) {
+    const tab = HOST.document.createElement('div');
+    tab.className = 'wm-pp_tab' + (id === st.activeId ? ' active' : '');
+    tab.dataset.pid = id;
+    tab.title = p.name || p.id;
+    const g = HOST.document.createElement('span');
+    g.className = 'wm-pp_tabico';
+    paintPluginIcon(g, p);
+    tab.appendChild(g);
+    const nm = HOST.document.createElement('span');
+    nm.className = 'wm-pp_tabname';
+    nm.textContent = p.name || p.id;
+    tab.appendChild(nm);
+    const x = HOST.document.createElement('button');
+    x.className = 'wm-pp_tabx';
+    x.textContent = '✕';
+    x.title = '关闭标签页';
+    x.addEventListener('click', (ev) => { ev.stopPropagation(); closePanelTab(id); });
+    tab.appendChild(x);
+    tab.addEventListener('click', () => setActivePanelTab(st, id));
+    return tab;
+  }
+  // 依据 tabs/activeId 同步：标签条、每个标签的视图（保留已挂载帧）、空态、广播帧集合
+  function renderPanel(st) {
     const el = st.el;
-    notifyUnmount(el);
-    el.innerHTML = '';
-    const cur = st.plugins.find((x) => x.p.id === st.activeId) || null;   // 支持 none：不选中任意插件时显示空面板
-    const head = HOST.document.createElement('div');
-    head.className = 'wm-pp_head';
-    // ☰ 抽屉放左上角：切换面板插件
-    const dbtn = HOST.document.createElement('button');
-    dbtn.className = 'wm-pp_drawer';
-    dbtn.textContent = '☰';
-    dbtn.title = '切换面板插件';
-    dbtn.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      const open = HOST.document.getElementById('ppmenu-' + st.area);
-      closePanelMenus();
-      if (open) return;
-      const menu = HOST.document.createElement('div');
-      menu.className = 'wm-pp_menu';
-      menu.id = 'ppmenu-' + st.area;
-      // 「无」：选择后不显示任何面板插件
-      const noneItem = HOST.document.createElement('div');
-      noneItem.className = 'wm-pp_menu-item' + (!cur ? ' active' : '');
-      const ng = HOST.document.createElement('span');
-      ng.className = 'wm-pp_menu-ico';
-      ng.textContent = '—';
-      noneItem.appendChild(ng);
-      const nn = HOST.document.createElement('span');
-      nn.textContent = '无';
-      noneItem.appendChild(nn);
-      noneItem.addEventListener('click', () => {
-        st.activeId = '__none__';
-        activeBySlot['panel'] = '__none__';   // 记住"无"选择（重启后保持空面板）
-        persistActive();
-        renderPanelContent(st);
-        closePanelMenus();
-      });
-      menu.appendChild(noneItem);
-      st.plugins.forEach(({ p }) => {
-        const item = HOST.document.createElement('div');
-        item.className = 'wm-pp_menu-item' + (p.id === st.activeId ? ' active' : '');
-        const g = HOST.document.createElement('span');
-        g.className = 'wm-pp_menu-ico';
-        paintPluginIcon(g, p);
-        item.appendChild(g);
-        const nm = HOST.document.createElement('span');
-        nm.textContent = p.name || p.id;
-        item.appendChild(nm);
-        item.addEventListener('click', () => {
-          st.activeId = p.id;
-          activeBySlot['panel'] = p.id;   // 记住抽屉当前选中的面板插件（重启恢复）
-          persistActive();
-          renderPanelContent(st);
-          closePanelMenus();
-        });
-        menu.appendChild(item);
-      });
-      HOST.document.body.appendChild(menu);
-      const r = dbtn.getBoundingClientRect();
-      menu.style.right = 'auto';
-      menu.style.left = Math.max(8, r.right - menu.offsetWidth) + 'px';
-      menu.style.top = (r.bottom + 4) + 'px';
-      syncNativeCover();
-    });
-    head.appendChild(dbtn);
-    // ✕ 关闭按钮放右上角：关闭面板容器（统一走 setContainerHidden，同步状态并持久化）
-    const closeBtn = HOST.document.createElement('button');
-    closeBtn.className = 'wm-pp_drawer';
-    closeBtn.textContent = '✕';
-    closeBtn.title = '关闭面板';
-    closeBtn.addEventListener('click', () => {
-      setContainerHidden(true);
-      closePanelMenus();
-    });
-    head.appendChild(closeBtn);
-    el.appendChild(head);
-    const body = HOST.document.createElement('div');
-    body.className = 'wm-pp_body';
-    el.appendChild(body);
-    for (const k in frames) if (k === 'panel') delete frames[k];
-    if (cur) {
-      const fr = mountFrame(body, cur.p, cur.def);
-      if (fr) frames[cur.p.slot] = [fr];
-    } else {
-      // 「无」状态：容器保留但内容区为占位提示
-      const ph = HOST.document.createElement('div');
-      ph.className = 'wm-pp_empty';
-      ph.textContent = '未选择面板插件';
-      body.appendChild(ph);
+    // 首次（或容器被重建后）搭壳：标签条 + 内容区；已挂载视图随之失效需清空
+    if (!st.head || !st.head.isConnected) {
+      st.head = HOST.document.createElement('div');
+      st.head.className = 'wm-pp_head';
+      st.strip = HOST.document.createElement('div');
+      st.strip.className = 'wm-pp_tabs';
+      st.head.appendChild(st.strip);
+      // + 按钮：选择面板插件新开标签页
+      st.addBtn = HOST.document.createElement('button');
+      st.addBtn.className = 'wm-pp_add';
+      paintIcon(st.addBtn, 'plus', '+');   // 与宿主其它图标同风格的线性 SVG 加号
+      st.addBtn.title = '新建标签页';
+      st.addBtn.addEventListener('click', (ev) => { ev.stopPropagation(); openPanelAddMenu(st, st.addBtn); });
+      st.head.appendChild(st.addBtn);
+      // ✕ 关闭按钮：关闭整个面板容器（统一走 setContainerHidden，同步状态并持久化）
+      st.closeBtn = HOST.document.createElement('button');
+      st.closeBtn.className = 'wm-pp_drawer';
+      st.closeBtn.textContent = '✕';
+      st.closeBtn.title = '关闭面板';
+      st.closeBtn.addEventListener('click', () => { setContainerHidden(true); closePanelMenus(); });
+      st.head.appendChild(st.closeBtn);
+      el.appendChild(st.head);
+      st.body = HOST.document.createElement('div');
+      st.body.className = 'wm-pp_body';
+      el.appendChild(st.body);
+      st.views = {};
+      st.frames = {};
     }
+    // 丢弃已卸载插件的残留标签
+    panelTabs = panelTabs.filter((id) => !!st.pluginsById[id]);
+    if (panelTabs.indexOf(st.activeId) < 0) st.activeId = panelTabs[0] || '';
+    // 标签条：仅按钮，重建不触及 iframe
+    st.strip.innerHTML = '';
+    panelTabs.forEach((id) => st.strip.appendChild(makePanelTab(st, id, st.pluginsById[id].p)));
+    // 为每个标签确保视图存在；已存在且仍在文档中的复用（不重载，保留其状态）
+    panelTabs.forEach((id) => {
+      const old = st.views[id];
+      if (old && old.isConnected) return;
+      // 视图已被清除（如插件清单重载时 buildSlotIndex 卸载过）→ 重建并重挂帧
+      const v = HOST.document.createElement('div');
+      v.className = 'wm-pp_view';
+      v.dataset.pid = id;
+      st.body.appendChild(v);
+      st.views[id] = v;
+      st.frames[id] = mountFrame(v, st.pluginsById[id].p);
+    });
+    // 卸载并移除已关闭标签的视图（如内置浏览器关闭其原生 Tab）
+    Object.keys(st.views).forEach((id) => {
+      if (panelTabs.indexOf(id) >= 0) return;
+      notifyUnmount(st.views[id]);
+      st.views[id].remove();
+      delete st.views[id];
+      delete st.frames[id];
+    });
+    // 空态占位（容器保留，等待 + 新建标签页）
+    if (!st.emptyEl) {
+      st.emptyEl = HOST.document.createElement('div');
+      st.emptyEl.className = 'wm-pp_empty';
+      st.emptyEl.textContent = '点击上方 + 新建标签页';
+    }
+    if (panelTabs.length) { if (st.emptyEl.parentNode) st.emptyEl.remove(); }
+    else if (!st.emptyEl.parentNode) st.body.appendChild(st.emptyEl);
+    frames['panel'] = panelTabs.map((id) => st.frames[id]).filter(Boolean);
+    applyActivePanelTab(st);
+  }
+  // 应用激活标签：仅切换视图显隐与标签高亮（iframe 保持挂载）
+  function applyActivePanelTab(st) {
+    Object.keys(st.views).forEach((id) => { st.views[id].style.display = (id === st.activeId) ? 'flex' : 'none'; });
+    st.strip.querySelectorAll('.wm-pp_tab').forEach((t) => {
+      const on = t.dataset.pid === st.activeId;
+      t.classList.toggle('active', on);
+      if (on && t.scrollIntoView) { try { t.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) {} }
+    });
+  }
+  // 切换激活标签并持久化
+  function setActivePanelTab(st, id) {
+    if (st.activeId === id) return;
+    st.activeId = id;
+    activeBySlot['panel'] = id;
+    applyActivePanelTab(st);
+    savePanelSel();
+  }
+  // 打开（或聚焦已打开的）标签页并激活
+  function openPanelTab(id) {
+    const st = panelState;
+    if (!st || !st.pluginsById[id]) return;
+    const added = panelTabs.indexOf(id) < 0;
+    if (added) panelTabs.push(id);
+    st.activeId = id;
+    activeBySlot['panel'] = id;
+    if (added) renderPanel(st); else applyActivePanelTab(st);
+    savePanelSel();
+    setContainerHidden(false);   // 面板被关掉时自动重新打开
+  }
+  // 关闭某标签页：优先激活右邻、其次左邻；空则回到空态
+  function closePanelTab(id) {
+    const st = panelState;
+    if (!st) return;
+    const i = panelTabs.indexOf(id);
+    if (i < 0) return;
+    panelTabs.splice(i, 1);
+    if (st.activeId === id) st.activeId = panelTabs[i] || panelTabs[i - 1] || '';
+    activeBySlot['panel'] = st.activeId || '__none__';
+    renderPanel(st);   // 内部会卸载被关闭标签的视图
+    savePanelSel();
+  }
+  // + 下拉：列出全部面板插件，已打开者标注并可点击聚焦，未打开者点击新开标签页
+  function openPanelAddMenu(st, anchor) {
+    const wasOpen = HOST.document.getElementById('ppmenu-' + st.area);
+    closePanelMenus();
+    if (wasOpen) return;   // 再次点 + = 收起
+    const menu = HOST.document.createElement('div');
+    menu.className = 'wm-pp_menu';
+    menu.id = 'ppmenu-' + st.area;
+    st.plugins.forEach(({ p }) => {
+      const isOpen = panelTabs.indexOf(p.id) >= 0;
+      const item = HOST.document.createElement('div');
+      item.className = 'wm-pp_menu-item' + (isOpen ? ' active' : '');
+      const g = HOST.document.createElement('span');
+      g.className = 'wm-pp_menu-ico';
+      paintPluginIcon(g, p);
+      item.appendChild(g);
+      const nm = HOST.document.createElement('span');
+      nm.textContent = p.name || p.id;
+      item.appendChild(nm);
+      if (isOpen) {
+        const tag = HOST.document.createElement('span');
+        tag.className = 'wm-pp_menu-tag';
+        tag.textContent = '已打开';
+        item.appendChild(tag);
+      }
+      item.addEventListener('click', () => { openPanelTab(p.id); closePanelMenus(); });
+      menu.appendChild(item);
+    });
+    HOST.document.body.appendChild(menu);
+    const r = anchor.getBoundingClientRect();
+    const left = Math.min(r.right - menu.offsetWidth, HOST.innerWidth - menu.offsetWidth - 8);
+    menu.style.right = 'auto';
+    menu.style.left = Math.max(8, left) + 'px';
+    menu.style.top = (r.bottom + 4) + 'px';
+    syncNativeCover();
   }
   // 挂载 type=panel 插件：无面板插件则不占位；有则建 .wm-ppanel 并点亮抽屉
   function mountPanels() {
@@ -2283,16 +2369,28 @@
       closePanelMenus();
       return;
     }
+    const byId = {};
+    byArea.panel.forEach((x) => { byId[x.p.id] = x; });
+    const valid = (id) => !!byId[id];
+    // 是否已有保存的标签列表：有则尊重其内容（含「空列表」= 用户主动关光了标签）
+    const hasSavedTabs = Object.prototype.hasOwnProperty.call(activeBySlot, '__panelTabs__');
     let st = panelState;
     if (!st) {
-      // 恢复用户上次抽屉选中的面板插件（含"无"选择），否则取声明顺序第一个
-      const saved = activeBySlot['panel'];
-      const initial = (saved === '__none__' || byArea.panel.some((x) => x.p.id === saved)) ? saved : byArea.panel[0].p.id;
-      st = panelState = { plugins: byArea.panel, activeId: initial, area: 'panel', el: null };
+      // 首次装配：恢复已保存的标签列表；无保存则回退旧版「单抽屉选中项」，再退声明顺序第一个
+      panelTabs = panelTabs.filter(valid);
+      if (!panelTabs.length && !hasSavedTabs) {
+        const legacy = activeBySlot['panel'];
+        panelTabs = (legacy && legacy !== '__none__' && valid(legacy)) ? [legacy] : [byArea.panel[0].p.id];
+      }
+      st = panelState = { plugins: byArea.panel, pluginsById: byId, activeId: '', area: 'panel', el: null };
     } else {
       st.plugins = byArea.panel;
-      if (st.activeId !== '__none__' && !byArea.panel.some((x) => x.p.id === st.activeId)) st.activeId = byArea.panel[0].p.id;
+      st.pluginsById = byId;
+      panelTabs = panelTabs.filter(valid);
+      if (!panelTabs.length && !hasSavedTabs) panelTabs = [byArea.panel[0].p.id];
     }
+    const saved = activeBySlot['panel'];
+    st.activeId = (saved && saved !== '__none__' && panelTabs.indexOf(saved) >= 0) ? saved : (panelTabs[0] || '');
     if (!st.el || !st.el.parentNode) {
       st.el = HOST.document.createElement('div');
       st.el.className = 'wm-ppanel wm-mount';
@@ -2300,7 +2398,11 @@
       st.el.style.display = 'flex';
       HOST.document.body.appendChild(st.el);
     }
-    renderPanelContent(st);
+    renderPanel(st);
+    // 仅更新内存态（标签列表保留在 activeBySlot 中，确保后续 persistActive 整节覆盖时不丢）；
+    // 启动时不做多余落盘，实际变更（+/×/切换）各自已持久化
+    activeBySlot['panel'] = st.activeId;
+    activeBySlot['__panelTabs__'] = JSON.stringify(panelTabs);
     closePanelMenus();
   }
 
@@ -2317,11 +2419,11 @@
     if (!pendingBrowserUrl) return;
     const hit = browserPanel();
     if (!hit || !panelState || panelState.activeId !== hit.p.id) return;
-    const slot = hit.p.slot;
-    if (!(frames[slot] || []).some((f) => f.loaded)) return;   // 帧未加载完：等 load 回调再投
+    const fr = panelState.frames && panelState.frames[hit.p.id];
+    if (!fr || !fr.loaded) return;   // 浏览器帧未加载完：等其 load 回调再投
     const url = pendingBrowserUrl;
     pendingBrowserUrl = null;
-    broadcast(slot, 'browser.openUrl', { url: url });
+    broadcast(hit.p.slot, 'browser.openUrl', { url: url });
   }
   function openUrlInBrowserPanel(url) {
     const u = String(url || '').trim();
@@ -2332,14 +2434,8 @@
       if (pc && pc.openExternal && u) pc.openExternal(u);
       return { status: 'external' };
     }
-    const rerender = panelState.activeId !== hit.p.id;
-    if (rerender) {
-      panelState.activeId = hit.p.id;
-      activeBySlot['panel'] = hit.p.id;    // 记住选择：下次启动直接停在浏览器面板
-      persistActive();
-    }
-    setContainerHidden(false);             // 面板被关掉时自动重新打开
-    if (rerender) renderPanelContent(panelState);
+    // 浏览器面板未开为标签页则先打开，再激活并投递地址（已打开则仅聚焦）
+    openPanelTab(hit.p.id);
     pendingBrowserUrl = u;
     deliverPendingBrowserUrl();
     return { status: 'ok' };
@@ -2521,8 +2617,16 @@
     const savedActive = (manifest.active && typeof manifest.active === 'object') ? manifest.active : {};
     const ids = new Set(groupState.plugins.map((p) => p.id));
     Object.keys(activeBySlot).forEach((k) => delete activeBySlot[k]);
+    // 面板容器多标签：标签列表以 JSON 串存于保留键 __panelTabs__（后端 active 只收字符串键值）。
+    // 原样保留在 activeBySlot 中，确保后续 persistActive 整节覆盖时不会把标签列表清空。
+    panelTabs = [];
     Object.keys(savedActive).forEach((k) => {
       const v = savedActive[k];
+      if (k === '__panelTabs__') {
+        activeBySlot[k] = String(v);
+        try { const arr = JSON.parse(v); if (Array.isArray(arr)) panelTabs = arr.filter((x) => typeof x === 'string'); } catch (_) {}
+        return;
+      }
       if (v === '__none__' || ids.has(v)) activeBySlot[k] = v;
     });
   }
