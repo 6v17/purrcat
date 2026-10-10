@@ -151,7 +151,9 @@ class SessionStore:
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
-            return int(meta.get("branches", {}).get("main", {}).get("window_token", 0) or 0)
+            return int(
+                meta.get("branches", {}).get("main", {}).get("window_token", 0) or 0
+            )
         except Exception:
             return 0
 

@@ -148,6 +148,10 @@ def _scan_plugins(root: str) -> dict:
     if not os.path.isdir(root):
         return result
     for name in os.listdir(root):
+        # 删除插件时目录被改名为 <id>.trash 留待恢复，扫描必须跳过，
+        # 否则它会连同内部 plugin.json 被当作仍存在的插件重新列出。
+        if name.endswith(".trash"):
+            continue
         plugin_dir = os.path.join(root, name)
         if not os.path.isdir(plugin_dir):
             continue
