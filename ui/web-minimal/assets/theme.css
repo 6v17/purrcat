@@ -201,7 +201,7 @@ body.rail-2 .wm-rail .rail-ico .rail-name { display: inline; }
   overflow: hidden;
 }
 
-/* 主区：侧栏右侧，容纳 会话 + 输入（右移出图标栏） */
+/* 主区：侧栏右侧，容纳单个「会话」面板（历史 + 输入合并为一体）（右移出图标栏） */
 .wm-main {
   position: fixed;
   top: var(--wm-topbar-h);
@@ -209,49 +209,21 @@ body.rail-2 .wm-rail .rail-ico .rail-name { display: inline; }
   right: 0; bottom: 0;
   z-index: 5;
   display: grid;
-  grid-template-rows: 1fr auto;
-  gap: 0; /* 会话与输入零间距，合并成一个整体圆角面板 */
+  grid-template-rows: 1fr; /* 单个会话面板占满高度 */
   padding: 14px;
-  background: transparent; /* 空白缝隙直接露出壁纸；面板底色由会话/输入插件各自绘制 */
+  background: transparent; /* 空白缝隙直接露出壁纸；面板底色由会话插件按自身 opacity 绘制 */
 }
 /* 会话列表(侧栏)隐藏时：主区舒展到最左，保留与白条的间隙 */
 body.rail-nosidebar .wm-main { left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap)); }
-/* 主区右侧大圆角框：会话(顶) + 输入(底) 合成一个带细描边的连续圆角框；
-   纯白面板在外层纯白下圆角不可见(=看似直角)，故加一圈极细描边勾勒圆角轮廓。
-   顶部圆角、底部由输入框补齐；二者衔接处(会话底/输入顶)不描边，保持无缝无分界线 */
-.wm-main [data-slot="conversation"] {
+/* 主区右侧大圆角框：会话面板（历史 + 输入合并）整块带一圈极细描边勾勒圆角轮廓
+   （纯白面板在外层纯白下圆角不可见(看似直角)，故加描边）。
+   overflow:hidden 让插件白色面板被裁进 18px 圆角，浮层向上弹出也不越出本体 */
+.wm-main [data-slot="session"] {
   min-height: 0;
   overflow: hidden;
-  background: transparent; /* 会话面板底色由历史会话插件按自身 opacity 绘制 */
-  border: 1px solid var(--wm-border, rgba(15,17,21,.08));
-  border-bottom: none;
-  border-radius: 18px 18px 0 0;
-}
-
-/* 输入框槽：与上方会话面板零间距/同底色，延续右侧大圆角框的边框与底部圆角。
-   overflow:hidden 必须与上方会话框一致：内部白色面板靠它被裁剪进 18px 圆角，
-   否则透明槽内的白面板是直角方块，会把底部圆角"撑"成直角 */
-.wm-main [data-slot="input"] {
   background: transparent;
   border: 1px solid var(--wm-border, rgba(15,17,21,.08));
-  border-top: none;
-  border-radius: 0 0 18px 18px;
-  overflow: hidden;
-}
-
-/* 空态：无活动会话或无消息 → 聊天框居中（欢迎态） */
-body.empty .wm-main { grid-template-rows: 1fr; }
-body.empty .wm-main [data-slot="conversation"] { display: none; }
-body.empty .wm-main [data-slot="input"] {
-  height: 100%;
-  background: transparent;
-  border-top: none;
   border-radius: 18px;
-  overflow: hidden;
-}
-/* 引用菜单展开：输入区让出刚好够的高度展示引用/引用列表（不过度把会话顶起） */
-body.input-menu:not(.empty) .wm-main {
-  grid-template-rows: minmax(0, 1fr) minmax(0, min(58vh, 520px));
 }
 
 /* 设置面板：modal overlay（在白条右侧渲染，左侧白条区域始终专属白条），默认隐藏 */

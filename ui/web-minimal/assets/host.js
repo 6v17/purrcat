@@ -89,8 +89,8 @@
       HOST.document.body.classList.toggle('rail-nosidebar', !!hidden);
       applyPanelWidth();   // 侧栏显隐改变可用区域，面板宽度需重新夹紧
     }
-    // conversation / input：聊天列插件的启停改变右侧需预留的宽度，面板宽度需重算
-    if (slot === 'conversation' || slot === 'input') applyPanelWidth();
+    // session：会话面板（历史 + 输入合并）的启停改变右侧需预留的宽度，面板宽度需重算
+    if (slot === 'session') applyPanelWidth();
     // float：自由浮窗实例（data-fslot=slot）
     HOST.document.querySelectorAll(`.wm-float[data-fslot="${slot}"]`).forEach((el) => {
       el.style.display = hidden ? 'none' : 'block';
@@ -280,9 +280,7 @@
   // ---- 空态 ----（沿用现有机制）
   function setEmpty(v) {
     groupState.empty = !!v;
-    HOST.document.body.classList.toggle('empty', !!v);
-    broadcast('input', 'layout.empty', { empty: !!v });
-    broadcast('conversation', 'layout.empty', { empty: !!v });
+    broadcast('session', 'layout.empty', { empty: !!v });
   }
   function updateEmpty() {
     const activeId = groupState.activeSessionId;
@@ -308,9 +306,8 @@
       groupState.activeBranchId = 'main';
       broadcastAll('branch.switched', { branch_id: 'main' });
     }
-    broadcast('conversation', event, data);
+    broadcast('session', event, data);
     broadcast('sidebar', event, data);
-    broadcast('input', event, data);   // 输入框据此重新对账空态（欢迎语/居中）
   }
 
   // ---- 设置面板开合（宿主固有资产，非插件）：原生渲染到 .settings-body ----
@@ -709,17 +706,16 @@
   // ---- UI 插件主面板：按「区域」竖排分组（卡片 / JSON 双模式，与配置中心一致）----
   // area 是插件声明的唯一维度；行为（单例 / 容器抽屉 / 浮窗）由宿主按区域内置。
   const AREA_LABEL = {
-    rail: '左侧白条', sidebar: '会话列表', input: '输入框', background: '背景',
-    conversation: '历史会话', 'panel-container': '面板容器', panel: '面板',
+    rail: '左侧白条', sidebar: '会话列表', session: '会话', background: '背景',
+    'panel-container': '面板容器', panel: '面板',
     pet: '浮窗类', popup: '模态弹窗',
   };
   // 宿主原生资产（非插件）挂在所属区域内；singleton 标记「同区域同时只能启用一个插件」
   const UI_GROUPS = [
     { area: 'rail', host: renderRailAppearance },
     { area: 'sidebar', singleton: true },
-    { area: 'input', singleton: true },
+    { area: 'session', singleton: true },
     { area: 'background', singleton: true },
-    { area: 'conversation', singleton: true },
     { area: 'panel-container', host: renderPanelContainerSettings },
     { area: 'panel' },
     { area: 'pet' },
@@ -1538,7 +1534,7 @@
         if (!res.ok) throw new Error(await res.text());
         setEmpty(false);
         // 乐观本地即时显示用户消息，随后 fetch 同步（后端异步写入，fetch 慢时也不丢"你好"）
-        if (payload.message) broadcast('conversation', 'conversation.local', { session_id: sessionId, events: [{ role: 'user', content: String(payload.message) }] });
+        if (payload.message) broadcast('session', 'conversation.local', { session_id: sessionId, events: [{ role: 'user', content: String(payload.message) }] });
         refreshSessions().then(updateEmpty);   // 更新 messages_count，维持 empty 状态准确
         broadcastSessions('conversation.updated', { session_id: sessionId });
         return await res.json();
@@ -1556,7 +1552,7 @@
         setEmpty(false);
         // 乐观本地即时显示 type=user 的事件，随后 fetch 同步去重
         const uv = Array.isArray(payload.events) ? payload.events.filter((e) => e && e.type === 'user').map((e) => ({ role: 'user', content: String(e.content || '') })) : [];
-        if (uv.length) broadcast('conversation', 'conversation.local', { session_id: sessionId, events: uv });
+        if (uv.length) broadcast('session', 'conversation.local', { session_id: sessionId, events: uv });
         refreshSessions().then(updateEmpty);
         broadcastSessions('conversation.updated', { session_id: sessionId });
         return await res.json();
@@ -1849,17 +1845,13 @@
         return openUrlInBrowserPanel(payload.url);
       case 'state.get':
         return { ...groupState, plugins: undefined };
-      // 子代理分支视图切换：历史插件据此切换查看分支，同时广播给输入框进入/退出只读
+      // 子代理分支视图切换：会话插件据此切换查看分支（同时由分支状态进入/退出输入只读）
       case 'branch.select': {
         const bid = String(payload.branch_id || 'main');
         groupState.activeBranchId = bid;
         broadcastAll('branch.switched', { branch_id: bid });
         return { status: 'ok' };
       }
-      // 输入插件展开引用菜单时，宿主腾出更高输入区，避免面板被容器裁切
-      case 'input.dropdown':
-        HOST.document.body.classList.toggle('input-menu', !!payload.open);
-        return { status: 'ok' };
       default:
         return null;
     }
@@ -2085,23 +2077,20 @@
     if (!cur) return false;              // 未挂载（被删除 / 未选中）
     return !railHidden(cur.id);          // 被设置或白条关闭
   }
-  function historyEnabled() { return slotEnabled('conversation'); }
-  function inputEnabled() { return slotEnabled('input'); }
-  // 面板容器「最大舒展」宽度：面板占满左侧栏右侧全部，右侧留出聊天列。
-  // 历史会话未启用则不为它预留；输入框也未启用则聊天列整体不占位，面板可一直舒展到最右。
+  function sessionEnabled() { return slotEnabled('session'); }
+  // 面板容器「最大舒展」宽度：面板占满左侧栏右侧全部，右侧留出会话面板。
+  // 会话面板未启用则不为它预留，面板可一直舒展到最右。
   function maxPanelWidth() {
     const gap = cssNum('--wm-sidebar-gap', 8);
-    let chat = 0;
-    if (historyEnabled()) chat = cssNum('--wm-chat-w', 420);
-    else if (inputEnabled()) chat = cssNum('--wm-chat-min-w', 360);
+    let chat = sessionEnabled() ? cssNum('--wm-chat-w', 420) : 0;
     return Math.max(PANEL_MIN_W, Math.floor(HOST.innerWidth - panelLeftBase() - gap - chat));
   }
-  // 面板可用宽度上限：聊天列仍有插件启用时只保其最小宽度（--wm-chat-min-w），
-  // 保证输入框/历史框不会被面板压得过窄；二者都关闭则不再预留，面板可贴到最右。
+  // 面板可用宽度上限：会话面板仍启用时只保其最小宽度（--wm-chat-min-w），
+  // 保证会话面板不会被面板压得过窄；关闭则不再预留，面板可贴到最右。
   // 无论哪种情况，面板右缘（含 ✕）都留在可视区内。
   function panelMaxLimit() {
     const gap = cssNum('--wm-sidebar-gap', 8);
-    const chatMin = (historyEnabled() || inputEnabled()) ? cssNum('--wm-chat-min-w', 360) : 0;
+    const chatMin = sessionEnabled() ? cssNum('--wm-chat-min-w', 360) : 0;
     return Math.floor(HOST.innerWidth - panelLeftBase() - gap - chatMin);
   }
   // 把「期望宽度」夹到 [下限, 可用上限] 后写入 CSS 变量。

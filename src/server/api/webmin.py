@@ -165,7 +165,7 @@ AREA_POPUP = "popup"  # 模态弹窗：与设置中心同级，遮罩铺满主�
 def _plugin_area(p: dict) -> str:
     """插件声明所在区域——area 是插件声明的唯一维度。
 
-    区域取值：rail / sidebar / input / background / conversation /
+    区域取值：rail / sidebar / session / background /
     panel-container / panel / pet / popup。字符串声明直接视作区域。
     """
     pid = str(p.get("id") or "")
@@ -236,9 +236,8 @@ def _merge_plugins():
     plugins = list(merged.values())
     ordered = [
         "sidebar",
-        "input",
+        "session",
         "background",
-        "conversation",
         "panel",
         "pet",
         "popup",
