@@ -94,14 +94,16 @@ def _plugin_origin(plugin_dir: str) -> str:
     与声明值比对即可发现「声明位置与实际放置位置不一致」。不在任何已知根内
     （例如被移动到别处）返回空串。
     """
-    try:
-        abs_dir = os.path.abspath(plugin_dir)
-        for name, root in ROOT_TO_DIR.items():
-            abs_root = os.path.abspath(root)
+    abs_dir = os.path.abspath(plugin_dir)
+    for name, root in ROOT_TO_DIR.items():
+        abs_root = os.path.abspath(root)
+        try:
             if os.path.commonpath([abs_root, abs_dir]) == abs_root:
                 return name
-    except Exception:
-        pass
+        except ValueError:
+            # 不同盘符（Windows）必然不在该根下：跳过这一个根继续比对，
+            # 不能让单个根的失败中断整个循环。
+            continue
     return ""
 
 
@@ -279,7 +281,9 @@ def _resolve_plugin_subdir(plugin_id: str, rel_path: str) -> str | None:
         if not os.path.isdir(plugin_dir):
             continue
         abs_root = os.path.abspath(plugin_dir)
-        abs_target = os.path.abspath(os.path.join(abs_root, rel_path)) if rel_path else abs_root
+        abs_target = (
+            os.path.abspath(os.path.join(abs_root, rel_path)) if rel_path else abs_root
+        )
         if os.path.commonpath([abs_root, abs_target]) != abs_root:
             return None
         if os.path.isdir(abs_target):
@@ -530,7 +534,9 @@ def api_webmin_plugin_dir(plugin_id: str, path: str = ""):
         for name in sorted(os.listdir(target)):
             if name.startswith("."):
                 continue
-            entries.append({"name": name, "isDir": os.path.isdir(os.path.join(target, name))})
+            entries.append(
+                {"name": name, "isDir": os.path.isdir(os.path.join(target, name))}
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"读取目录失败: {e}")
     return {"path": path, "entries": entries}

@@ -465,7 +465,8 @@
   // 依赖类型 / 放置根 → 展示文案（plugin.json 的 dependency / root 字段）
   const DEP_KIND_LABEL = { skill: '技能', plugin: '插件', mcp: 'MCP', agentloop: 'AgentLoop', sensor: '传感器', graph: '图谱' };
   const ROOT_KIND_LABEL = { builtin: '内置', sandbox: '沙盒', user: '用户' };
-  // 插件卡片元信息行：实际来源（origin）/ 声明放置位置（root）与依赖清单（dependency）
+  // 插件卡片元信息行：声明放置位置（root）不一致告警与依赖清单（dependency）；
+  // 实际来源（origin）已并入标题行，与「面板/未显示」等 chip 同行展示。
   function renderPluginMeta(card, p) {
     const row = HOST.document.createElement('div');
     row.className = 'cfg-card-meta';
@@ -475,8 +476,6 @@
       el.textContent = text;
       return el;
     };
-    const origin = ROOT_KIND_LABEL[p.origin] || p.origin || '';
-    if (origin) row.appendChild(chip('来源 ' + origin));
     // 声明了 root 却与实际放置位置不符 → 标黄提示
     if (p.root && p.rootOk === false) {
       row.appendChild(chip('声明 ' + (ROOT_KIND_LABEL[p.root] || p.root), 'warn'));
@@ -506,6 +505,15 @@
     st.className = 'cfg-chip ' + (vis ? 'on' : 'off');
     st.textContent = type === 'panel' ? (vis ? '显示中' : '未显示') : (vis ? '已启用' : '已关闭');
     h.titleRow.appendChild(st);
+    // 来源 chip：插件实际所在根（plugin.json 的 root → 后端回填 origin），
+    // 与「面板/未显示」等 chip 同行，直接显示「内置/沙盒/用户」。
+    const originName = ROOT_KIND_LABEL[p.origin] || p.origin || '';
+    if (originName) {
+      const oc = HOST.document.createElement('span');
+      oc.className = 'cfg-chip type';
+      oc.textContent = originName;
+      h.titleRow.appendChild(oc);
+    }
     // 打开 / 关闭
     const tg = HOST.document.createElement('button');
     tg.className = 'btn cfg-edit';
