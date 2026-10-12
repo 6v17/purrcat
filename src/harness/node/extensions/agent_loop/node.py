@@ -3,199 +3,294 @@ import json
 import os
 from typing import Any, Dict
 
-from src.harness.enums import NodeState
+import yaml
+
+from src.agent.hook_handler import HookHandler
 from src.harness.node.agent_node import AgentNode
-from src.utils.path import convert_sandbox_path
+from src.harness.utils.llm_helper import call_llm
+from src.harness.utils.tool_helper import extract_tool_calling, get_system_schema
+from src.utils.config import AGENT_VM_DIR
+from src.utils.paradigm_api import resolve_paradigm_path
+
+SANDBOX_TASKSPACE_ROOT = "/agent_vm/_taskspace"
 
 
 class Node(AgentNode):
-    """全能 Agent 循环：支持纯文本总结，也支持多文件强制验收"""
+    """范式（agentloop）驱动的智能体循环，与 src/agent 主循环语义对齐。
+
+    - 输入一个符合 YAML 格式的 agentloop（也可传范式名或绝对路径），按 hook 驱动执行；
+    - 循环终止：模型不再调用工具且 on_loop_end 全部通过（尊重 expect: fail 与 loop_end_max_retry）；
+    - summary：优先读取 @TASKSPACE/<summary_file>，缺失回退最后一条 assistant 文本。
+    """
+
+    def _resolve_agentloop(self, raw, context) -> tuple:
+        """解析 agentloop 输入，返回 (config_dict, paradigm_path_or_None)。"""
+        if isinstance(raw, dict):
+            return raw, None
+
+        if isinstance(raw, str) and raw.strip():
+            text = raw.strip()
+            try:
+                loaded = yaml.safe_load(text)
+            except Exception:
+                loaded = None
+            if isinstance(loaded, dict) and ("hooks" in loaded or "name" in loaded):
+                return loaded, None
+            # 否则视为范式名或绝对路径
+            if os.path.isabs(text) and os.path.exists(text):
+                with open(text, "r", encoding="utf-8") as f:
+                    return (yaml.safe_load(f) or {}), text
+            path = resolve_paradigm_path(text)
+            self.log(context, "SYSTEM", f"📄 [AgentLoop] 从范式文件加载: {path}")
+            with open(path, "r", encoding="utf-8") as f:
+                return (yaml.safe_load(f) or {}), path
+
+        path = resolve_paradigm_path(None)
+        self.log(context, "SYSTEM", f"📄 [AgentLoop] 未提供 agentloop，回退默认范式: {path}")
+        with open(path, "r", encoding="utf-8") as f:
+            return (yaml.safe_load(f) or {}), path
 
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        self.log(context, "SYSTEM", "🤖 [Agent循环] 开始执行")
+        self.log(context, "SYSTEM", "🤖 [Agent循环] 开始执行（范式驱动）")
 
-        dynamic_info = self.unpack(inputs, "task_done_info")
-        if dynamic_info:
-            try:
-                if isinstance(dynamic_info, str):
-                    self.task_done_info = json.loads(dynamic_info)
-                elif isinstance(dynamic_info, dict):
-                    self.task_done_info = dynamic_info
-                self.log(
-                    context,
-                    "SYSTEM",
-                    f"🎯 [强制验收目标]:\n{json.dumps(self.task_done_info, indent=2, ensure_ascii=False)}",
+        # 1) 构建 hook 执行器
+        config_dict, paradigm_path = self._resolve_agentloop(
+            self.unpack(inputs, "agentloop"), context
+        )
+        handler = HookHandler(config_dict=config_dict, paradigm_path=paradigm_path)
+
+        # 2) taskspace（按 (task_name, node_id) 稳定复用，有效防重复）
+        taskspace_host = os.path.join(
+            AGENT_VM_DIR, "_taskspace", context.task_name, self.node_id
+        )
+        os.makedirs(taskspace_host, exist_ok=True)
+        sandbox_dir = f"{SANDBOX_TASKSPACE_ROOT}/{context.task_name}/{self.node_id}"
+        handler.add_alias("@TASKSPACE", host_path=taskspace_host, content=sandbox_dir)
+        self.log(context, "SYSTEM", f"🗂️ [TASKSPACE] 专属工作目录: {sandbox_dir}")
+
+        # 3) 记忆 + 上游 messages + force_push
+        messages = self.load_memory_from_file(context)
+        newly_user = []
+        upstream = self.unpack(inputs, "messages") or []
+        if upstream:
+            messages.extend(upstream)
+            newly_user += [m for m in upstream if m.get("role") == "user"]
+            await asyncio.to_thread(self.append_memory_to_file, context, upstream)
+
+        pending = context.node_memory.setdefault(self.node_id, {}).pop("force_push", [])
+        if pending:
+            self.log(context, "SYSTEM", f"🔔 [人工指令] 收到 {len(pending)} 条人工指令")
+            fps = [{"role": "user", "content": f"[人工指令] {m}"} for m in pending]
+            messages.extend(fps)
+            newly_user += fps
+            await asyncio.to_thread(self.append_memory_to_file, context, fps)
+
+        messages = self._sanitize_messages(messages)
+
+        # 4) on_input_received：对本批新增 user 消息触发
+        if newly_user:
+            await self._fire_hooks(
+                handler,
+                "on_input_received",
+                messages,
+                context,
+                epoch=0,
+                received_messages=[
+                    {"type": "user", "content": str(m.get("content", ""))}
+                    for m in newly_user
+                ],
+                fire_input=False,
+            )
+
+        # 5) 系统提示：仅当 messages 无 system 角色时构建
+        if not any(m.get("role") == "system" for m in messages):
+            results = handler.execute("on_build_system_prompt", epoch=0)
+            parts = [r["inject_prompt"] for r in results if r.get("inject_prompt")]
+            if parts:
+                sys_msg = {"role": "system", "content": "\n\n---\n\n".join(parts)}
+                messages.insert(0, sys_msg)
+                await asyncio.to_thread(
+                    self.append_memory_to_file, context, [sys_msg]
                 )
-            except Exception as e:
+
+        # 6) on_loop_start
+        await self._fire_hooks(handler, "on_loop_start", messages, context, epoch=0)
+
+        # 7) 主循环
+        tools = get_system_schema()
+        used_tools: Dict[str, list] = {}
+        loop_epoch = 0
+        loop_end_retry = 0
+        last_assistant_text = ""
+
+        while True:
+            loop_epoch += 1
+            self.log(context, "SYSTEM", f"🔄 [Agent循环] 开始新一轮思考 (epoch={loop_epoch})")
+            await self._fire_hooks(
+                handler, "on_loop_epoch", messages, context, epoch=loop_epoch
+            )
+
+            response, messages = await call_llm(context.model, messages, tools)
+            self._accumulate_tokens(context, response)
+            assistant_msg = response.choices[0].message
+
+            finish_reason = getattr(response.choices[0], "finish_reason", None)
+            if finish_reason == "length":
                 self.log(
                     context,
                     "WARNING",
-                    f"⚠️ [动态规则挂载] 解析失败，将不使用强校验: {e}",
-                )
-        else:
-            self.log(
-                context,
-                "SYSTEM",
-                "ℹ️ [动态规则] 未收到动态规则，使用默认配置",
-            )
-
-        my_memory = context.node_memory.setdefault(self.node_id, {})
-
-        # ========================================================
-        # 🌟 核心修复开始：适配新架构，从节点专属的独立硬盘文件加载记忆
-        mem_path = self.get_memory_file_path(context)
-        messages = []
-        if os.path.exists(mem_path):
-            with open(mem_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line:
-                        messages.append(json.loads(line))
-
-        # 🌟 如果硬盘里没记忆（说明是首次运行），才把上游数据塞入并落盘，防止重复塞入
-        if not messages:
-            upstream_msgs = self.unpack(inputs, "messages") or []
-            if upstream_msgs:
-                messages.extend(upstream_msgs)
-                await asyncio.to_thread(
-                    self.append_memory_to_file, context, upstream_msgs
+                    "⚠️ [输出截断] 模型输出因长度上限被截断，本轮工具参数可能不完整",
                 )
 
-        # 🌟 提取人工干预的指令，并立刻追加落盘防丢失
-        pending_push = my_memory.pop("force_push", [])
-        has_manual_push = bool(pending_push)
-        if pending_push:
-            self.log(
-                context, "SYSTEM", f"🔔 [人工指令] 收到 {len(pending_push)} 条人工指令"
-            )
-            force_push_msgs = [
-                {"role": "user", "content": f"[人工指令] {msg}"} for msg in pending_push
-            ]
-            messages.extend(force_push_msgs)
+            if assistant_msg.content:
+                last_assistant_text = assistant_msg.content
+                preview = (
+                    assistant_msg.content[:200] + "..."
+                    if len(assistant_msg.content) > 200
+                    else assistant_msg.content
+                )
+                self.log(context, "SYSTEM", f"💭 [模型回复] {preview}")
+
             await asyncio.to_thread(
-                self.append_memory_to_file, context, force_push_msgs
+                self.append_memory_to_file, context, [messages[-1]]
             )
-        # 核心修复结束
-        # ========================================================
+            await asyncio.to_thread(self._sync_dump_memory, context, messages)
 
-        target_files_raw = self.unpack(inputs, "target_files") or []
-        if isinstance(target_files_raw, str):
-            target_files = [f.strip() for f in target_files_raw.split(",") if f.strip()]
-        else:
-            target_files = target_files_raw
+            tool_calls = extract_tool_calling(response)
+            if tool_calls:
+                self.log(
+                    context, "SYSTEM", f"🔧 [工具调用] 检测到 {len(tool_calls)} 个工具调用"
+                )
+                current_tools: Dict[str, list] = {}
+                for t in tool_calls:
+                    args = {}
+                    if t.function.arguments:
+                        try:
+                            args = json.loads(t.function.arguments)
+                        except Exception:
+                            args = {}
+                    used_tools.setdefault(t.function.name, []).append(args)
+                    current_tools.setdefault(t.function.name, []).append(args)
 
-        check_paths = []
-        if target_files:
-            self.log(context, "SYSTEM", f"📁 [文件验收] 目标文件列表: {target_files}")
-            for fpath in target_files:
-                if not fpath.startswith("/agent_vm"):
-                    raise ValueError(f"文件路径必须以 '/agent_vm' 开头: {fpath}")
-                check_paths.append(convert_sandbox_path(fpath))
-        else:
-            self.log(context, "SYSTEM", "📁 [文件验收] 无目标文件，将直接输出总结")
+                tool_msgs = await self.run_tool_calls(response, context)
+                messages.extend(tool_msgs)
+                if tool_msgs:
+                    await asyncio.to_thread(
+                        self.append_memory_to_file, context, tool_msgs
+                    )
+                    await asyncio.to_thread(self._sync_dump_memory, context, messages)
 
-        # ========================================================
-        # 🌟 新增：注入 task_done 工具使用说明与格式强校验文案 (User角色)
-        # ========================================================
-        task_done_prompt = (
-            "【任务完结要求】\n"
-            "当你认为已经完成了本阶段的核心思考和所有必要操作后，请务必调用 `task_done` 工具来标注任务已完成并移交控制权。\n"
-        )
+                await self._fire_hooks(
+                    handler,
+                    "on_tool_calling",
+                    messages,
+                    context,
+                    epoch=loop_epoch,
+                    used_tools=current_tools,
+                )
+                continue
 
-        if getattr(self, "task_done_info", None):
-            task_done_prompt += "⚠️ 注意：调用 `task_done` 工具时，你的 `summary` 参数必须严格包含以下 JSON 字段及内容：\n"
-            for key, desc in self.task_done_info.items():
-                task_done_prompt += f'  - "{key}": {desc}\n'
-        else:
-            task_done_prompt += "⚠️ 注意：调用 `task_done` 工具时，请在 `summary` 参数中输出详尽的任务执行总结。\n"
-
-        # 检查是否已经注入过该提示（防止任务挂起恢复或重跑时重复写入）
-        has_injected = False
-        for msg in messages[-5:]:
-            if msg.get("role") == "user" and "【任务完结要求】" in msg.get(
-                "content", ""
-            ):
-                has_injected = True
+            # 无工具调用 → 判定是否结束循环
+            all_success = await self._fire_hooks(
+                handler,
+                "on_loop_end",
+                messages,
+                context,
+                epoch=loop_epoch,
+                used_tools=used_tools,
+                loop_end_retry=loop_end_retry,
+            )
+            if all_success:
+                self.log(context, "SYSTEM", "✅ [循环结束] 所有结束条件通过，正常关闭循环")
                 break
 
-        # 🌟 人工指令注入时只注入指令本身，不再附加"任务完结要求"文案
-        if not has_injected and not has_manual_push:
-            # 修改点：这里将 role 从 system 改为了 user
-            user_msg = {"role": "user", "content": task_done_prompt}
-            messages.append(user_msg)
-            # 立刻追加落盘，保证前端气泡也能看到这条明确的指令
-            await asyncio.to_thread(self.append_memory_to_file, context, [user_msg])
-        # ========================================================
+            loop_end_retry += 1
+            hint = {"type": "workflow_hint", "content": "未满足结束循环条件，已自动打回"}
+            hint_msg = {"role": "user", "content": json.dumps(hint, ensure_ascii=False)}
+            messages.append(hint_msg)
+            await asyncio.to_thread(self.append_memory_to_file, context, [hint_msg])
+            await self._fire_hooks(
+                handler,
+                "on_input_received",
+                messages,
+                context,
+                epoch=0,
+                received_messages=[hint],
+                fire_input=False,
+            )
 
-        tools = self.get_all_tools()
+        # 8) summary：优先 @TASKSPACE/<summary_file>，回退最后 assistant 文本
+        summary = self._read_summary(context, taskspace_host)
+        if not summary:
+            summary = last_assistant_text or "任务完成"
 
-        MAX_ERRORS = 3
-        error_count = 0
+        display_summary = (
+            str(summary)[:1500] + "..." if len(str(summary)) > 1500 else str(summary)
+        )
+        self.log(context, "SYSTEM", f"📊 [总结内容]:\n{display_summary}")
+        return {"messages": messages, "summary": summary}
 
-        # 🌟 修复：获取当前节点的专属记忆文件路径
-        mem_path = self.get_memory_file_path(context)
+    async def _fire_hooks(
+        self, handler, stage, messages, context, fire_input=True, **kwargs
+    ):
+        """执行 hook → 以 role=user 注入 inject_prompt →（可选）触发 on_input_received。
 
-        try:
-            while True:
-                self.log(context, "SYSTEM", "🔄 [Agent循环] 开始新一轮思考...")
+        返回 all_success（无 hook 时视为 True）。
+        """
+        results = handler.execute(stage, **kwargs)
+        all_success = all(r.get("success") for r in results) if results else True
 
-                # 🌟 修复：将 mem_path 传给底层，彻底激活 LLM 回复后的实时追加落盘特性！
-                loop_result = await self.run_agent_loop(
-                    context, messages, tools, mem_path
+        injected = []
+        for r in results:
+            if r.get("inject_prompt"):
+                hint = {"type": "workflow_hint", "content": r["inject_prompt"]}
+                msg = {"role": "user", "content": json.dumps(hint, ensure_ascii=False)}
+                messages.append(msg)
+                injected.append(hint)
+
+        if injected:
+            await asyncio.to_thread(
+                self.append_memory_to_file, context, messages[-len(injected):]
+            )
+            # 非递归触发「收到输入时」：钩子自身的注入不再触发下一层
+            if fire_input:
+                sub = handler.execute(
+                    "on_input_received", epoch=0, received_messages=injected
                 )
-                messages = loop_result["messages"]
-                summary = loop_result["summary"]
-
-                if not check_paths:
-                    self.log(
-                        context, "SYSTEM", "✅ [任务完结] 无文件校验需求，输出总结。"
-                    )
-                    display_summary = (
-                        str(summary)[:1500] + "..."
-                        if len(str(summary)) > 1500
-                        else str(summary)
-                    )
-                    self.log(context, "SYSTEM", f"📊 [总结内容]:\n{display_summary}")
-                    return {"messages": messages, "summary": summary}
-
-                missing_files = [
-                    f
-                    for i, f in enumerate(target_files)
-                    if not os.path.exists(check_paths[i])
-                ]
-                if not missing_files:
-                    self.log(context, "SYSTEM", "✅ [验收通过] 所有目标文件均已生成！")
-                    display_summary = (
-                        str(summary)[:1500] + "..."
-                        if len(str(summary)) > 1500
-                        else str(summary)
-                    )
-                    self.log(context, "SYSTEM", f"📊 [总结内容]:\n{display_summary}")
-                    return {"messages": messages, "summary": summary}
-
-                error_count += 1
-                if error_count >= MAX_ERRORS:
-                    self.log(
-                        context,
-                        "ERROR",
-                        f"❌ [验收失败] 连续 {error_count} 次未通过，挂起等待人工干预",
-                    )
-                    context.node_state[self.node_id] = NodeState.WAITING
-                    raise asyncio.CancelledError(
-                        f"连续失败，以下文件未生成: {missing_files}"
+                sub_msgs = []
+                for r in sub:
+                    if r.get("inject_prompt"):
+                        h = {"type": "workflow_hint", "content": r["inject_prompt"]}
+                        m = {
+                            "role": "user",
+                            "content": json.dumps(h, ensure_ascii=False),
+                        }
+                        messages.append(m)
+                        sub_msgs.append(m)
+                if sub_msgs:
+                    await asyncio.to_thread(
+                        self.append_memory_to_file, context, sub_msgs
                     )
 
-                self.log(
-                    context,
-                    "WARNING",
-                    f"⚠️ [验收打回] 第 {error_count}/{MAX_ERRORS} 次，缺失文件: {missing_files}",
-                )
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": f"系统未检测到以下文件：{missing_files}。请确保使用工具将内容写入这些文件中！",
-                    }
-                )
+        return all_success
 
-        except asyncio.CancelledError:
-            raise
+    @staticmethod
+    def _accumulate_tokens(context, response):
+        usage = getattr(response, "usage", None)
+        if usage and hasattr(context, "total_tokens"):
+            with context._lock:
+                context.total_tokens += usage.total_tokens
+
+    def _read_summary(self, context, taskspace_host) -> str:
+        filename = (self.config.get("summary_file") or "summary.txt").strip()
+        path = os.path.join(taskspace_host, filename)
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    text = f.read().strip()
+                if text:
+                    self.log(context, "SYSTEM", f"📥 [总结转递] 读取 {filename} 成功")
+                    return text
+            except Exception as e:
+                self.log(context, "WARNING", f"⚠️ [总结读取失败] {e}")
+        return ""

@@ -34,23 +34,26 @@ CONTENT_ALIASES = tuple(PATH_ALIASES.keys()) + ("@SYS", "@USERQUERY")
 _REF_RE = re.compile("|".join(re.escape(a) for a in CONTENT_ALIASES))
 
 
-def _expand_refs(value, resolve):
+def _expand_refs(value, resolve, ref_re=None):
     """把钩子参数里的 @引用 展开成具体内容，返回新对象，不改动 YAML 载入的原始配置。
 
     resolve(alias) 返回该引用的内容；返回 None 表示当前场景不展开（保持原始 @符号）。
     单次左到右替换，展开出来的内容不会被再次当作引用处理。
+    ref_re: 引用正则；缺省用模块级 _REF_RE（兼容主循环），harness 会传入含动态别名的实例正则。
     """
+    if ref_re is None:
+        ref_re = _REF_RE
 
     def sub(m):
         text = resolve(m.group(0))
         return m.group(0) if text is None else text
 
     if isinstance(value, str):
-        return _REF_RE.sub(sub, value)
+        return ref_re.sub(sub, value)
     if isinstance(value, dict):
-        return {k: _expand_refs(v, resolve) for k, v in value.items()}
+        return {k: _expand_refs(v, resolve, ref_re) for k, v in value.items()}
     if isinstance(value, list):
-        return [_expand_refs(v, resolve) for v in value]
+        return [_expand_refs(v, resolve, ref_re) for v in value]
     return value
 
 
@@ -73,11 +76,39 @@ def _default_paradigm_path() -> str:
 
 
 class HookHandler:
-    def __init__(self, paradigm_path=None):
+    def __init__(self, paradigm_path=None, config_dict=None):
+        # 动态别名（供 harness 注入 @TASKSPACE 等场景专用引用）
+        self.extra_path_aliases = {}  # 别名 → host 路径（file_operation 用）
+        self.extra_content_aliases = {}  # 别名 → 内容字符串（非 file_operation 参数展开用）
+        self._ref_re = self._build_ref_re()
+
+        # 直接以内存 dict 构造（harness 传入 YAML 解析结果），跳过文件加载
+        if config_dict is not None:
+            self.paradigm_path = paradigm_path or "<inline>"
+            self.config = config_dict if isinstance(config_dict, dict) else {}
+            self.hooks = self.config.get("hooks", {}) or {}
+            return
+
         self.paradigm_path = paradigm_path or _default_paradigm_path()
         self.config = {}
         self.hooks = {}
         self.load_config()
+
+    def _build_ref_re(self):
+        aliases = CONTENT_ALIASES + tuple(self.extra_content_aliases.keys())
+        return re.compile("|".join(re.escape(a) for a in aliases))
+
+    def add_alias(self, alias: str, host_path: str = None, content: str = None):
+        """注册动态引用别名（如 @TASKSPACE）。
+
+        host_path: file_operation 里解析为该 host 路径（支持 @ALIAS/sub 前缀拼接）。
+        content: 在非 file_operation 参数里展开成的内容（如沙盒可见路径字符串）。
+        """
+        if host_path is not None:
+            self.extra_path_aliases[alias] = host_path
+        if content is not None:
+            self.extra_content_aliases[alias] = content
+        self._ref_re = self._build_ref_re()
 
     def load_config(self, path=None):
         if path:
@@ -132,6 +163,7 @@ class HookHandler:
                     params = _expand_refs(
                         params,
                         lambda alias: self._ref_content(alias, kwargs, ref_cache),
+                        self._ref_re,
                     )
                 if not self._should_trigger(params, epoch):
                     continue
@@ -194,11 +226,18 @@ class HookHandler:
     # 工具函数区
     # ==========================================
 
-    @staticmethod
-    def _resolve_path(path: str) -> str:
+    def _resolve_path(self, path: str) -> str:
         """把 PARADIGM 里的路径符号/前缀解析成绝对路径"""
         if path.startswith("@"):
-            return PATH_ALIASES.get(path, path)
+            aliases = {**PATH_ALIASES, **self.extra_path_aliases}
+            if path in aliases:
+                return aliases[path]
+            # 前缀匹配：@ALIAS/sub/path → host/sub/path（供 @TASKSPACE/xxx 等用法）
+            for alias, host in aliases.items():
+                if path.startswith(alias + "/") or path.startswith(alias + "\\"):
+                    rest = path[len(alias):].lstrip("/\\")
+                    return os.path.join(host, rest)
+            return path
         if path.startswith(".purrcat/"):
             return os.path.join(PURRCAT_DIR, path[len(".purrcat/") :])
         if path.startswith("src/"):
@@ -233,6 +272,9 @@ class HookHandler:
                 )
         elif alias == "@SYS":
             text = self._get_system_info()
+        elif alias in self.extra_content_aliases:
+            # 动态别名（如 @TASKSPACE）：直接展开为注册的内容（沙盒可见路径），不读文件
+            text = self.extra_content_aliases[alias]
         else:
             path = PATH_ALIASES.get(alias)
             if path and os.path.exists(path):

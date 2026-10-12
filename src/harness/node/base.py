@@ -37,9 +37,6 @@ class BaseNode:
         self.node_dir = os.path.dirname(self.module_path)
 
         self.metadata = self._load_metadata()
-        self.task_done_info = self.config.get(
-            "task_done_info", self.metadata.get("task_done_info", {})
-        )
 
     def _load_metadata(self) -> dict:
         base_path = Path(self.node_dir)
