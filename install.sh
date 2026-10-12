@@ -246,9 +246,6 @@ info "Syncing Python dependencies (uv sync) ..."
 info "Installing desktop dependencies (npm install) ..."
 ( cd "$INSTALL_DIR" && npm install ) || fail "npm install failed"
 
-info "Installing frontend dependencies (npm install --prefix ui) ..."
-( cd "$INSTALL_DIR" && npm install --prefix ui ) || fail "npm install --prefix ui failed"
-
 # ---- 4. Embedding model / Docker ----
 ensure_embedding
 ensure_docker

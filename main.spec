@@ -9,7 +9,7 @@ from PyInstaller.utils.hooks import collect_all
 # 注意：spec 由 exec() 执行，没有 __file__，PyInstaller 执行前会切到 spec 所在目录，用 os.getcwd()
 sys.path.insert(0, os.path.abspath(os.getcwd()))
 
-datas = [('ui/dist', 'ui/dist')]
+datas = [('ui/web-minimal', 'ui/web-minimal')]
 # ACP 转接脚本随包分发：启动时部署到 ~/.purrcat/bin/，编辑器配置指向该稳定路径
 datas += [('scripts/acp_relay.py', 'scripts')]
 binaries = []

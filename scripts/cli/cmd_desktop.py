@@ -64,14 +64,11 @@ def cmd_start():
     if not os.path.isdir(os.path.join(root, "node_modules")):
         print("[*] 首次启动，安装桌面端依赖 (npm install)...")
         _run("npm install", cwd=root)
-    if not os.path.isdir(os.path.join(root, "ui", "node_modules")):
-        print("[*] 首次启动，安装前端依赖 (npm install --prefix ui)...")
-        _run("npm install --prefix ui", cwd=root)
 
     _check_for_updates(root)
 
     print("$ npm run dev")
-    print("[*] 启动中（backend + vite + electron），按 Ctrl+C 退出...")
+    print("[*] 启动中（backend + electron），按 Ctrl+C 退出...")
     sys.exit(subprocess.run("npm run dev", shell=True, cwd=root).returncode)
 
 
@@ -96,7 +93,6 @@ def cmd_update():
     _run("git pull --ff-only", cwd=root)
     _run("uv sync", cwd=root)
     _run("npm install", cwd=root)
-    _run("npm install --prefix ui", cwd=root)
 
     print("")
     print("[+] 更新完成! 运行 purrcat desktop start 启动。")

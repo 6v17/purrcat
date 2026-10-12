@@ -5,7 +5,6 @@ import { findAvailablePort } from '../electron/api-port.cjs';
 
 const children = new Set();
 const isWindows = process.platform === 'win32';
-const npmCommand = isWindows ? 'npm.cmd' : 'npm';
 const npxCommand = isWindows ? 'npx.cmd' : 'npx';
 const uvCommand = isWindows ? 'uv.exe' : 'uv';
 
@@ -102,14 +101,8 @@ async function main() {
     ['run', 'python', 'main.py', '--api', '--headless', '--api-port', String(apiPort)],
     childEnv,
   );
-  const vite = spawnChild(npmCommand, ['run', 'dev', '--prefix', 'ui'], childEnv);
 
-  await Promise.all([
-    waitForPort(apiPort, backend, 'Python backend'),
-    // vite 默认按 dns 解析 'localhost' 的结果绑定监听栈（Windows 上常为 ::1），
-    // 探测 127.0.0.1 会 ECONNREFUSED；用同名 host 探测才能命中同一协议栈
-    waitForPort(3000, vite, 'Vite dev server', 60_000, 'localhost'),
-  ]);
+  await waitForPort(apiPort, backend, 'Python backend');
 
   const electron = spawnChild(
     npxCommand,

@@ -31,11 +31,10 @@
 宿主专用。插件一般经 `callAction` 间接使用。
 
 ### GET `/api/webmin/manifest`
-返回全局 `ui_mode` 与当前扫描到的全部插件。新增插件后无需重启即可感知（前端 `Ctrl+R`）。
+返回当前扫描到的全部插件。新增插件后无需重启即可感知（前端 `Ctrl+R`）。
 
 ```json
 {
-  "ui_mode": "normal | minimal",
   "plugins": [
     {
       "id": "builtin-history", "name": "历史", "icon": "history",
@@ -129,7 +128,6 @@
 | GET | `/api/config/deploy` | 各依赖项就绪状态 + 部署任务进度与日志（前端轮询） |
 | POST | `/api/config/deploy/{item}` | 一键部署指定依赖项（后台线程，进度走 GET /deploy 轮询） |
 | GET / PUT | `/api/config/sandbox-registry` | 沙箱镜像 registry 前缀（留空=自动依次尝试官方与公共源） |
-| GET / PUT | `/api/config/view` | 读取 / 写入 `ui_mode`（`normal` / `minimal`）；重启 Electron 后生效 |
 | GET / PUT | `/api/config/markdown/{filename}` | 读取 / 保存 `SOUL.md`、`GOAL.md`（`filename` 仅允许 `SOUL`、`GOAL`） |
 | GET | `/api/config/info` | 读取 `.purrcat/core/info.json`（提供 skills、workshops 列表） |
 | GET / PUT | `/api/config/cron` | 读取 / 更新定时配置 |

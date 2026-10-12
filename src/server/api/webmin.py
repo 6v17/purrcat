@@ -1,6 +1,6 @@
 """极简模式（web-minimal）插件系统 API。
 
-与现有 React UI 完全独立：宿主为纯静态页面（ui/web-minimal），它通过本路由
+极简模式（web-minimal）宿主为纯静态页面（ui/web-minimal），它通过本路由
 获取插件清单、按需读取插件静态文件（热插拔）、持久化宿主配置，并转发插件
 自带后端的 RPC 调用。
 
@@ -288,7 +288,7 @@ def _resolve_plugin_subdir(plugin_id: str, rel_path: str) -> str | None:
 
 @router.get("/manifest")
 def api_webmin_manifest():
-    """返回全局 ui_mode + 当前已扫描到的全部插件列表（未新增插件即热插拔可感知）。
+    """返回当前已扫描到的全部插件列表（未新增插件即热插拔可感知）。
 
     每条插件附 configSchema（插件自声明）与 config（webminConfig 中的已存值），
     有效配置 = configSchema 默认值 ∪ config 覆盖；backend 表明该插件是否自带后端。
@@ -321,10 +321,9 @@ def api_webmin_manifest():
         p["slot"] = _slot_id(p)
         plugins.append(p)
     return {
-        "ui_mode": str(get_global_settings().get("ui_mode") or "normal"),
         "plugins": plugins,
-        # 最左图标栏持久化状态（stage 0=收起 1=仅图标 2=图标+名称 + 各插件隐藏开关 + 白条透明度）
-        "rail": stored_cfg.get("rail") or {"stage": 1, "hidden": {}, "opacity": 1},
+        # 最左图标栏持久化状态（stage 0=仅图标 1=图标+文字 + 各插件隐藏开关 + 白条透明度）
+        "rail": stored_cfg.get("rail") or {"stage": 0, "hidden": {}, "opacity": 1},
         # 宿主固有中栏容器配置（透明度/默认宽度），存于 plugins['panel-container']
         "panelContainer": stored.get("panel-container") or {},
         # 单例槽当前选中的插件（fixed: {area: plugin_id}；panel 容器: {panel: plugin_id|'__none__'}），
@@ -392,13 +391,13 @@ def api_webmin_put_config(body: dict):
         try:
             stage = int(rail.get("stage"))
         except (TypeError, ValueError):
-            stage = 1
+            stage = 0
         try:
             opacity = float(rail.get("opacity"))
         except (TypeError, ValueError):
             opacity = 1
         cfg["rail"] = {
-            "stage": stage if 0 <= stage <= 2 else 1,
+            "stage": stage if 0 <= stage <= 1 else 0,
             "opacity": max(0.0, min(1.0, opacity)),
             "hidden": (
                 rail.get("hidden") if isinstance(rail.get("hidden"), dict) else {}

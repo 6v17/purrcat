@@ -192,10 +192,6 @@ try {
     Info "Installing desktop dependencies (npm install) ..."
     npm.cmd install
     if ($LASTEXITCODE -ne 0) { Fail "npm install failed" }
-
-    Info "Installing frontend dependencies (npm install --prefix ui) ..."
-    npm.cmd install --prefix ui
-    if ($LASTEXITCODE -ne 0) { Fail "npm install --prefix ui failed" }
 } finally {
     Pop-Location
 }

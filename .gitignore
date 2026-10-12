@@ -54,15 +54,10 @@ htmlcov/
 
 
 node_modules/
-ui/node_modules/
 test_mcp.py
 .next/
-ui/.next/
 out/
-ui/out/
 build/
-ui/build/
-ui/dist/
 
 # PyInstaller & Electron 构建产物
 dist/

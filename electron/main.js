@@ -6,14 +6,13 @@ const { app, BrowserWindow, Menu, dialog, ipcMain, WebContentsView, session, she
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const {
   DEFAULT_API_PORT,
   findAvailablePort,
   parsePort,
 } = require('./api-port.cjs');
 
-// 关掉 Chromium 的 HTTP→HTTPS 自动升级：vite/后端都跑明文 http://localhost，
+// 关掉 Chromium 的 HTTP→HTTPS 自动升级：后端跑明文 http://localhost，
 // 升级会导致 ERR_SSL_PROTOCOL_ERROR。必须在 app ready 前设置。
 app.commandLine.appendSwitch('disable-features', 'HttpsUpgrades');
 
@@ -33,7 +32,6 @@ if (fs.existsSync(GPU_FLAG)) {
 }
 
 const IS_DEV = !!process.env.ELECTRON_DEV;
-const DEV_URL = 'http://localhost:3000';   // vite dev server（热更新）
 
 let apiPort = DEFAULT_API_PORT;
 let backendConfigError = null;
@@ -45,18 +43,6 @@ function getProdUrl() {
 // 极简宿主（纯静态，后端托管）—— 随 apiPort 动态，端口 fallback 后仍指向正确后端
 function getMinimalUrl() {
   return `${getProdUrl()}/minimal/`;
-}
-
-// 🌟 极简模式开关：读取全局配置 ~/.purrcat/settings.json 的 ui_mode
-// 'minimal' -> Electron 启动加载极简宿主；否则（normal/缺省）加载主 React UI。
-function readUiMode() {
-  try {
-    const settingsPath = path.join(os.homedir(), '.purrcat', 'settings.json');
-    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-    return settings.ui_mode === 'minimal' ? 'minimal' : 'normal';
-  } catch (_) {
-    return 'normal';
-  }
 }
 
 // ===== 单实例锁 =====
@@ -156,7 +142,7 @@ function showView(tabId) {
     t.view.setBounds(currentBounds);
     try { t.view.webContents.setZoomFactor(currentScale || 1); } catch (_) {}
   }
-  // 🌟 主动聚焦：Electron 31 的 WebContentsView 点击不会转移键盘焦点（宿主 React 页面一直持有），
+  // 🌟 主动聚焦：Electron 31 的 WebContentsView 点击不会转移键盘焦点（宿主页面一直持有），
   //    页面 document.hasFocus()=false → requestPointerLock 抛 WrongDocumentError，
   //    表现为"游戏只能看不能玩"（FPS 视角锁不了鼠标）
   try { t.view.webContents.focus(); } catch (_) {}
@@ -293,20 +279,12 @@ function createWindow() {
     },
   });
 
-  if (readUiMode() === 'minimal') {
-    // 极简模式：加载独立宿主（纯静态，由后端托管在 /minimal）。恒等后端就绪再加载。
-    mainWindow.loadURL('about:blank');
-    pollBackendAndLoad(getMinimalUrl());
-  } else if (IS_DEV) {
-    mainWindow.loadURL(DEV_URL);
-  } else {
-    // 生产模式：等后端就绪再 loadURL，避免端口未就绪导致空白页
-    mainWindow.loadURL('about:blank');
-    pollBackendAndLoad(getProdUrl());
-  }
+  // 加载极简宿主（纯静态，由后端托管在 /minimal）。恒等后端就绪再加载。
+  mainWindow.loadURL('about:blank');
+  pollBackendAndLoad(getMinimalUrl());
 
   // 重置主窗口页面缩放：Chromium 会按 origin 记住 Ctrl+滚轮/Ctrl+- 的缩放，
-  // 可能导致 React 主界面被意外缩小、进而让内置浏览器 bounds 错位。每次加载完成强制恢复 1.0。
+  // 可能导致界面被意外缩小、进而让内置浏览器 bounds 错位。每次加载完成强制恢复 1.0。
   mainWindow.webContents.on('did-finish-load', () => {
     try { mainWindow.webContents.setZoomFactor(1); } catch (_) {}
   });
@@ -342,8 +320,6 @@ function createWindow() {
     try { if (detachedWin && !detachedWin.isDestroyed()) detachedWin.destroy(); } catch (_) {}
     detachedWin = null;
     browserDetached = false;
-    try { if (ideDetachedWin && !ideDetachedWin.isDestroyed()) ideDetachedWin.destroy(); } catch (_) {}
-    ideDetachedWin = null;
   });
 }
 
@@ -392,108 +368,10 @@ ipcMain.handle('dialog:open', async (_e, opts) => {
   return r.canceled ? [] : r.filePaths;
 });
 
-// ===== IPC: IDEPanel File Operations =====
-// 目录列表：返回 { name, isDir, path }[]
-ipcMain.handle('fs:readDir', async (_e, dirPath) => {
-  try {
-    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-    return entries
-      .filter((e) => !e.name.startsWith('.')) // 隐藏文件不显示
-      .map((e) => ({
-        name: e.name,
-        isDir: e.isDirectory(),
-        path: path.join(dirPath, e.name),
-      }))
-      .sort((a, b) => {
-        // 文件夹排前面，然后按名称
-        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
-  } catch (err) {
-    console.error('[fs:readDir] failed:', err);
-    return [];
-  }
-});
-
-// 读取文件内容（文本）
-ipcMain.handle('fs:readFile', async (_e, filePath) => {
-  try {
-    const content = await fs.promises.readFile(filePath, 'utf-8');
-    return content;
-  } catch (err) {
-    console.error('[fs:readFile] failed:', err);
-    throw err;
-  }
-});
-
-// 文件元信息（大小），IDE 大文件拦截用
-ipcMain.handle('fs:stat', (_e, filePath) => {
-  try {
-    const st = fs.statSync(filePath);
-    return { size: st.size, isFile: st.isFile() };
-  } catch {
-    return null;
-  }
-});
-
-// 写入文件内容（文本，自动创建父目录）
-ipcMain.handle('fs:writeFile', async (_e, filePath, content) => {
-  try {
-    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.promises.writeFile(filePath, content, 'utf-8');
-    return true;
-  } catch (err) {
-    console.error('[fs:writeFile] failed:', err);
-    throw err;
-  }
-});
-
-// ===== IPC: IDE 独立窗口 =====
-let ideDetachedWin = null;
-
-ipcMain.handle('ide:detach', (_e, workspacePath) => {
-  if (ideDetachedWin) return;
-  const base = IS_DEV ? DEV_URL : getProdUrl();
-  const wsHash = workspacePath ? encodeURIComponent(workspacePath) : '';
-  // IDE 独立窗口走专用 /ide 路由，只渲染 IDE，不带聊天框
-  ideDetachedWin = new BrowserWindow({
-    width: 1200, height: 800,
-    title: 'PurrCat IDE',
-    titleBarStyle: 'hidden',
-    icon: APP_ICON,
-    autoHideMenuBar: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-  Menu.setApplicationMenu(null);
-  ideDetachedWin.loadURL(base + '/ide#workspace=' + wsHash);
-  ideDetachedWin.on('close', () => {
-    // 通知主窗口 IDE 已回归
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('ide:reattached');
-    }
-    ideDetachedWin = null;
-  });
-});
-
-ipcMain.handle('ide:reattach', () => {
-  if (!ideDetachedWin) return;
-  const w = ideDetachedWin;
-  ideDetachedWin = null;
-  w.removeAllListeners('close');
-  w.destroy();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('ide:reattached');
-  }
-});
-
 // ===== IPC: 内置浏览器 Tab 管理 =====
 
-// 阻止在内置浏览器中加载主窗口自身的 URL（localhost:3000 / 动态 API 端口），
-// 否则两个完整 React 应用共享同一 origin，localStorage/storage 事件 + Vite HMR WebSocket 形成循环风暴
+// 阻止在内置浏览器中加载主窗口自身的 URL（动态 API 端口），
+// 否则与主窗口共享同一 origin，localStorage/storage 事件形成循环风暴
 // 🌟 hostname 归一化：应用自身可能以 localhost / 127.0.0.1 / ::1 任一写法出现（后端按 127.0.0.1 启动，
 //    用户或 Agent 常敲 localhost），必须按「回环地址 + 应用端口」判定，否则 localhost:8000 这类会漏过。
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
@@ -507,7 +385,7 @@ function isSelfUrl(url) {
     if (u.pathname.startsWith('/api/')) return false;
     if (!LOOPBACK_HOSTS.has(u.hostname)) return false;
     const port = u.port || (u.protocol === 'https:' ? '443' : '80');
-    const appPorts = [DEV_URL, getProdUrl()].map(s => { try { return new URL(s).port; } catch { return null; } });
+    const appPorts = [getProdUrl()].map(s => { try { return new URL(s).port; } catch { return null; } });
     return appPorts.includes(port);
   } catch { return false; }
 }
@@ -524,7 +402,7 @@ ipcMain.handle('browser:new-tab', (_e, url) => {
     webPreferences: {
       contextIsolation: true,
       // 独立 session partition：隔离 localStorage/sessionStorage/ServiceWorker，
-      // 防止在内置浏览器里打开同 origin 页面（如 localhost:3000）时与主窗口形成 storage 事件循环
+      // 防止在内置浏览器里打开同 origin 页面（如后端地址）时与主窗口形成 storage 事件循环
       session: session.fromPartition('persist:browser'),
     },
   });
@@ -662,7 +540,7 @@ ipcMain.handle('browser:set-bounds', (_e, { x, y, w, h, scale }) => {
   }, 16);
 });
 
-// 隐藏内置浏览器：前端面板卸载时调用，把所有原生 view 移到屏外，避免盖住 React 工作区
+// 隐藏内置浏览器：前端面板卸载时调用，把所有原生 view 移到屏外，避免盖住工作区
 ipcMain.handle('browser:hide', () => {
   if (browserDetached) return; // 独立窗口模式下不隐藏
   browserHidden = true;
@@ -734,7 +612,7 @@ ipcMain.handle('browser:pick-start', async (_e, tabId) => {
 // 退出选取模式：view 恢复到容器 bounds，并恢复当前的 zoomFactor
 ipcMain.handle('browser:pick-end', (_e, tabId) => {
   _pickModeTabs.delete(tabId);
-  // 🌟 竞态修复：面板卸载时 React 清理顺序是 hide 先、pick 后，pick-end 会晚于 browser:hide 到达。
+  // 🌟 竞态修复：面板卸载时前端清理顺序是 hide 先、pick 后，pick-end 会晚于 browser:hide 到达。
   //    若无条件 showView 会把刚移到屏外的 view 又拉回屏幕盖住聊天区。
   //    面板隐藏时保持屏外，等重新挂载后的 set-bounds 恢复。
   if (!browserHidden) showView(tabId);
@@ -1152,7 +1030,7 @@ ipcMain.handle('win:close', (e) => { BrowserWindow.fromWebContents(e.sender)?.cl
 // ===== IPC: 应用重启（首次启动设置数据盘后自动重启生效）=====
 ipcMain.handle('app:restart', () => {
   if (IS_DEV) {
-    // 开发模式：backend/vite 由 `scripts/dev.mjs` 托管，relaunch 后这些进程会被一并杀掉，
+    // 开发模式：backend 由 `scripts/dev.mjs` 托管，relaunch 后该进程会被一并杀掉，
     // 新起的 Electron 也连不上（端口已随父进程退出）。这里只关闭应用，让用户手动重跑
     // `npm run dev` 使 data_root 生效即可。
     app.exit(0);
@@ -1509,79 +1387,11 @@ ipcMain.handle('browser:detach', () => {
 
 ipcMain.handle('browser:reattach', reattachBrowser);
 
-// 独立窗口拾取的 comment 转发给主窗口的 React 应用
+// 独立窗口拾取的 comment 转发给主窗口
 ipcMain.handle('browser:detached-comment', (_e, { pixelData, comment, url }) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('browser:comment', { pixelData, comment, url });
   }
-});
-
-ipcMain.handle('preview:open-file', (_e, { url, title, type }) => {
-  const safeUrl = escapeHtmlAttr(url);
-  const safeTitle = escapeHtmlAttr(title || 'Preview');
-
-  let mediaTag = '';
-  if (type === 'image') {
-    mediaTag = `<img src="${safeUrl}" alt="Preview">`;
-  } else if (type === 'video') {
-    mediaTag = `<video src="${safeUrl}" controls autoPlay></video>`;
-  } else {
-    mediaTag = `<iframe src="${safeUrl}" sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>`;
-  }
-
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${safeTitle}</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#FAF8F5; font-family:'Comic Sans MS',cursive,sans-serif; width:100vw; height:100vh; overflow:hidden; }
-  .container { width:100%; height:100%; border:4px solid #1A1A1A; background:#FFFFFF; display:flex; flex-direction:column; overflow:hidden; }
-  .header { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:3px solid rgba(26,26,26,0.15); flex-shrink:0; -webkit-app-region:drag; }
-  .header .title-icon { flex-shrink:0; color:#3498DB; -webkit-app-region:no-drag; }
-  .header h3 { font-size:16px; font-weight:900; letter-spacing:0.08em; color:#1A1A1A; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
-  .win-controls { display:flex; gap:8px; -webkit-app-region:no-drag; }
-  .win-btn { width:28px; height:28px; border:2px solid #1A1A1A; background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#1A1A1A; transition:all 0.15s; border-radius:6px 10px 5px 8px/8px 5px 10px 6px; }
-  .win-btn:hover { background:rgba(26,26,26,0.1); transform:translateY(-1px); }
-  .win-btn:active { transform:translateY(0); }
-  .win-close:hover { background:#D47A5A; color:#FFF; border-color:#D47A5A; }
-  .content { flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; position:relative; }
-  .content img { max-width:100%; max-height:100%; object-fit:contain; }
-  .content video { max-width:100%; max-height:100%; }
-  .content iframe { width:100%; height:100%; border:none; }
-</style></head><body>
-<div class="container">
-  <div class="header">
-    <svg class="title-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-    <h3>${safeTitle}</h3>
-    <div class="win-controls">
-      <button class="win-btn" onclick="window.purrcat.winMinimize()" title="最小化">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </button>
-      <button class="win-btn" onclick="window.purrcat.winToggleMaximize()" title="最大化">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
-      </button>
-      <button class="win-btn win-close" onclick="window.purrcat.winClose()" title="关闭">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
-      </button>
-    </div>
-  </div>
-  <div class="content">${mediaTag}</div>
-</div>
-</body></html>`;
-
-  const win = new BrowserWindow({
-    width: type === 'video' ? 960 : 900,
-    height: type === 'video' ? 540 : 700,
-    title: title || 'Preview',
-    titleBarStyle: 'hidden',
-    icon: APP_ICON,
-    autoHideMenuBar: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-  Menu.setApplicationMenu(null);
-  win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
 });
 
 // ===== 生命周期 =====
@@ -1634,7 +1444,7 @@ app.whenReady().then(async () => {
     });
     // 🌟 会话级屏蔽应用自身 host：chrome-devtools-mcp 经 CDP 发起的导航不经过
     //    browser:navigate IPC，isSelfUrl 拦不住；这里在 persist:browser 的 webRequest 层兜底，
-    //    避免 Agent 把应用自身页面（localhost:8000 / localhost:3000）当普通网页打开，
+    //    避免 Agent 把应用自身页面（如 localhost:8000）当普通网页打开，
     //    两个同 origin 页面的 storage/WS 事件循环互相干扰。
     browserSession.webRequest.onBeforeRequest(
       { urls: ['http://*/*', 'https://*/*'] },

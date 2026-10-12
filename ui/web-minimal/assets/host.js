@@ -36,8 +36,8 @@
     empty: true,
     plugins: [],              // manifest 注解后的插件列表（供设置面板使用）
   };
-  // 最左图标栏状态：stage 0=收起(仅开关) 1=仅图标 2=图标+名称(左侧栏)；hidden=各插件隐藏开关（持久化）；opacity=白条透明度
-  const railState = { stage: 1, hidden: {}, opacity: 1 };
+  // 最左图标栏状态：stage 0=仅图标 1=图标+文字；hidden=各插件隐藏开关（持久化）；opacity=白条透明度
+  const railState = { stage: 0, hidden: {}, opacity: 1 };
   const railButtons = {};   // plugin_id -> 图标栏按钮元素（供即时刷新高亮）
   // 单例槽当前选中的插件（fixed: {area: plugin_id}；panel 容器: {panel: plugin_id|'__none__'}）。
   // 由后端 webminConfig.active 持久化，重启后恢复用户上次的选择。
@@ -813,8 +813,8 @@
 
   // ---- 设置面板：左导航 + 内容区（宿主固有资产，非插件）----
   // 主导航：UI 插件 + 原配置中心逐标签页
-  const CONFIG_NAV = ['plugins', 'view', 'model', 'sensor', 'file', 'mcp', 'app', 'acp', 'deploy'];
-  const CONFIG_LABEL = { plugins: 'UI 插件', view: '视图设置', model: '模型', sensor: '传感器', file: '文件', mcp: 'MCP', app: '应用', acp: 'ACP', deploy: '部署' };
+  const CONFIG_NAV = ['plugins', 'model', 'sensor', 'file', 'mcp', 'app', 'acp', 'deploy'];
+  const CONFIG_LABEL = { plugins: 'UI 插件', model: '模型', sensor: '传感器', file: '文件', mcp: 'MCP', app: '应用', acp: 'ACP', deploy: '部署' };
   let settingsTab = 'plugins';
   let settingsRenderedTab = '';   // 上一次渲染的标签页（同页重建才恢复滚动位置）
   let deployPollT = null;   // 部署页轮询定时器句柄
@@ -882,16 +882,6 @@
       return;
     }
     UI_GROUPS.forEach(function (grp) { renderPluginGroup(main, grp); });
-    const btnNormal = HOST.document.createElement('div');
-    btnNormal.className = 'mode-row';
-    const b = HOST.document.createElement('button');
-    b.className = 'btn';
-    b.textContent = '回到完整模式';
-    b.addEventListener('click', function () {
-      callAction('switch_to_normal', {}).then(function (d) { if (d && d.restart) HOST.alert('已切换为完整模式，请重启应用生效。'); }).catch(function () {});
-    });
-    btnNormal.appendChild(b);
-    main.appendChild(btnNormal);
   }
 
   // 整份宿主配置的 JSON 编辑（GET/PUT /api/webmin/config，保存后重建界面立即生效）
@@ -1153,7 +1143,6 @@
   }
 
   function renderConfigSection(main, key) {
-    if (key === 'view') return renderViewCard(main);
     if (key === 'acp') return renderAcpCard(main);
     if (key === 'deploy') return renderDeployCards(main);
     cfgToolbar(main, key);
@@ -1447,26 +1436,6 @@
         body.appendChild(save);
         card.appendChild(body);
       });
-    });
-  }
-
-  // ---- view：极简模式卡片 ----
-  function renderViewCard(main) {
-    const sec = makeSection('视图设置', main);
-    const card = HOST.document.createElement('div');
-    card.className = 'cfg-card';
-    sec.appendChild(card);
-    const h = cfgCardHead(card, '极简模式（minimal）', 'ui_mode', '开启后极简 UI 作为默认界面，需重启应用生效');
-    const swl = HOST.document.createElement('label');
-    swl.className = 'switch';
-    swl.innerHTML = '<input type="checkbox"><span class="slider"></span>';
-    const chk = swl.querySelector('input');
-    h.right.appendChild(swl);
-    fetch('/api/config/view').then(function (r) { return r.json(); }).then(function (d) { chk.checked = d.ui_mode === 'minimal'; }).catch(function () {});
-    chk.addEventListener('change', function () {
-      fetch('/api/config/view', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ui_mode: chk.checked ? 'minimal' : 'normal' }) })
-        .then(function (r) { if (!r.ok) throw new Error(''); HOST.alert('视图模式已更新，请重启应用生效。'); })
-        .catch(function () { chk.checked = !chk.checked; HOST.alert('保存失败'); });
     });
   }
 
@@ -2011,13 +1980,6 @@
 
   // ---- 命令入口 ----
   async function callAction(actionId, payload, origin) {
-    if (actionId === 'switch_to_normal') {
-      const res = await fetch('/api/config/view', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ui_mode: 'normal' }) });
-      if (!res.ok) throw new Error(await res.text());
-      await res.json();
-      HOST.alert('已切换为完整模式，请重启应用生效。');
-      return { status: 'ok', restart: true };
-    }
     return dispatch(actionId, payload, origin);
   }
 
@@ -2806,7 +2768,8 @@
     const railSaved = manifest.rail;
     if (railSaved && typeof railSaved === 'object') {
       const stage = Number(railSaved.stage);
-      railState.stage = (stage >= 0 && stage < RAIL_STAGES) ? stage : 0;
+      // 兼容旧三态持久化（0=收起 1=仅图标 2=图标+名称）：仅 2 → 1（图标+文字），其余 → 0（仅图标）
+      railState.stage = (Number.isFinite(stage) && stage >= 2) ? 1 : 0;
       railState.hidden = (railSaved.hidden && typeof railSaved.hidden === 'object') ? railSaved.hidden : {};
       railState.opacity = (typeof railSaved.opacity === 'number') ? railSaved.opacity : 1;
     }

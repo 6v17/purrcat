@@ -178,15 +178,11 @@ jobs:
   #     - name: Install Node Dependencies
   #       run: |
   #         npm ci
-  #         npm ci --prefix ui
 
   #     - name: Set Version
   #       env:
   #         VERSION: ${{ inputs.version }}
   #       run: npm version $VERSION --no-git-tag-version
-
-  #     - name: Build UI
-  #       run: npm run build:ui
 
   #     - name: Build Backend (PyInstaller)
   #       run: uv run pyinstaller main.spec --noconfirm
@@ -236,15 +232,11 @@ jobs:
   #     - name: Install Node Dependencies
   #       run: |
   #         npm ci
-  #         npm ci --prefix ui
 
   #     - name: Set Version
   #       env:
   #         VERSION: ${{ inputs.version }}
   #       run: npm version $VERSION --no-git-tag-version
-
-  #     - name: Build UI
-  #       run: npm run build:ui
 
   #     - name: Build Backend (PyInstaller)
   #       run: uv run pyinstaller main.spec --noconfirm

@@ -324,28 +324,22 @@ async def run_api(host: str = "0.0.0.0", port: int = DEFAULT_API_PORT):
     def _shutdown_plugin_runtimes():
         _plugin_runtime.stop_all()
 
-    # 🌟 健康检查必须注册在 app.mount("/") 之前！
-    # Starlette 按注册顺序匹配路由，"/" 的静态文件挂载是贪婪前缀匹配，
+    # 🌟 健康检查必须注册在静态挂载之前！
+    # Starlette 按注册顺序匹配路由，静态文件挂载是贪婪前缀匹配，
     # 会吞掉它之后注册的所有路由（/api/health 会变成 404），
     # 导致 Electron 的生产模式轮询永远失败、白屏等 60 秒。
     @app.get("/api/health")
     def ping():
         return {"message": "PurrCat Backend is running."}
 
-    # 🌟 托管前端构建产物（打包成桌面应用后，前后端同源单端口运行）。
+    # 🌟 托管极简宿主（web-minimal）：独立纯静态宿主，挂载在 /minimal。
     # 静态文件挂载放到所有 API 路由最后，避免遮蔽 /api/* 接口。
     from fastapi.staticfiles import StaticFiles
     from pathlib import Path as _Path
 
-    # 🌟 极简模式（web-minimal）：独立纯静态宿主，挂载在 /minimal，与主 React UI 互不干扰。
-    # 必须挂在 "/" 之前，否则会被根目录贪婪前缀匹配吞掉。
     _webmin_root = _Path(__file__).resolve().parent / "ui" / "web-minimal"
     if _webmin_root.exists():
         app.mount("/minimal", StaticFiles(directory=str(_webmin_root), html=True), name="webmin")
-
-    _ui_dist = _Path(__file__).resolve().parent / "ui" / "dist"
-    if _ui_dist.exists():
-        app.mount("/", StaticFiles(directory=str(_ui_dist), html=True), name="ui")
 
     # 🌟 极简模式静态资源禁用缓存：host.js / theme.css / 插件 JS 等改动后，
     # 仅刷新页面即可生效，避免 Electron 渲染进程命中旧缓存导致"改了没反应"。

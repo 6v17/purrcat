@@ -21,7 +21,6 @@ jobs:
     timeout-minutes: 10
     outputs:
       python_changed: ${{ steps.detect.outputs.python_changed }}
-      ui_changed: ${{ steps.detect.outputs.ui_changed }}
       electron_changed: ${{ steps.detect.outputs.electron_changed }}
 
     steps:
@@ -44,7 +43,6 @@ jobs:
           if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             echo "Warning: Base commit $BASE not found, assuming full rebuild"
             echo "python_changed=true" >> "$GITHUB_OUTPUT"
-            echo "ui_changed=true" >> "$GITHUB_OUTPUT"
             echo "electron_changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -58,47 +56,12 @@ jobs:
             echo "python_changed=false" >> "$GITHUB_OUTPUT"
           fi
           
-          if echo "$CHANGED_FILES" | grep -qE "^ui/"; then
-            echo "ui_changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ui_changed=false" >> "$GITHUB_OUTPUT"
-          fi
-          
           # Electron 桌面端：electron/ 目录 + 根 package.json/package-lock.json（electron-builder 配置在此）
           if echo "$CHANGED_FILES" | grep -qE "^(electron/|package\.json|package-lock\.json)"; then
             echo "electron_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "electron_changed=false" >> "$GITHUB_OUTPUT"
           fi
-
-  ui-check-and-build:
-    name: UI Check & Build
-    needs: [preflight]
-    if: needs.preflight.outputs.ui_changed == 'true'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 20.x
-          cache: 'npm'
-          cache-dependency-path: ui/package-lock.json
-
-      - name: Install UI Dependencies
-        working-directory: ui
-        run: npm ci
-
-      - name: UI Lint
-        working-directory: ui
-        run: npm run lint
-
-      - name: Build UI
-        working-directory: ui
-        run: npm run build
 
   electron-check:
     name: Electron Check
@@ -145,31 +108,28 @@ jobs:
       - name: Detect Private Keys
         run: |
           find . -type f \( -name "*.py" -o -name "*.json" -o -name "*.yml" -o -name "*.yaml" \) \
-            -not -path "./.git/*" -not -path "./ui/node_modules/*" \
+            -not -path "./.git/*" \
             -exec grep -l -E "(BEGIN [A-Za-z ]+KEY|private-key|api[_-]key|secret[_-]key)" {} \; || echo "No secrets found in code files"
 
   ci-summary:
     name: CI Summary
-    needs: [preflight, ui-check-and-build, electron-check, security-check]
+    needs: [preflight, electron-check, security-check]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Check CI Results
         env:
-          UI_RESULT: ${{ needs.ui-check-and-build.result }}
           ELECTRON_RESULT: ${{ needs.electron-check.result }}
           SECURITY_RESULT: ${{ needs.security-check.result }}
         run: |
           set -euo pipefail
           
           echo "=== CI Summary ==="
-          echo "UI Check & Build: $UI_RESULT"
           echo "Electron Check: $ELECTRON_RESULT"
           echo "Security Check: $SECURITY_RESULT"
           
           FAILED_JOBS=()
           
-          if [ "$UI_RESULT" = "failure" ] && [ "${{ needs.preflight.outputs.ui_changed }}" = "true" ]; then FAILED_JOBS+=("ui-check-and-build"); fi
           if [ "$ELECTRON_RESULT" = "failure" ] && [ "${{ needs.preflight.outputs.electron_changed }}" = "true" ]; then FAILED_JOBS+=("electron-check"); fi
           if [ "$SECURITY_RESULT" = "failure" ]; then FAILED_JOBS+=("security-check"); fi
           

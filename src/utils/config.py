@@ -163,7 +163,7 @@ def get_global_settings() -> dict:
 @contextlib.contextmanager
 def _global_lock():
     """跨进程文件锁：settings.json 的读改写要整体互斥，避免旧实例/并发写回
-    用过期快照整盘覆写、冲掉 ui_mode / data_root 等其它键。"""
+    用过期快照整盘覆写、冲掉 data_root 等其它键。"""
     lock_path = str(GLOBAL_CONFIG_FILE) + ".lock"
     f = open(lock_path, "w")
     try:
