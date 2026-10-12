@@ -4,7 +4,7 @@ TASK_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "Task",
-        "description": "统一任务操作工具，支持：1.列出可用图(list_graphs) 2.查询当前任务列表(list_tasks) 3.创建任务(add) 4.终止任务(kill) 5.向任务节点注入人工指令(submit_request) 6.查询任务的交互节点列表及状态(get_details) 7.视觉能力(vision)：若系统未开启视觉直注，作为视觉顾问接收图片/视频/音频附件进行分析（ComputerUse 识别失败的兜底、前端/矢量图/PPT 错位乱码质检）；若已开启视觉直注（当前模型自身支持视觉），直接读取图片注入对话，无需 prompt。",
+        "description": "统一任务操作工具，支持：1.列出可用图(list_graphs) 2.查询当前任务列表(list_tasks) 3.创建任务(add) 4.终止任务(kill) 5.向任务节点注入人工指令(submit_request) 6.查询任务的交互节点列表及状态(get_details) 7.视觉能力(vision)：若系统未开启视觉直注，作为视觉顾问接收图片/视频/音频附件进行分析（前端/矢量图/PPT 错位乱码质检）；若已开启视觉直注（当前模型自身支持视觉），直接读取图片注入对话，无需 prompt。",
         "parameters": {
             "type": "object",
             "properties": {

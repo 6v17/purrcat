@@ -24,7 +24,6 @@ TOOL_FUNC_MAP = {
     "filesystem": "FileSystem",
     "bash": "Bash",
     "brainstorm": "BrainStorm",
-    "computeruse": "ComputerUse",
     "cron": "Cron",
     "callmcp": "CallMCP",
     "memo": "Memo",
@@ -46,7 +45,6 @@ PROCESS_ISOLATED_TOOLS = {
     "request",  # 网络请求
     "fetch",  # 网络抓取
     "search",  # 向量检索（含嵌入计算）
-    "computeruse",  # UI 自动化
 }
 
 
@@ -450,8 +448,7 @@ def dispatch_tool(
         # 3.5 🌟 vision 直注结果：跳过长度拦截与格式化，直接封包返回
         #     （base64 图片不能被 token 截断/yaml 转换污染）
         if _is_openai_content_parts(content_data):
-            # 原始 metadata.snip 中的关键提示（如 ComputerUse 的 SoM 元素表）
-            # 并入文本 part，保证模型仍能看到
+            # 原始 metadata.snip 中的关键提示并入文本 part，保证模型仍能看到
             snip = str(metadata.get("snip") or "").strip()
             if snip:
                 for part in content_data:

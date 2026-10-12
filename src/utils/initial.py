@@ -68,10 +68,6 @@ hooks:
         parameter_check:
           - action: "add"
         failed_prompt: "检查到本轮对话你未调用 Memo 工具进行记忆总结，最好总结一下，让你的能力随记忆系统的丰富而增强，如无经验更新，可添加短期记忆以免会话切换时失忆"
-  on_tool_calling:
-    - tool_use_check:
-        name: "ComputerUse"
-        successed_prompt: "组件找不到时使用 Vision 顾问进行询问。浏览器相关操作可以用浏览器相关 MCP 工具，更加高效。"
 """
 
 

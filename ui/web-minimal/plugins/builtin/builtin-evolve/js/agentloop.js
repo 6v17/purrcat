@@ -58,7 +58,7 @@
       { key: 'count', label: '条数 count', kind: 'number' }
     ],
     tool_use_check: [
-      { key: 'name', label: '工具名 name', kind: 'text', ph: '例如 Memo / ComputerUse' },
+      { key: 'name', label: '工具名 name', kind: 'text', ph: '例如 Memo' },
       { key: 'successed_prompt', label: '成功提示 successed_prompt', kind: 'text' },
       { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text' }
     ],

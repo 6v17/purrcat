@@ -135,8 +135,6 @@
     border: 1px solid rgba(15, 17, 21, 0.12); border-radius: 6px; background: #fff; outline: none;
   }
   .req-input:focus { border-color: var(--accent); }
-  .req-dur { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--label-2nd); }
-  .req-dur select { font: inherit; font-size: 11px; padding: 2px 4px; border: 1px solid rgba(15, 17, 21, 0.12); border-radius: 6px; background: #fff; }
   .req-acts { display: flex; gap: 6px; }
   .rbtn { flex: 1; font: inherit; font-size: 12px; padding: 4px 0; border: 1px solid #16191d; border-radius: 7px; cursor: pointer; }
   .rbtn.ok { background: #16191d; color: #fff; font-weight: 600; }
@@ -194,7 +192,6 @@
   var pendingOpen = false;                            // 待审批抽屉默认收起，有待办时自动展开
   var expandedReasons = {};                           // req_id -> 是否展开理由
   var feedbacks = {};                                 // req_id -> 反馈文本
-  var durations = {};                                 // req_id -> computer_use 授权时长(分钟)
 
   // 动作图标：与宿主图标集同款线性 SVG（插件自带，不依赖宿主实现）
   var SVG_HEAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">';
@@ -361,8 +358,7 @@
       request_id: id,
       approved: !!approved,
       ignore: !!ignore,
-      feedback: String(feedbacks[id] || ''),
-      duration: Number(durations[id] || 5)
+      feedback: String(feedbacks[id] || '')
     };
     callAction('requests.resolve', payload)
       .then(function () { delete feedbacks[id]; loadRequests(); })
@@ -422,26 +418,6 @@
         }
       }
 
-      if (req.type === 'computer_use') {
-        var dur = document.createElement('div');
-        dur.className = 'req-dur';
-        var lab = document.createElement('span');
-        lab.textContent = '授权时长';
-        dur.appendChild(lab);
-        var sel = document.createElement('select');
-        [[10, '10 分钟'], [30, '30 分钟'], [-1, '今天不再询问']].forEach(function (o) {
-          var opt = document.createElement('option');
-          opt.value = String(o[0]);
-          opt.textContent = o[1];
-          sel.appendChild(opt);
-        });
-        sel.value = String(durations[req.id] || 10);
-        if (durations[req.id] === undefined) durations[req.id] = 10;   // 默认 10 分钟，与完整模式一致
-        sel.addEventListener('change', function () { durations[req.id] = parseInt(sel.value, 10); });
-        dur.appendChild(sel);
-        card.appendChild(dur);
-      }
-
       if (!isDep) {
         var fb = document.createElement('input');
         fb.className = 'req-input';
@@ -491,7 +467,7 @@
         requests = Array.isArray(list) ? list : [];
         // 清掉已裁决项残留的本地态
         Object.keys(expandedReasons).forEach(function (k) {
-          if (!requests.some(function (r) { return r.id === k; })) { delete expandedReasons[k]; delete feedbacks[k]; delete durations[k]; }
+          if (!requests.some(function (r) { return r.id === k; })) { delete expandedReasons[k]; delete feedbacks[k]; }
         });
         // 从「无」变「有」时自动展开，避免新审批被折叠状态藏起来
         if (prev === 0 && requests.length > 0) setPendingOpen(true);

@@ -149,29 +149,6 @@ def _grant_file_permission(req_type: str, target: str):
         json.dump(config, f, indent=2, ensure_ascii=False)
 
 
-def _grant_computer_use(duration: int):
-    """🌟 自动下发 ComputerUse 的有时效性授权"""
-    import time
-    from datetime import datetime
-    from src.utils.config import DATA_DIR
-
-    auth_file = os.path.join(DATA_DIR, "checkpoints", "agent", "computer_use_auth.json")
-    os.makedirs(os.path.dirname(auth_file), exist_ok=True)
-
-    # 【修改点】：增加对特殊值（如 -1）的支持，用于代表"今日不再设限"
-    if duration == -1:
-        # 获取今天 23:59:59 的时间戳
-        now = datetime.now()
-        end_of_day = datetime(now.year, now.month, now.day, 23, 59, 59)
-        expire_at = end_of_day.timestamp()
-    else:
-        # 常规情况：当前时间戳 + duration（如 10, 30）分钟
-        expire_at = time.time() + duration * 60
-
-    with open(auth_file, "w", encoding="utf-8") as f:
-        json.dump({"expire_at": expire_at}, f)
-
-
 def _install_skill_from_github(skill_name: str):
     """下载并安装特定 Skill"""
     url = "https://github.com/PurrPod/skillpod/archive/refs/heads/main.zip"
@@ -214,7 +191,6 @@ def resolve_request(
     approved: bool,
     feedback: str = "",
     ignore: bool = False,
-    duration: int = 5,
 ) -> dict:
     if not os.path.exists(REQUESTS_FILE):
         return {"status": "error", "message": "文件不存在"}
@@ -235,8 +211,6 @@ def resolve_request(
                     _install_skill_from_github(target)
                 elif req_type in ["file_read", "file_write"]:
                     _grant_file_permission(req_type, target)
-                elif req_type == "computer_use":
-                    _grant_computer_use(duration)
                 # ---- 技能盲测逻辑：批准后由系统自动在后台运行 ----
                 elif req_type == "skill_test":
                     from src.evolve import run_skill_eval_background

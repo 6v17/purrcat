@@ -147,7 +147,7 @@ First public beta release.
 - Sandboxed Bash: commands run in isolated Docker containers, with optional directory mounts.
 - FileSystem suite (read / edit / write / search / glob) with PDF/DOCX/XLSX converted to Markdown via MarkItDown.
 - Physical black/white lists for cross-boundary file operations; exports trigger automatic Git snapshots.
-- Native tools: CallMCP, hybrid Search, Fetch, Memo, Cron, Task, ComputerUse, BrainStorm, KernelUpgrade. External MCP servers supported.
+- Native tools: CallMCP, hybrid Search, Fetch, Memo, Cron, Task, BrainStorm, KernelUpgrade. External MCP servers supported.
 
 **Agent Core**
 

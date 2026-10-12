@@ -68,7 +68,7 @@ purrcat desktop update    # 拉取最新源码并刷新依赖
 - 沙盒 Bash：命令在独立 Docker 容器中执行，支持挂载目录访问外部。
 - FileSystem 套件：`read` / `edit` / `write` / `search` / `glob`，底层经 MarkItDown 将 PDF/DOCX/XLSX 转为 Markdown。
 - 边界管控：物理级黑白名单；Import 校验 30MB 上限与路径穿越，Export 自动触发 Git 快照。
-- 扩展工具：CallMCP、混合检索 Search、Fetch、Memo、Cron、Task、ComputerUse、BrainStorm、KernelUpgrade，支持外部 MCP 服务。
+- 扩展工具：CallMCP、混合检索 Search、Fetch、Memo、Cron、Task、BrainStorm、KernelUpgrade，支持外部 MCP 服务。
 
 ### 04 智能体中枢与会话管理
 

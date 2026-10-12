@@ -19,7 +19,7 @@ app.commandLine.appendSwitch('disable-features', 'HttpsUpgrades');
 
 // 🌟 开放本地 CDP 调试端口（仅回环地址）：让 chrome-devtools-mcp 通过
 //    --browser-url=http://127.0.0.1:9222 连到本应用的内置浏览器 WebContentsView，
-//    从而让 callmcp / computeruse 操作的是应用内置浏览器，而不是另起一个外部 Chrome。
+//    从而让 callmcp 操作的是应用内置浏览器，而不是另起一个外部 Chrome。
 //    必须在 app ready 前设置。仅监听 127.0.0.1，不对外暴露。
 app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
 app.commandLine.appendSwitch('remote-debugging-port', '9222');

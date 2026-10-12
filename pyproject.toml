@@ -20,13 +20,8 @@ dependencies = [
     "markdown>=3.5.0", "markdownify>=0.11.6",
     "playwright>=1.45.0",
 
-    # 计算机控制
-    "pyautogui>=0.9.54", "pyperclip>=1.8.2", "mss>=9.0.1", "Pillow>=10.0.0",
+    # OCR 兜底（视觉大模型不可用时）
     "easyocr>=1.7.0",
-    "pywin32>=306; platform_system=='Windows'",
-    "pywinauto>=0.6.8; platform_system=='Windows'",
-    "uiautomation>=2.0.24; platform_system=='Windows'",
-    "pyobjc>=10.0; platform_system=='Darwin'",
 
     # 系统与沙盒
     "docker>=7.0.0", "pexpect>=4.9.0", "markitdown[all]>=0.0.1", "ruff>=0.3.0",

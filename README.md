@@ -79,7 +79,7 @@ The desktop API uses port `8000` by default. `npm run dev` tries that port first
 
 - Boundary control: physical black/white lists; imports are checked against a 30MB limit and path traversal, exports trigger Git snapshots.
 
-- Extension tools: CallMCP, hybrid Search, Fetch, Memo, Cron, Task, ComputerUse, BrainStorm, KernelUpgrade; external MCP servers supported.
+- Extension tools: CallMCP, hybrid Search, Fetch, Memo, Cron, Task, BrainStorm, KernelUpgrade; external MCP servers supported.
 
 ### 04 Agent Hub and Session Management
 

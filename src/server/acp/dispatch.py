@@ -182,7 +182,6 @@ def _handle_launch_task(req: dict) -> dict:
 # ToolKind 枚举：read/edit/delete/move/search/execute/think/fetch/other
 _TOOL_KIND = {
     "Bash": "execute",
-    "ComputerUse": "execute",
     "BrainStorm": "think",
     "Memo": "think",
     "Request": "fetch",

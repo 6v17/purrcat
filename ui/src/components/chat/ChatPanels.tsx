@@ -82,7 +82,7 @@ export function FileChangesPanel(props: any) {
 
 export function RequestQueuePanel(props: any) {
   const { t } = useTranslation();
-  const { showReqQueue, setShowReqQueue, pendingReqs, handleResolveReq, feedbackInputs, setFeedbackInputs, authDurations, setAuthDurations, expandedReasons, setExpandedReasons, onGoDeploy } = props;
+  const { showReqQueue, setShowReqQueue, pendingReqs, handleResolveReq, feedbackInputs, setFeedbackInputs, expandedReasons, setExpandedReasons, onGoDeploy } = props;
   if (!showReqQueue) return null;
 
   return (
@@ -114,9 +114,6 @@ export function RequestQueuePanel(props: any) {
                   <button onClick={() => setExpandedReasons({...expandedReasons, [req.id]: !expandedReasons[req.id]})} className="text-xs font-bold text-ink/50 mt-2 flex items-center gap-1 hover:text-ink transition-colors">{expandedReasons[req.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {t('chat.reason')}</button>
                   {expandedReasons[req.id] && <div className="text-xs font-bold text-ink/70 bg-ink/5 p-2 mt-1 leading-relaxed whitespace-pre-wrap">{req.reason}</div>}
                 </div>
-                {req.type === 'computer_use' && (
-                  <div className="flex items-center justify-between mt-1 mb-1 p-2 border-2 border-ink bg-[#88c0d0]/20" style={sketchyShape3}><span className="text-xs font-black text-ink uppercase">⏳ {t('chat.timeLimit')}</span><select value={authDurations[req.id] || 10} onChange={e => setAuthDurations({...authDurations, [req.id]: parseInt(e.target.value)})} className="bg-cream border-2 border-ink text-xs p-1 font-bold" style={sketchyShape2}><option value={10}>10 {t('chat.mins')}</option><option value={30}>30 {t('chat.mins')}</option><option value={-1}>{t('chat.todayUnlimited')}</option></select></div>
-                )}
                 {/* dependency_check 不需要 feedback 输入 */}
                 {!isDepCheck && (
                   <input value={feedbackInputs[req.id] || ''} onChange={e => setFeedbackInputs({...feedbackInputs, [req.id]: e.target.value})} placeholder={t('chat.feedbackOptional')} className="w-full text-xs font-bold p-2 border-2 border-ink focus:outline-none bg-[#FDF8F0] shadow-[inset_2px_2px_0px_0px_rgba(26,26,26,0.05)] placeholder:text-ink/30" style={sketchyShape2} />
@@ -128,8 +125,8 @@ export function RequestQueuePanel(props: any) {
                   </div>
                 ) : (
                   <div className="flex gap-2 mt-1">
-                    <button onClick={() => handleResolveReq(req.id, true, false, authDurations[req.id] || 10)} className="flex-1 bg-[#a3be8c] text-ink font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center" style={sketchyShape1}>{t('chat.approve')}</button>
-                    <button onClick={() => handleResolveReq(req.id, false, false, authDurations[req.id] || 10)} className="flex-1 bg-[#bf616a] text-paper font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none transition-all" style={sketchyShape2}>{t('chat.reject')}</button>
+                    <button onClick={() => handleResolveReq(req.id, true, false)} className="flex-1 bg-[#a3be8c] text-ink font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#8eb072] active:translate-y-1 active:shadow-none transition-all flex justify-center items-center" style={sketchyShape1}>{t('chat.approve')}</button>
+                    <button onClick={() => handleResolveReq(req.id, false, false)} className="flex-1 bg-[#bf616a] text-paper font-black text-xs py-2 border-2 border-ink shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] hover:bg-[#a54e56] active:translate-y-1 active:shadow-none transition-all" style={sketchyShape2}>{t('chat.reject')}</button>
                   </div>
                 )}
               </div>

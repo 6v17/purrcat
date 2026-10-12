@@ -18,7 +18,6 @@ REQUEST_TOOL_SCHEMA = {
                         "file_read",
                         "sensor_install",
                         "graph_install",
-                        "computer_use",
                         "skill_test",  # Skill 盲测：批准后由系统自动运行
                         "skill_merge",  # 保留：合并代码仍需审批
                         "mcp_merge",  # 新增：MCP 代码合并

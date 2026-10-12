@@ -111,7 +111,6 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const [showReqQueue, setShowReqQueue] = useState(false);
   const [pendingReqs, setPendingReqs] = useState<any[]>([]);
   const [feedbackInputs, setFeedbackInputs] = useState<Record<string, string>>({});
-  const [authDurations, setAuthDurations] = useState<Record<string, number>>({}); 
   const prevPendingIds = useRef<string[]>([]);
   const [expandedReasons, setExpandedReasons] = useState<Record<string, boolean>>({});
 
@@ -582,9 +581,9 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
     });
   }, [currentSessionId, handleBrowserComment]);
 
-  const handleResolveReq = async (reqId: string, approved: boolean, ignore: boolean, duration: number = 5) => {
+  const handleResolveReq = async (reqId: string, approved: boolean, ignore: boolean) => {
     const feedback = feedbackInputs[reqId] || '';
-    try { const res = await fetch(`/api/requests/${reqId}/resolve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved, feedback, ignore, duration }) }); if (res.ok) { toast.success(t('chat.requestResolved')); setFeedbackInputs(p => { const n = {...p}; delete n[reqId]; return n; }); fetchRequests(); } } catch { /* noop */ }
+    try { const res = await fetch(`/api/requests/${reqId}/resolve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved, feedback, ignore }) }); if (res.ok) { toast.success(t('chat.requestResolved')); setFeedbackInputs(p => { const n = {...p}; delete n[reqId]; return n; }); fetchRequests(); } } catch { /* noop */ }
   };
 
   const handleRename = async (id: string) => {
@@ -1173,7 +1172,7 @@ export default function ChatPage({ onBack, onSwitchToTask }: { onBack: () => voi
   const fileViewProps = { showFileView, setShowFileView, fileChanges, activeDiffPath, setActiveDiffPath, handleAck, handleRollback, handleAckAll };
   // 依赖检查请求「前往部署」：打开配置中心并直达部署标签页
   const openConfigAt = (tab: string) => { setConfigInitialTab(tab); setIsConfigOpen(true); };
-  const queueProps = { showReqQueue, setShowReqQueue, pendingReqs, handleResolveReq, feedbackInputs, setFeedbackInputs, authDurations, setAuthDurations, expandedReasons, setExpandedReasons, onGoDeploy: () => openConfigAt('deploy') };
+  const queueProps = { showReqQueue, setShowReqQueue, pendingReqs, handleResolveReq, feedbackInputs, setFeedbackInputs, expandedReasons, setExpandedReasons, onGoDeploy: () => openConfigAt('deploy') };
 
   return (
     <div className="absolute inset-0 bg-[#fdfaf5] bg-[radial-gradient(#1a1a1a_1px,transparent_1px)] [background-size:24px_24px] p-6 md:p-8 flex gap-6 overflow-hidden font-sans">

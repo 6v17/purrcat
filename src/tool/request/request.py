@@ -70,7 +70,7 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
     向人类（用户）发起审批请求。
 
     适用场景：
-    - 权限拦截：读写宿主机文件、操作物理电脑
+    - 权限拦截：读写宿主机文件
     - 能力缺失：需下载 mcp/skill/sensor/graph
     - 技能盲测：沙盒开发完毕后申请 skill_test，获批后由系统自动运行
     - 传感器协议体检：沙盒开发完毕后申请 sensor_test，宿主免审直接跑 L0/L1
@@ -85,7 +85,6 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
             "file_read",
             "sensor_install",
             "graph_install",
-            "computer_use",
             "skill_test",  # Skill 盲测：批准后由系统自动运行
             "skill_merge",  # 保留：合并代码仍需审批
             "mcp_merge",  # 新增：MCP 代码合并
