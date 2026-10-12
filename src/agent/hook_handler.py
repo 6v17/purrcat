@@ -235,7 +235,7 @@ class HookHandler:
             # 前缀匹配：@ALIAS/sub/path → host/sub/path（供 @TASKSPACE/xxx 等用法）
             for alias, host in aliases.items():
                 if path.startswith(alias + "/") or path.startswith(alias + "\\"):
-                    rest = path[len(alias):].lstrip("/\\")
+                    rest = path[len(alias) :].lstrip("/\\")
                     return os.path.join(host, rest)
             return path
         if path.startswith(".purrcat/"):
@@ -554,13 +554,21 @@ class HookHandler:
         return {"success": False, "inject_prompt": failed_prompt}
 
     def _memo_injection(self, params, **kwargs):
+        # 优先取主 Agent 的常驻内存缓存；harness 节点无 agent 时直接读全局 memo.json
         agent = kwargs.get("agent")
-        if not agent or not hasattr(agent, "memo") or not agent.memo:
+        if agent is not None and getattr(agent, "memo", None):
+            memo = agent.memo
+        else:
+            from src.agent.session_store import SessionStore
+
+            memo = SessionStore.load_global_memo()
+
+        if not memo:
             return {"success": True, "inject_prompt": ""}
 
         memo_type = params.get("type", "full")
         count = min(int(params.get("count", 10)), 30)
-        recent = agent.memo[-count:] if count > 0 else []
+        recent = memo[-count:] if count > 0 else []
 
         if memo_type == "full":
             filtered = recent

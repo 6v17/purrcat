@@ -5,14 +5,15 @@ from src.tool.utils.route import dispatch_tool
 
 def get_system_schema() -> List[dict]:
     """
-    获取全局所有的 System Tool Schema
-    包含: tool 基础任务工具 (bash, search, mcp 等)
+    获取 harness 节点可用的全局工具 Schema
+    包含: 基础任务工具 (bash, search, mcp 等) + Memo 记忆工具
     注意: harness 工作流原语工具已经交由 BaseNode 本身进行挂载。
     """
     # 延迟导入避免循环依赖
     from src.tool import BASE_TASK_TOOL_SCHEMA
+    from src.tool.memo import MEMO_TOOL_SCHEMA
 
-    return list(BASE_TASK_TOOL_SCHEMA)
+    return list(BASE_TASK_TOOL_SCHEMA) + [MEMO_TOOL_SCHEMA]
 
 
 def execute_global_tool(tool_name: str, arguments: dict, context: Any = None) -> Any:

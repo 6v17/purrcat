@@ -46,7 +46,9 @@ class Node(AgentNode):
                 return (yaml.safe_load(f) or {}), path
 
         path = resolve_paradigm_path(None)
-        self.log(context, "SYSTEM", f"📄 [AgentLoop] 未提供 agentloop，回退默认范式: {path}")
+        self.log(
+            context, "SYSTEM", f"📄 [AgentLoop] 未提供 agentloop，回退默认范式: {path}"
+        )
         with open(path, "r", encoding="utf-8") as f:
             return (yaml.safe_load(f) or {}), path
 
@@ -109,9 +111,7 @@ class Node(AgentNode):
             if parts:
                 sys_msg = {"role": "system", "content": "\n\n---\n\n".join(parts)}
                 messages.insert(0, sys_msg)
-                await asyncio.to_thread(
-                    self.append_memory_to_file, context, [sys_msg]
-                )
+                await asyncio.to_thread(self.append_memory_to_file, context, [sys_msg])
 
         # 6) on_loop_start
         await self._fire_hooks(handler, "on_loop_start", messages, context, epoch=0)
@@ -125,7 +125,9 @@ class Node(AgentNode):
 
         while True:
             loop_epoch += 1
-            self.log(context, "SYSTEM", f"🔄 [Agent循环] 开始新一轮思考 (epoch={loop_epoch})")
+            self.log(
+                context, "SYSTEM", f"🔄 [Agent循环] 开始新一轮思考 (epoch={loop_epoch})"
+            )
             await self._fire_hooks(
                 handler, "on_loop_epoch", messages, context, epoch=loop_epoch
             )
@@ -151,15 +153,15 @@ class Node(AgentNode):
                 )
                 self.log(context, "SYSTEM", f"💭 [模型回复] {preview}")
 
-            await asyncio.to_thread(
-                self.append_memory_to_file, context, [messages[-1]]
-            )
+            await asyncio.to_thread(self.append_memory_to_file, context, [messages[-1]])
             await asyncio.to_thread(self._sync_dump_memory, context, messages)
 
             tool_calls = extract_tool_calling(response)
             if tool_calls:
                 self.log(
-                    context, "SYSTEM", f"🔧 [工具调用] 检测到 {len(tool_calls)} 个工具调用"
+                    context,
+                    "SYSTEM",
+                    f"🔧 [工具调用] 检测到 {len(tool_calls)} 个工具调用",
                 )
                 current_tools: Dict[str, list] = {}
                 for t in tool_calls:
@@ -201,11 +203,16 @@ class Node(AgentNode):
                 loop_end_retry=loop_end_retry,
             )
             if all_success:
-                self.log(context, "SYSTEM", "✅ [循环结束] 所有结束条件通过，正常关闭循环")
+                self.log(
+                    context, "SYSTEM", "✅ [循环结束] 所有结束条件通过，正常关闭循环"
+                )
                 break
 
             loop_end_retry += 1
-            hint = {"type": "workflow_hint", "content": "未满足结束循环条件，已自动打回"}
+            hint = {
+                "type": "workflow_hint",
+                "content": "未满足结束循环条件，已自动打回",
+            }
             hint_msg = {"role": "user", "content": json.dumps(hint, ensure_ascii=False)}
             messages.append(hint_msg)
             await asyncio.to_thread(self.append_memory_to_file, context, [hint_msg])
@@ -250,7 +257,7 @@ class Node(AgentNode):
 
         if injected:
             await asyncio.to_thread(
-                self.append_memory_to_file, context, messages[-len(injected):]
+                self.append_memory_to_file, context, messages[-len(injected) :]
             )
             # 非递归触发「收到输入时」：钩子自身的注入不再触发下一层
             if fire_input:

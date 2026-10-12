@@ -257,7 +257,25 @@ class AgentNode(BaseNode):
                 }
             )
 
+            # 🌟 与主循环对齐：Memo add 后把 memo_data 追加进全局常驻缓存 memo.json
+            # （滚动保留最近 30 条），保证 memo_injection / search 无 query 能取到最新缓存
+            if original_tool_name == "Memo" and arguments.get("action") == "add":
+                memo_data = arguments.get("memo_data")
+                if isinstance(memo_data, dict) and memo_data:
+                    self._update_global_memo(memo_data)
+
         return tool_messages
+
+    @staticmethod
+    def _update_global_memo(memo_data: dict):
+        """把单条记忆追加到全局常驻缓存 memo.json，滚动保留最近 30 条（对齐主循环）。"""
+        from src.agent.session_store import SessionStore
+
+        memo = SessionStore.load_global_memo() or []
+        memo.append(memo_data)
+        if len(memo) > 30:
+            memo = memo[-30:]
+        SessionStore.save_global_memo(memo)
 
     @staticmethod
     def _sanitize_messages(messages: List[Dict]) -> List[Dict]:
