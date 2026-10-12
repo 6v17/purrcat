@@ -19,18 +19,52 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; overflow: hidden; background: var(--rack); color: var(--ink); font-size: 13px; }
   body { display: flex; flex-direction: column; }
+
+  /* 多标签页标签栏：与工具栏同底色，滚动不换行 */
+  .tabs {
+    position: relative; z-index: 2; flex: none;
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px 0; background: var(--rack);
+  }
+  .tab-list { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; }
+  .tab-list::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: none; display: flex; align-items: center; gap: 6px;
+    max-width: 180px; height: 28px; padding: 0 6px 0 10px;
+    border-radius: 8px; background: var(--field); color: var(--ink-2);
+    cursor: pointer; font-size: 12px;
+  }
+  .tab.active { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  .tab-title { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab-close {
+    flex: none; width: 16px; height: 16px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: inherit;
+    border-radius: 5px; cursor: pointer; opacity: .5;
+  }
+  .tab-close:hover { background: var(--field-2); opacity: 1; }
+  .tab-close svg { width: 10px; height: 10px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  .tab-add {
+    flex: none; width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 8px; background: transparent;
+    color: var(--ink-2); cursor: pointer; transition: background .12s ease, color .12s ease;
+  }
+  .tab-add:hover { background: var(--field); color: var(--ink); }
+
   .toolbar {
     position: relative; z-index: 2; flex: none;
     display: flex; align-items: center; gap: 6px;
     padding: 6px 10px; background: var(--rack);
   }
   /* 图标统一：线性描边、统一线宽 1.5、随按钮颜色变化（与白条内置图标同一套语言） */
-  .tb-btn svg, .go svg, .addr-ico svg {
+  .tb-btn svg, .go svg, .addr-ico svg, .tab-add svg {
     display: block; fill: none; stroke: currentColor;
     stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
   }
   .tb-btn svg, .go svg { width: 16px; height: 16px; }
   .addr-ico svg { width: 15px; height: 15px; }
+  .tab-add svg { width: 16px; height: 16px; }
   /* 所有工具按钮同尺寸同圆角（全部图标化，不再有文字按钮） */
   .tb-btn {
     flex: none; width: 30px; height: 30px;
@@ -104,6 +138,12 @@
 </style>
 </head>
 <body>
+  <div class="tabs">
+    <div class="tab-list" id="tabList"></div>
+    <button class="tab-add" id="tabAdd" title="新建标签页">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+    </button>
+  </div>
   <div class="toolbar">
     <button class="tb-btn" id="back" title="后退" disabled>
       <svg viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
@@ -173,6 +213,7 @@
   var backBtn = document.getElementById('back');
   var fwdBtn = document.getElementById('fwd');
   var pickBtn = document.getElementById('pick');
+  var tabList = document.getElementById('tabList');
 
   // ---- 与宿主通信：插件 iframe 拿不到 window.purrcat（preload 只在主 frame 生效），
   //      所有 Electron 原生浏览器能力统一经宿主 callAction 总线转发 ----
@@ -193,7 +234,11 @@
   }
   function silent(actionId, payload) { return callAction(actionId, payload).catch(function () {}); }
 
-  var tabId = null;
+  // ---- 多标签页状态 ----
+  // tabs: [{ id, url, title }]，id 即主进程 WebContentsView 的 tabId；activeId 为主进程当前显示的标签。
+  // 与原（完整模式）React UI 的标签模型保持一致：前端持有列表并负责同步 bounds/切换/关闭。
+  var tabs = [];
+  var activeId = null;
   var starting = false;         // 建 Tab 期间的重入守卫：宿主下发配置与网页链接请求可能同时到达
   var pendingUrl = null;        // 待打开地址：Tab 尚未就绪时先记下，建好 Tab 后直接落在该地址
   var mode = 'browse';          // browse=浏览（原生视图可见） / pick=元素选取（原生视图移出屏幕 + 截图标注）
@@ -216,6 +261,50 @@
   function showHint(text) { hint.textContent = text; hint.style.display = 'flex'; }
   function hideHint() { hint.style.display = 'none'; }
 
+  function findTab(id) {
+    for (var i = 0; i < tabs.length; i++) { if (tabs[i].id === id) return tabs[i]; }
+    return null;
+  }
+
+  // ---- 标签栏渲染 ----
+  function renderTabs() {
+    tabList.innerHTML = '';
+    tabs.forEach(function (t) {
+      var el = document.createElement('div');
+      el.className = 'tab' + (t.id === activeId ? ' active' : '');
+      var title = document.createElement('span');
+      title.className = 'tab-title';
+      title.textContent = t.title || t.url || '新标签页';
+      title.title = t.url || '';
+      el.appendChild(title);
+      var x = document.createElement('button');
+      x.className = 'tab-close';
+      x.title = '关闭标签页';
+      x.innerHTML = '<svg viewBox="0 0 12 12"><path d="M2 2 10 10"/><path d="M10 2 2 10"/></svg>';
+      x.addEventListener('click', function (ev) { ev.stopPropagation(); closeTab(t.id); });
+      el.appendChild(x);
+      el.addEventListener('click', function () { switchTab(t.id); });
+      tabList.appendChild(el);
+    });
+  }
+  // 激活态相关 UI（地址栏 / 前进后退可用态 / 标签栏）同步
+  function syncActiveUi() {
+    var t = findTab(activeId);
+    curUrl = t ? (t.url || '') : '';
+    urlInput.value = curUrl;
+    backBtn.disabled = false;
+    fwdBtn.disabled = false;
+    renderTabs();
+  }
+  function addTab(id, url) {
+    tabs.push({ id: id, url: url || '', title: '' });
+    activeId = id;
+    hideHint();
+    syncActiveUi();
+    syncBounds(true);
+    silent('browser.focus', {});
+  }
+
   // ---- 原生视图 bounds 同步（插件 iframe 局部坐标，宿主负责加上 iframe 偏移）----
   var syncTimer = null;
   var lastHidden = null;
@@ -230,7 +319,7 @@
     if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
     var run = function () {
       if (mode === 'pick') return;
-      if (covered || !tabId) { ensureHidden(); return; }
+      if (covered || !activeId) { ensureHidden(); return; }
       var r = wrap.getBoundingClientRect();
       if (!r || r.width < 40 || r.height < 40) { ensureHidden(); return; }
       lastHidden = false;
@@ -265,7 +354,7 @@
   function setMode(m) {
     if (m === mode) return;
     if (m === 'pick') {
-      if (!tabId) { toast('内置浏览器尚未就绪'); return; }
+      if (!activeId) { toast('内置浏览器尚未就绪'); return; }
       mode = 'pick';
       pickBtn.classList.add('on');
       enterPick();
@@ -276,8 +365,8 @@
     }
   }
   function enterPick() {
-    callAction('browser.pickStart', { tabId: tabId }).then(function (res) {
-      if (mode !== 'pick') { silent('browser.pickEnd', { tabId: tabId }); return; }
+    callAction('browser.pickStart', { tabId: activeId }).then(function (res) {
+      if (mode !== 'pick') { silent('browser.pickEnd', { tabId: activeId }); return; }
       if (!res || !res.imageDataUrl) { toast('无法截取网页画面'); setMode('browse'); return; }
       shot.src = res.imageDataUrl;
       vp = {
@@ -295,7 +384,52 @@
     cbox.style.display = 'none';
     pickedEl = null;
     selRectData = null;
-    silent('browser.pickEnd', { tabId: tabId }).then(function () { syncBounds(true); });
+    silent('browser.pickEnd', { tabId: activeId }).then(function () { syncBounds(true); });
+  }
+
+  // ---- 标签页操作（切换 / 关闭 / 新建）----
+  function switchTab(id) {
+    if (!id) return;
+    if (id === activeId) { syncActiveUi(); return; }
+    setMode('browse');   // 选取模式绑定单个标签的截图，切换标签先退出
+    activeId = id;
+    syncActiveUi();
+    silent('browser.switchTab', { tabId: id }).then(function () { syncBounds(true); });
+  }
+  function closeTab(id) {
+    var idx = -1;
+    for (var i = 0; i < tabs.length; i++) { if (tabs[i].id === id) { idx = i; break; } }
+    if (idx < 0) return;
+    setMode('browse');
+    var isActive = (id === activeId);
+    tabs.splice(idx, 1);
+    var next = null;
+    if (isActive) {
+      // 与原 UI 一致：关闭当前标签后激活剩余列表的最后一个；无剩余则清空
+      next = tabs.length ? tabs[tabs.length - 1].id : null;
+      activeId = next;
+    }
+    silent('browser.closeTab', { tabId: id, nextTabId: next || undefined });
+    if (activeId) {
+      syncActiveUi();
+      syncBounds(true);
+    } else {
+      curUrl = '';
+      urlInput.value = '';
+      renderTabs();
+      ensureHidden();
+      showHint('没有打开的标签页。输入网址或点击右上角 + 新建标签页。');
+    }
+  }
+  function newTab(u) {
+    var url = u || HOME;
+    return callAction('browser.newTab', { url: url }).then(function (res) {
+      if (res && res.tabId) {
+        addTab(res.tabId, url);
+      } else {
+        toast('无法打开该地址（可能被应用自身地址拦截）');
+      }
+    }).catch(function (e) { toast('新建标签页失败：' + (e && e.message || '')); });
   }
 
   // ---- 导航 ----
@@ -306,20 +440,30 @@
   }
   function navigate(u) {
     if (!u) return;
-    // Tab 未就绪（宿主刚把本插件挂上）：挂起地址，建好 Tab 时直接落在该地址，
-    // 避免先加载主页再跳转的闪烁
-    if (!tabId) { openUrl(u); return; }
+    // 无标签页：直接新建一个标签落在该地址
+    if (!activeId) { newTab(u); return; }
+    var t = findTab(activeId);
+    if (t) t.url = u;
     curUrl = u;
     urlInput.value = u;
     hideHint();
-    silent('browser.navigate', { tabId: tabId, url: u }).then(function () { syncBounds(true); });
+    renderTabs();
+    silent('browser.navigate', { tabId: activeId, url: u }).then(function () { syncBounds(true); });
   }
-  // 打开指定网页：宿主网页链接路由（browser.openUrl 事件）与地址栏共用
+  // 打开指定网页：宿主网页链接路由（browser.openUrl）与地址栏共用
+  // 与原 UI 一致：已存在同地址标签则切换过去，否则新开标签
   function openUrl(u) {
     if (!u) return;
-    if (tabId) { navigate(u); return; }
-    pendingUrl = u;
-    ensureTab();
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].url === u) { switchTab(tabs[i].id); return; }
+    }
+    if (!tabs.length) {
+      // 面板刚挂载、首个标签仍在创建中：把地址挂起，交由 ensureTab 直接开在它上面，避免先开后跳的闪烁
+      pendingUrl = u;
+      ensureTab();
+      return;
+    }
+    newTab(u);
   }
   function go() {
     var raw = urlInput.value.trim();
@@ -327,27 +471,24 @@
     navigate(normalizeUrl(raw));
   }
 
-  // ---- 建立原生浏览器 Tab ----
+  // ---- 建立首个原生浏览器标签 ----
   function ensureTab() {
-    if (tabId || starting) return;
+    if (tabs.length || starting) return;
     starting = true;
-    var first = pendingUrl || HOME;   // 有挂起地址就直接开在它上面
-    pendingUrl = null;
     callAction('browser.available').then(function (r) {
       if (!r || !r.available) { showHint('内置浏览器仅在桌面客户端（Electron）中可用。'); return; }
+      // 关键：待打开地址在「等待 available」期间才可能就绪，故此处才定型首个标签的地址，
+      // 避免宿主下发配置与网页链接路由并发时误开主页（旧实现的 bug）。
+      var first = pendingUrl || HOME;
+      pendingUrl = null;
       return callAction('browser.newTab', { url: first }).then(function (res) {
         if (res && res.tabId) {
-          tabId = res.tabId;
-          curUrl = first;
-          urlInput.value = first;
-          backBtn.disabled = false;
-          fwdBtn.disabled = false;
-          hideHint();
-          syncBounds(true);
-          silent('browser.focus', {});
+          addTab(res.tabId, first);
         } else {
           showHint('无法打开内置浏览器：目标地址被应用自身地址拦截（不能在内置浏览器中打开 PurrCat 自己的页面）。');
         }
+        // 竞态兜底：newTab 往返期间又来了 openUrl → 现在补开一个标签
+        if (pendingUrl) { var pu = pendingUrl; pendingUrl = null; newTab(pu); }
       });
     }).catch(function (e) { showHint('打开内置浏览器失败：' + (e && e.message || '')); })
       .then(function () { starting = false; });
@@ -396,7 +537,7 @@
     if (now - hoverAt < 120) return;
     hoverAt = now;
     var p = toLogical(e.clientX, e.clientY);
-    callAction('browser.locate', { tabId: tabId, x: p.x, y: p.y }).then(function (el) {
+    callAction('browser.locate', { tabId: activeId, x: p.x, y: p.y }).then(function (el) {
       if (mode !== 'pick' || cbox.style.display === 'block') return;
       if (el && el.rect) {
         hoverRectEl.style.display = 'block';
@@ -419,7 +560,7 @@
     }
     var clickX = e.clientX, clickY = e.clientY;
     var p = toLogical(clickX, clickY);
-    callAction('browser.pickElement', { tabId: tabId, x: p.x, y: p.y }).then(function (el) {
+    callAction('browser.pickElement', { tabId: activeId, x: p.x, y: p.y }).then(function (el) {
       if (mode !== 'pick') return;
       pickedEl = el || null;
       selRectData = (el && el.rect) ? el.rect : { x: p.x - 5, y: p.y - 5, w: 10, h: 10 };
@@ -443,9 +584,9 @@
   });
 
   // ---- 工具栏 ----
-  backBtn.addEventListener('click', function () { if (tabId) silent('browser.goBack', { tabId: tabId }); });
-  fwdBtn.addEventListener('click', function () { if (tabId) silent('browser.goForward', { tabId: tabId }); });
-  document.getElementById('reload').addEventListener('click', function () { if (tabId) silent('browser.reload', { tabId: tabId }); });
+  backBtn.addEventListener('click', function () { if (activeId) silent('browser.goBack', { tabId: activeId }); });
+  fwdBtn.addEventListener('click', function () { if (activeId) silent('browser.goForward', { tabId: activeId }); });
+  document.getElementById('reload').addEventListener('click', function () { if (activeId) silent('browser.reload', { tabId: activeId }); });
   document.getElementById('home').addEventListener('click', function () { navigate(HOME); });
   document.getElementById('go').addEventListener('click', go);
   pickBtn.addEventListener('click', function () { setMode(mode === 'pick' ? 'browse' : 'pick'); });
@@ -453,6 +594,7 @@
     silent('browser.openExternal', { url: curUrl || urlInput.value || HOME });
   });
   urlInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+  document.getElementById('tabAdd').addEventListener('click', function () { newTab(HOME); });
 
   // ---- 尺寸变化：浏览时同步原生视图 bounds；选取时重排截图 ----
   function onResize() {
@@ -478,22 +620,29 @@
     if (m.event === 'host.unmount') { cleanup(); return; }
   });
   function onTabEvent(data) {
-    if (data.tabId && tabId && data.tabId !== tabId) return;
+    if (!data) return;
+    var t = findTab(data.tabId);
     if (data.type === 'navigate') {
-      curUrl = data.url || curUrl;
-      urlInput.value = curUrl;
+      if (t) t.url = data.url || t.url;
+      if (data.tabId === activeId) { curUrl = data.url || curUrl; urlInput.value = curUrl; }
+      renderTabs();
+    } else if (data.type === 'title') {
+      if (t) t.title = data.title || t.title;
+      renderTabs();
     } else if (data.type === 'blocked') {
       toast(data.reason || '该地址已被拦截');
     }
   }
 
-  // 插件被卸载（抽屉切换 / 面板重建 / 关闭面板）：隐藏原生视图并关掉自己的 Tab
+  // 插件被卸载（抽屉切换 / 面板重建 / 关闭面板）：隐藏原生视图并关掉自己的全部标签
   function cleanup() {
     if (cleanup.done) return;
     cleanup.done = true;
     pendingUrl = null;
     ensureHidden();
-    if (tabId) { silent('browser.closeTab', { tabId: tabId }); tabId = null; }
+    tabs.slice().forEach(function (t) { silent('browser.closeTab', { tabId: t.id }); });
+    tabs = [];
+    activeId = null;
   }
   window.addEventListener('pagehide', cleanup);
 

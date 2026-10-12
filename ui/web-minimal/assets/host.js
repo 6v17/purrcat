@@ -1804,6 +1804,10 @@
         if (HOST.purrcat && HOST.purrcat.browserCloseTab) await HOST.purrcat.browserCloseTab(payload.tabId, payload.nextTabId || undefined);
         return { status: 'ok' };
       }
+      case 'browser.switchTab': {
+        if (HOST.purrcat && HOST.purrcat.browserSwitchTab) await HOST.purrcat.browserSwitchTab(payload.tabId);
+        return { status: 'ok' };
+      }
       case 'browser.navigate': {
         if (HOST.purrcat && HOST.purrcat.browserNavigate) await HOST.purrcat.browserNavigate(payload.tabId, payload.url);
         return { status: 'ok' };
