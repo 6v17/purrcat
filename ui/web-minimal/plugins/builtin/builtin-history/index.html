@@ -1345,8 +1345,9 @@
         return { label: n, text: n, type: 'mcp-quote', content: 'user want you fetch mcp：' + n };
       });
     });
-    else p = fetch('/api/webmin/ref/graphs').then(function (r) { return r.json(); }).then(function (names) {
-      return (names || []).map(function (g) {
+    else p = fetch('/api/graphs').then(function (r) { return r.json(); }).then(function (graphs) {
+      var names = (graphs || []).map(function (g) { return (typeof g === 'string') ? g : g.name; });
+      return names.map(function (g) {
         return { label: g, text: g, type: 'graph-quote', content: 'user quote the graph：' + g };
       });
     });
@@ -1435,7 +1436,7 @@
     callAction('state.get').then(function (s) {
       curSessionId = (s && s.activeSessionId) || '';
       if (!curSessionId) return;
-      return fetch('/api/webmin/session-paradigm/' + encodeURIComponent(curSessionId))
+      return fetch('/api/sessions/' + encodeURIComponent(curSessionId) + '/paradigm')
         .then(function (r) { return r.json(); })
         .then(function (d) { currentMode = (d && d.paradigm) || ''; setModeLabel(); })
         .catch(function () {});

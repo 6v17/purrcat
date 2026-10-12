@@ -208,6 +208,25 @@ def create_new_session(req: NewSessionReq):
         raise
 
 
+@router.get("/sessions/{session_id}/paradigm")
+def get_session_paradigm_api(session_id: str):
+    """读取某会话当前绑定的 Agent Loop（paradigm）；空串表示使用默认 PARADIGM。"""
+    import json
+    import os
+
+    from src.utils.config import SESSIONS_DIR
+
+    if not session_id or any(c in session_id for c in ("/", "\\", "..")):
+        raise HTTPException(status_code=400, detail="非法的会话 id")
+    meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            paradigm = str((json.load(f) or {}).get("paradigm") or "")
+    except Exception:
+        paradigm = ""
+    return {"paradigm": paradigm}
+
+
 @router.post("/sessions/{session_id}/paradigm")
 def switch_session_paradigm_api(session_id: str, req: ParadigmSwitchReq):
     """会话暂停时热切换 Agent Loop（只换循环逻辑，不动系统提示词，保留 KV Cache）。"""

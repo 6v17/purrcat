@@ -3,7 +3,6 @@
    - 加载 /api/webmin/manifest 拿到插件清单 + configSchema + config
    - 按 slot 把插件渲染为 iframe；每个 slot 挂载首个匹配插件
    - callAction 动作总线：
-       * 后端副作用动作 → POST /api/webmin/action
        * 聊天/会话/配置/引用/枚举 → 直接同源 fetch 现有 /api/*
        * 本地 Electron 能力（对话框/窗口控制/壁纸选择）→ 仅在宿主访问 window.purrcat
    - 配置管理：manifest → effective() 合并 schema 默认值+已存值，
@@ -1757,8 +1756,10 @@
         await reloadManifest();
         return { status: 'ok' };
       }
-      case 'ref.graphs':
-        return (await fetch('/api/webmin/ref/graphs')).json();
+      case 'ref.graphs': {
+        const graphs = await (await fetch('/api/graphs')).json();
+        return (graphs || []).map((g) => (typeof g === 'string' ? g : g.name));
+      }
       // ---- 插件自带后端 RPC ----
       case 'plugin.rpc': {
         const pid = payload.plugin_id;
@@ -1864,11 +1865,11 @@
   // ---- 命令入口 ----
   async function callAction(actionId, payload, origin) {
     if (actionId === 'switch_to_normal') {
-      const res = await fetch('/api/webmin/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ actionId, payload: payload || {} }) });
+      const res = await fetch('/api/config/view', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ui_mode: 'normal' }) });
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      if (data && data.restart) HOST.alert('已切换为完整模式，请重启应用生效。');
-      return data;
+      await res.json();
+      HOST.alert('已切换为完整模式，请重启应用生效。');
+      return { status: 'ok', restart: true };
     }
     return dispatch(actionId, payload, origin);
   }

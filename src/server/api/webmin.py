@@ -1,8 +1,8 @@
-"""极简模式（web-minimal）插件 API。
+"""极简模式（web-minimal）插件系统 API。
 
 与现有 React UI 完全独立：宿主为纯静态页面（ui/web-minimal），它通过本路由
-获取插件清单、按需读取插件静态文件（热插拔），以及执行约定的后端动作协议
-（callAction）。
+获取插件清单、按需读取插件静态文件（热插拔）、持久化宿主配置，并转发插件
+自带后端的 RPC 调用。
 
 插件来源：
   - 内置四件套：{BASE_DIR}/ui/web-minimal/plugins/builtin/*（随 App 分发，只读）
@@ -25,8 +25,6 @@ from src.utils.config import (
     AGENT_VM_DIR,
     BASE_DIR,
     PURRCAT_DIR,
-    GRAPHS_DIR,
-    SESSIONS_DIR,
     get_global_settings,
     save_global_setting,
 )
@@ -120,12 +118,6 @@ def _normalize_dependency(raw) -> list:
         if dep_type in DEP_TYPES and dep_id:
             out.append({"type": dep_type, "id": dep_id})
     return out
-
-
-# 可承载到后端的动作 id → 处理器
-_ACTION_HANDLERS = {
-    "switch_to_normal": lambda payload: save_global_setting("ui_mode", "normal"),
-}
 
 
 def _read_plugin_descriptor(plugin_dir: str) -> dict:
@@ -476,37 +468,6 @@ def api_webmin_serve_wallpaper(filename: str):
     return FileResponse(target)
 
 
-@router.get("/ref/graphs")
-def api_webmin_ref_graphs():
-    """枚举可用于引用的 graph（~/.purrcat/graph 下每个含 graph.json 的目录）。"""
-    if not os.path.isdir(GRAPHS_DIR):
-        return []
-    names = []
-    for name in os.listdir(GRAPHS_DIR):
-        d = os.path.join(GRAPHS_DIR, name)
-        if os.path.isdir(d) and os.path.isfile(os.path.join(d, "graph.json")):
-            names.append(name)
-    return names
-
-
-@router.get("/session-paradigm/{session_id}")
-def api_webmin_session_paradigm(session_id: str):
-    """读取某会话当前绑定的 Agent Loop（paradigm）；空串表示使用默认 PARADIGM。
-
-    只读端点：供极简模式的输入框回显当前 Mode，不改动任何现有 /api/* 行为。
-    """
-    if not session_id or any(c in session_id for c in ("/", "\\", "..")):
-        raise HTTPException(status_code=400, detail="非法的会话 id")
-    meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
-    paradigm = ""
-    try:
-        with open(meta_path, "r", encoding="utf-8") as f:
-            paradigm = str((json.load(f) or {}).get("paradigm") or "")
-    except Exception:
-        paradigm = ""
-    return {"paradigm": paradigm}
-
-
 @router.get("/plugin/{plugin_id}/{path:path}")
 def api_webmin_plugin(plugin_id: str, path: str):
     """按路径读取插件目录内静态文件；未指定路径时回退到 descriptor 的 entry。"""
@@ -543,22 +504,3 @@ def api_webmin_plugin_dir(plugin_id: str, path: str = ""):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"读取目录失败: {e}")
     return {"path": path, "entries": entries}
-
-
-@router.post("/action")
-def api_webmin_action(payload: dict):
-    """动作协议：宿主/插件通过 callAction(actionId, payload) 调用的后端副作用动作。"""
-    action_id = str(payload.get("actionId") or "")
-    data = payload.get("payload") or {}
-    handler = _ACTION_HANDLERS.get(action_id)
-    if handler is None:
-        raise HTTPException(status_code=404, detail=f"未注册的动作: {action_id}")
-    try:
-        handler(data)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"动作 {action_id} 执行失败: {e}")
-    return (
-        {"status": "ok", "restart": True}
-        if action_id == "switch_to_normal"
-        else {"status": "ok"}
-    )
