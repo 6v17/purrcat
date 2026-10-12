@@ -197,8 +197,7 @@ body.rail-2 .wm-rail .rail-ico .rail-name { display: inline; }
   width: var(--wm-sidebar-w);
   z-index: 10;
   background: transparent; /* 由侧栏插件按自身 opacity 绘制，宿主不设底色 */
-  border-radius: 18px; /* 宿主层裁剪 iframe → 圆角在最外层可靠生效 */
-  overflow: hidden;
+  /* 不裁剪、不圆角：侧栏插件自带的手绘框直接充当整个区域的容器 */
 }
 
 /* 主区：侧栏右侧，容纳单个「会话」面板（历史 + 输入合并为一体）（右移出图标栏） */
@@ -215,15 +214,10 @@ body.rail-2 .wm-rail .rail-ico .rail-name { display: inline; }
 }
 /* 会话列表(侧栏)隐藏时：主区舒展到最左，保留与白条的间隙 */
 body.rail-nosidebar .wm-main { left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap)); }
-/* 主区右侧大圆角框：会话面板（历史 + 输入合并）整块带一圈极细描边勾勒圆角轮廓
-   （纯白面板在外层纯白下圆角不可见(看似直角)，故加描边）。
-   overflow:hidden 让插件白色面板被裁进 18px 圆角，浮层向上弹出也不越出本体 */
+/* 主区右侧会话面板：不再由宿主画圆角框，改由会话插件自带的手绘框直接充当区域容器 */
 .wm-main [data-slot="session"] {
   min-height: 0;
-  overflow: hidden;
   background: transparent;
-  border: 1px solid var(--wm-border, rgba(15,17,21,.08));
-  border-radius: 18px;
 }
 
 /* 设置面板：modal overlay（在白条右侧渲染，左侧白条区域始终专属白条），默认隐藏 */
@@ -540,10 +534,7 @@ body.settings-open [data-layer="settings"] { display: flex; }
   border: 0;
   display: block;
 }
-/* 会话列表面板圆角：直接给 iframe 自身设圆角，最可靠地裁掉其内容四角 */
-[data-slot="sidebar"] iframe {
-  border-radius: 18px;
-}
+/* 会话列表(侧栏)同样不裁剪、不圆角：侧栏插件自带的手绘框直接充当整个区域的容器 */
 
 /* ===== panel-container：宿主系统级中栏容器（三栏：左侧栏 | 中栏容器 | 聊天历史+输入）=====
    三栏布局：最左 rail → 左侧栏 → 中间 panel-container → 最右 聊天历史(上)+输入(下)。
@@ -551,32 +542,45 @@ body.settings-open [data-layer="settings"] { display: flex; }
    容器是固定布局列（非弹窗、不可拖拽整个窗口），宽度由中栏右缘分隔条拖动调整。
    打开时（body.has-panels）聊天区右移到中栏之后；隐藏时不占位、聊天区舒展。 */
 :root { --wm-panel-w: 0px; }
-.wm-ppanel {
+/* 中栏容器的「定位 + 尺寸」：内置容器 .wm-ppanel 与入驻插件的 iframe 共用同一条规则，
+   两边边界因此永远一致、可无差别互换（同一区域互斥，任何时刻只显示其一）。
+   高度与右侧聊天框对齐：与 .wm-main 同用 topbar + inset 上下内缩。 */
+.wm-ppanel,
+[data-slot="panel-container"] > iframe {
   position: fixed;
-  /* 高度与右侧聊天框对齐：与 .wm-main 同用 topbar + inset 上下内缩 */
   top: calc(var(--wm-topbar-h) + var(--wm-sidebar-inset));
-  bottom: var(--wm-sidebar-inset);
   left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-sidebar-w) + var(--wm-sidebar-gap));
   width: var(--wm-panel-w, 0px);
+  /* 高度必须显式算出（等价于上下各内缩 --wm-sidebar-inset），不能用 top/bottom 拉伸：
+     · .wm-slot iframe 的 height:100% 对 fixed 元素等于视口高 → 顶掉 bottom、下缘出界；
+     · 改成 height:auto 也不行 —— iframe 是「替换元素」，auto 只退化成其固有高度(150px)，
+       不会像 div 那样被 top/bottom 撑开 → 入驻容器的插件会缩成一条 150px 短条，
+       而内置容器 .wm-ppanel(div) 却是满高，两者边界不一致。
+     用同一个 calc 高度，div 与 iframe 两种容器才真正等高等界。 */
+  height: calc(100vh - var(--wm-topbar-h) - var(--wm-sidebar-inset) - var(--wm-sidebar-inset));
   /* 视口硬上限（动态，非固定 max-width）：width 有 0.15s 过渡，窗口缩小时 JS 夹紧会滞后，
      这里按同一左缘公式兜底，保证面板右缘（含 ✕）任何瞬间都不越过窗口右边界。
      --wm-rail-w 在 body 作用域解析，rail 展开(196px)时此处自动同步。 */
   max-width: calc(100vw - var(--wm-rail-w) - var(--wm-sidebar-gap) - var(--wm-sidebar-w) - var(--wm-sidebar-gap) - var(--wm-sidebar-gap));
   z-index: 20;              /* 在聊天区(main z5)之上、顶栏(22)之下 */
-  background: var(--wm-panel-bg, var(--wm-bl-100));  /* 透明底由宿主 applyPanelContainerCfg 注入 */
+  transition: width 0.15s ease;
+}
+/* 左侧栏隐藏时，中栏左移贴住白条 */
+body.rail-nosidebar .wm-ppanel,
+body.rail-nosidebar [data-slot="panel-container"] > iframe {
+  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap));
+  max-width: calc(100vw - var(--wm-rail-w) - var(--wm-sidebar-gap) - var(--wm-sidebar-gap));
+}
+/* 内置容器自身的外观：背景/圆角由宿主绘制（透明底由宿主 applyPanelContainerCfg 注入） */
+.wm-ppanel {
+  background: var(--wm-panel-bg, var(--wm-bl-100));
   border: 1px solid var(--wm-border);
   border-radius: 18px;
   overflow: hidden;
   display: none;
   flex-direction: column;
-  transition: width 0.15s ease;
 }
 .wm-ppanel.wm-mount { display: flex; }
-/* 左侧栏隐藏时，中栏左移贴住白条 */
-body.rail-nosidebar .wm-ppanel {
-  left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap));
-  max-width: calc(100vw - var(--wm-rail-w) - var(--wm-sidebar-gap) - var(--wm-sidebar-gap));
-}
 /* 中栏打开时，聊天+输入右移到中栏之后（覆盖默认左侧栏偏移）；
    同时左内边距归零：否则 main 的 14px padding 会叠加在 8px 间距上，
    使「面板↔聊天框」缝隙(约22px)明显大于「会话列表↔面板」缝隙(8px) */
@@ -588,6 +592,10 @@ body.rail-nosidebar.has-panels .wm-main {
   left: calc(var(--wm-rail-w) + var(--wm-sidebar-gap) + var(--wm-panel-w) + var(--wm-sidebar-gap));
   padding-left: 0;
 }
+/* panel-container 是一等 slot：锚点本身不产生盒子（display:contents），
+   入驻其中的插件 iframe 与内置容器共用上面的「定位 + 尺寸」规则；
+   宿主不给它画任何外观，容器插件自带的手绘框即整个区域。 */
+[data-layer="panel-container"] { display: contents; }
 .wm-pp_head {
   flex: none;
   display: flex;

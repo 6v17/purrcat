@@ -103,6 +103,9 @@
       HOST.document.querySelectorAll('.wm-ppanel[data-pslot="panel"]').forEach((el) => {
         el.style.display = hidden ? 'none' : 'flex';
       });
+      // 由插件入驻的容器（panel-container 区域）同样受「面板容器」总开关统辖
+      const pcHost = HOST.document.querySelector('[data-slot="panel-container"]');
+      if (pcHost && panelContainerPlugin()) pcHost.style.display = hidden ? 'none' : '';
       if (hidden) { HOST.document.body.classList.remove('has-panels'); if (panelBar) panelBar.style.display = 'none'; }
       else {
         HOST.document.body.classList.add('has-panels');
@@ -132,9 +135,19 @@
     Object.keys(railState.hidden).forEach((id) => {
       if (id === '__panel__') return;
       const slot = slotOfPlugin(id);
-      if (slot && railState.hidden[id]) applySlotHidden(slot, true);
+      if (!slot || !railState.hidden[id]) return;
+      // fixed 区域：关闭是按「插件」记录的，不能据此把整个区域隐藏掉（否则同区域插件连坐，
+      // 例如关掉「涂鸦会话」会把原生会话一起隐藏）。该区域的显隐由 refreshFixedSlot
+      // 依据各插件开关重算，这里跳过。
+      // panel 内容插件同理：单个插件被关闭只应让该插件从中栏容器里消失，而不是把整个
+      // 面板容器关掉（容器的显隐见下方 panelContainerVisible 的统一计算）。
+      const p = groupState.plugins.find((x) => x.id === id);
+      const pt = p ? (p.slotDef || {}).type : '';
+      if (pt === 'fixed' || pt === 'panel') return;
+      applySlotHidden(slot, true);
     });
-    if (railState.hidden && railState.hidden['__panel__']) applySlotHidden('panel', true);
+    // 中栏容器：内置容器与入驻插件同属一个区域，谁生效都占位，两个候选全部关闭才让出中栏
+    applySlotHidden('panel', !panelContainerVisible());
   }
   function applyRailStage() {
     HOST.document.body.classList.remove('rail-0', 'rail-1', 'rail-2');
@@ -169,7 +182,12 @@
     if (!railState.hidden) railState.hidden = {};
     if (hidden) railState.hidden[id] = true; else delete railState.hidden[id];
     const slot = slotOfPlugin(id);
-    if (slot) applySlotHidden(slot, hidden);
+    if (slot) {
+      const p = groupState.plugins.find((x) => x.id === id);
+      // fixed：单例槽内多个插件互斥，开关只作用于该插件本身，区域的显隐按插件开关重算
+      if (p && (p.slotDef || {}).type === 'fixed') refreshFixedSlot(slot);
+      else applySlotHidden(slot, hidden);
+    }
     persistRail().catch(() => {});
   }
   // 按当前生效状态即时重算单个图标按钮的 on/off 高亮
@@ -212,8 +230,18 @@
         railButtons[p.id] = btn;    // 登记，供面板开合状态即时刷新高亮
         btn.addEventListener('click', () => {
           if (p.railAction) { callAction(p.railAction, {}).catch(() => {}); return; }  // 例如设置 → 打开设置面板
-          setPluginHidden(p.id, !railHidden(p.id));
-          updateRailButton(btn, p); // 即时刷新高亮，无需重建
+          // fixed：同一区域同时只能有一个插件生效。点击「未生效」的插件＝先关掉占位者再打开它
+          // （占位者自动让位，无需用户手动关闭）；点击「已生效」的插件＝关闭它，该区域随之空出。
+          if ((p.slotDef || {}).type === 'fixed') {
+            if (pluginVisible(p)) setPluginHidden(p.id, true);
+            else activateSlotPlugin(p);
+          } else {
+            // float / modal（如插件市场）：与设置面板同一套开关语义——开=显示实例，关=隐藏。
+            // 旧写法 setPluginHidden(p.id, !pluginVisible(p)) 参数被取反：点关闭态仍是关闭、
+            // 点开启态仍是开启，导致这类插件在白条里永远点不动。
+            togglePluginOpen(p);
+          }
+          buildRail();
         });
         iconsEl.appendChild(btn);
       });
@@ -233,8 +261,19 @@
       updateContainerRail(cb);
       railButtons['__panel__'] = cb;
       cb.addEventListener('click', () => {
-        setContainerHidden(!railHidden('__panel__'));
-        updateContainerRail(cb);
+        const builtinActive = !railHidden('__panel__') && !panelContainerPlugin();
+        if (builtinActive) {
+          // 内置容器正在入驻：再点＝关闭该区域，让出中栏
+          setContainerHidden(true);
+        } else {
+          // 让内置容器入驻：同区域的入驻插件先全部让位（与其它单例槽同一互斥规则）
+          if (!railState.hidden) railState.hidden = {};
+          (slotMap['panel-container'] || []).forEach((p) => { railState.hidden[p.id] = true; });
+          if ((slotMap['panel-container'] || []).length) refreshFixedSlot('panel-container');
+          setContainerHidden(false);
+          buildRail();
+          persistActive();
+        }
       });
       iconsEl.appendChild(cb);
     }
@@ -874,21 +913,23 @@
       openPanelTab(p.id);
       return;
     }
-    if (type === 'fixed') activeBySlot[slot] = p.id;   // 记住该单例槽当前选中的插件
-    // fixed：已是主挂载则仅取消隐藏；否则卸载当前并挂载目标
-    if (pluginBySlot[slot] !== p) {
-      if (frames[slot]) { frames[slot].forEach(function (f) { if (f.iframe && f.iframe.parentNode) f.iframe.parentNode.removeChild(f.iframe); }); frames[slot] = []; }
-      pluginBySlot[slot] = p;
-      const anchor = HOST.document.querySelector('[data-slot="' + slot + '"]');
-      if (anchor) {
-        anchor.innerHTML = '';
-        const fr = mountFrame(anchor, p);
-        if (fr) frames[slot] = [fr];
-      }
+    if (type === 'fixed') {
+      // 单例槽互斥：先把同区域其它插件全部关掉，再打开目标插件（占位者自动让位）
+      if (!railState.hidden) railState.hidden = {};
+      (slotMap[slot] || []).forEach((x) => { if (x.id !== p.id) railState.hidden[x.id] = true; });
+      delete railState.hidden[p.id];
+      // 中栏容器区域：内置容器与入驻插件互斥——插件入驻即让内置容器让位（容器仍占位，由插件提供）
+      if (slot === 'panel-container') railState.hidden['__panel__'] = true;
+      activeBySlot[slot] = p.id;   // 记住该单例槽当前选中的插件
+      refreshFixedSlot(slot);
+      buildRail();
+      persistActive();
+      persistRail().catch(() => {});
+      return;
     }
+    // float：自由浮窗无单例约束，直接显示
     if (railHidden(p.id)) setPluginHidden(p.id, false);
     buildRail();
-    if (type === 'fixed') persistActive();
   }
   function togglePluginOpen(p) {
     const type = (p.slotDef || {}).type;
@@ -902,14 +943,8 @@
       setPluginHidden(p.id, true); buildRail();
       return;
     }
-    // 打开：fixed 单例槽拦截——同槽位已有其他插件运行时，必须先关闭它
-    if (type === 'fixed') {
-      const cur = pluginBySlot[p.slot];
-      if (cur && cur.id !== p.id && !railHidden(cur.id)) {
-        HOST.alert('「' + (p.name || p.id) + '」与「' + (cur.name || cur.id) + '」占用同一位置，同时只能启用一个插件。请先关闭「' + (cur.name || cur.id) + '」。');
-        return;
-      }
-    }
+    // 打开：fixed 单例槽——同区域已有别的插件在运行时先关掉占位者再打开目标，
+    // 互斥规则统一由 activateSlotPlugin 处理
     activateSlotPlugin(p);   // float 无单例约束，直接显示
   }
 
@@ -2106,7 +2141,9 @@
     let limit = panelMaxLimit();
     // 硬性兜底：按面板元素「当前实际左缘」再夹一次。窗口缩小/白条展开等场景下，
     // 只要右缘（含 ✕）会越过视口，就按实际左缘重算上限，保证面板绝不超出 app。
-    const el = HOST.document.querySelector('.wm-ppanel[data-pslot="panel"]');
+    // 容器元素：内置容器 .wm-ppanel，或由插件入驻 panel-container 时其挂载的 iframe
+    const el = HOST.document.querySelector('.wm-ppanel[data-pslot="panel"]')
+      || HOST.document.querySelector('[data-slot="panel-container"] > iframe');
     if (el) {
       const left = el.getBoundingClientRect().left;
       if (isFinite(left)) limit = Math.min(limit, Math.floor(HOST.innerWidth - left - gap));
@@ -2129,10 +2166,22 @@
     const btn = btnOverride || railButtons['__panel__'];
     if (!btn) return;
     btn.classList.remove('on', 'off');
-    btn.classList.add(railHidden('__panel__') ? 'off' : 'on');
+    // 内置容器与入驻插件是同一区域（panel-container）的两个候选，互斥：插件生效时内置容器显示为关闭
+    const builtinActive = !railHidden('__panel__') && !panelContainerPlugin();
+    btn.classList.add(builtinActive ? 'on' : 'off');
   }
   function hasPanelsDef() {
+    // panel-container 区域有插件入驻时，中栏容器同样存在（由该插件提供）
+    if ((slotMap['panel-container'] || []).length) return true;
     return Object.keys(slotMap).some((sid) => (slotMap[sid][0].slotDef || {}).type === 'panel');
+  }
+  // 当前入驻 panel-container 区域的插件（同区域互斥，最多一个生效）
+  function panelContainerPlugin() {
+    return (slotMap['panel-container'] || []).filter((p) => !railHidden(p.id))[0] || null;
+  }
+  // 中栏容器是否占位：入驻插件生效，或内置容器开关打开。二者互斥，同时只有一个成立
+  function panelContainerVisible() {
+    return !!panelContainerPlugin() || !railHidden('__panel__');
   }
   function startPanelBarDrag(e) {
     e.preventDefault();
@@ -2355,6 +2404,15 @@
   }
   // 挂载 type=panel 插件：无面板插件则不占位；有则建 .wm-ppanel 并点亮抽屉
   function mountPanels() {
+    // 若已有「未被关闭」的插件声明入驻 panel-container（与宿主内置容器等位、同区域互斥），
+    // 则由该插件提供中栏容器：宿主内置容器让位，不再创建 .wm-ppanel（标签列表保留，便于切回）。
+    const containerHost = (slotMap['panel-container'] || []).filter((p) => !railHidden(p.id))[0];
+    if (containerHost) {
+      if (panelState && panelState.el && panelState.el.parentNode) { notifyUnmount(panelState.el); panelState.el.remove(); }
+      panelState = null;
+      closePanelMenus();
+      return;
+    }
     // 收集全部 type=panel 内容插件进单例中栏容器
     const byArea = { panel: [] };
     Object.keys(slotMap).forEach((sid) => {
@@ -2431,10 +2489,17 @@
     const u = String(url || '').trim();
     const pc = HOST.purrcat;
     const hit = browserPanel();
+    // 中栏容器由插件入驻时宿主内置容器已让位（panelState 为空），此时把地址广播给
+    // 该容器插件，由它转交给自己的内置浏览器子插件——与内置容器同样在应用内打开。
+    const hostCont = hit ? null : panelContainerPlugin();
     // 非网页（mailto:/tel:/file: 等）或面板里没有可用内置浏览器 → 退回系统处理
-    if (!/^https?:\/\//i.test(u) || !hit || !pc || !pc.browserNewTab) {
+    if (!/^https?:\/\//i.test(u) || (!hit && !hostCont) || !pc || !pc.browserNewTab) {
       if (pc && pc.openExternal && u) pc.openExternal(u);
       return { status: 'external' };
+    }
+    if (hostCont) {
+      broadcast('panel-container', 'browser.openUrl', { url: u });
+      return { status: 'ok' };
     }
     // 浏览器面板未开为标签页则先打开，再激活并投递地址（已打开则仅聚焦）
     openPanelTab(hit.p.id);
@@ -2523,21 +2588,54 @@
     });
   }
 
+  // 重算某 fixed 区域当前应显示的插件：在「未被关闭」的插件里优先取用户上次选中的，
+  // 否则取声明顺序第一个；全部被关闭时该区域不占位（隐藏锚点、让出宽度）。
+  // 同区域天然互斥——任意时刻最多只有一个插件被挂载。
+  function refreshFixedSlot(slot) {
+    const list = slotMap[slot] || [];
+    const visible = list.filter((x) => !railHidden(x.id));
+    const chosen = visible.find((x) => x.id === activeBySlot[slot]) || visible[0] || null;
+    if (frames[slot]) {
+      frames[slot].forEach((f) => { if (f.iframe && f.iframe.parentNode) f.iframe.parentNode.removeChild(f.iframe); });
+      frames[slot] = [];
+    }
+    if (!chosen) {
+      delete pluginBySlot[slot];
+      applySlotHidden(slot, true);
+      if (slot === 'panel-container') syncPanelContainer();
+      return;
+    }
+    pluginBySlot[slot] = chosen;
+    const anchor = HOST.document.querySelector(`[data-slot="${slot}"]`);
+    if (anchor) {
+      anchor.innerHTML = '';
+      const fr = mountFrame(anchor, chosen);
+      if (fr) frames[slot] = [fr];
+    }
+    // 有插件生效：显示锚点（mountFrame 只负责塞 iframe，不负责显隐）
+    applySlotHidden(slot, false);
+    if (slot === 'panel-container') syncPanelContainer();
+  }
+
+  // 中栏容器的唯一同步点：宿主内置容器与入驻插件同区域互斥（谁生效谁占位），
+  // 并据此重算 has-panels / 分隔条 / 中栏宽度，最后由「面板容器」总开关统辖显隐。
+  // 开关入驻插件（走 refreshFixedSlot）后必须调用，否则会出现「内置容器与插件容器同时
+  // 显示」或「容器不占位、与会话历史重叠悬空」。
+  function syncPanelContainer() {
+    mountPanels();                                      // 有入驻插件则内置容器让位（移除 .wm-ppanel），否则重建
+    reconcilePanels();                                  // has-panels / .wm-pbar / --wm-panel-w
+    applySlotHidden('panel', !panelContainerVisible());  // 最后统一显隐：两候选谁生效都占位
+  }
+
   // ---- 动态挂载全部类型窗口（type：fixed 锚定单例 / panel 分栏抽屉 / float 自由浮窗多开 / modal 模态弹窗） ----
   function mountAll() {
-    // 1) fixed：按 area 挂到 html 锚定容器；优先挂载用户上次选中的插件（activeBySlot），否则取第一个
+    // 1) fixed：按 area 挂到 html 锚定容器；优先挂载用户上次选中的插件，
+    //    否则取未被关闭插件中声明顺序第一个；该区域全部插件都被关闭则不占位。
     Object.keys(slotMap).forEach((sid) => {
       const list = slotMap[sid];
       const def = (list[0].slotDef || {});
       if (def.type !== 'fixed') return;
-      const chosen = list.find((x) => x.id === activeBySlot[sid]) || list[0];
-      pluginBySlot[sid] = chosen;
-      frames[sid] = [];
-      const mainEl = HOST.document.querySelector(`[data-slot="${sid}"]`);
-      if (!mainEl) return;
-      slotByPluginId[chosen.id] = sid;
-      const fr = mountFrame(mainEl, chosen);
-      if (fr) frames[sid].push(fr);
+      refreshFixedSlot(sid);
     });
     // 2) panel：无面板插件则不占位；有则建 .wm-ppanel（右上角抽屉切换）
     mountPanels();

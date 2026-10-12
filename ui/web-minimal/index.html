@@ -45,6 +45,11 @@
     <section class="wm-slot" data-slot="session" data-layer="session"></section>
   </main>
 
+  <!-- 中栏面板容器 slot（panel-container）：宿主系统级单例，非弹窗。
+       默认由宿主内置的 Chrome 风格多标签容器入驻；若存在声明 area=panel-container 的插件，
+       则改由该插件入驻（同区域互斥，内置容器自动让位）。 -->
+  <div class="wm-slot" data-slot="panel-container" data-layer="panel-container"></div>
+
   <!-- 浮动槽位：桌宠等可自置顶层的放这里（如无插件则隐藏） -->
   <div class="wm-slot wm-pet" data-slot="pet" data-layer="pet"></div>
 
