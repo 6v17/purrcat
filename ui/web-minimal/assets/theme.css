@@ -144,7 +144,7 @@ body.electron .win-controls { display: flex; }
   padding: 2px 2px 0;
 }
 .rail-brand { display: none; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
-body.rail-2 .rail-brand { display: flex; }
+body.rail-1 .rail-brand { display: flex; }
 .rail-brand .brand-name { font-size: 14px; font-weight: 700; color: var(--wm-label); white-space: nowrap; }
 .rail-brand .brand-beta {
   flex: none; font-size: 9.5px; font-weight: 700; line-height: 1;
@@ -180,13 +180,11 @@ body.rail-2 .rail-brand { display: flex; }
 .wm-rail .rail-toggle svg { display: block; width: 16px; height: 16px; }
 .wm-rail .rail-ico .rail-name { display: none; flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
 
-/* 阶段 0：收起，只保留顶部开关 */
-body.rail-0 .wm-rail .rail-icons { display: none; }
-/* 阶段 2：图标+名称，图标栏变左侧栏 */
-body.rail-2 { --wm-rail-w: 196px; }
-body.rail-2 .wm-rail .rail-icons { align-items: stretch; padding: 0 6px; }
-body.rail-2 .wm-rail .rail-ico { width: 100%; justify-content: flex-start; }
-body.rail-2 .wm-rail .rail-ico .rail-name { display: inline; }
+/* 阶段 1：图标+名称，图标栏变左侧栏 */
+body.rail-1 { --wm-rail-w: 196px; }
+body.rail-1 .wm-rail .rail-icons { align-items: stretch; padding: 0 6px; }
+body.rail-1 .wm-rail .rail-ico { width: 100%; justify-content: flex-start; }
+body.rail-1 .wm-rail .rail-ico .rail-name { display: inline; }
 
 /* 侧栏：浅灰，无右边界线（右移出图标栏） */
 [data-layer="sidebar"] {
@@ -224,7 +222,7 @@ body.rail-nosidebar .wm-main { left: calc(var(--wm-rail-w) + var(--wm-sidebar-ga
 [data-layer="settings"] {
   position: fixed;
   top: 0; right: 0; bottom: 0;
-  left: var(--wm-rail-w); /* 紧随白条；rail-2 展开成 196px 时自动右移，绝不被展开区遮住 */
+  left: var(--wm-rail-w); /* 紧随白条；rail-1 展开成 196px 时自动右移，绝不被展开区遮住 */
   z-index: 50;
   display: none;
   background: rgba(15, 17, 21, 0.35);

@@ -78,7 +78,7 @@
   }
 
   // ---- 图标栏（固定组件）----
-  const RAIL_STAGES = 3;
+  const RAIL_STAGES = 2;   // 0=仅图标；1=图标+文字
   function isRailPlugin(p) { return p && p.entry; }
   function railHidden(id) { return !!(railState.hidden && railState.hidden[id]); }
   function applySlotHidden(slot, hidden) {
@@ -151,7 +151,7 @@
     applySlotHidden('panel', !panelContainerVisible());
   }
   function applyRailStage() {
-    HOST.document.body.classList.remove('rail-0', 'rail-1', 'rail-2');
+    HOST.document.body.classList.remove('rail-0', 'rail-1');
     HOST.document.body.classList.add('rail-' + railState.stage);
     const t = HOST.document.getElementById('railToggle');
     if (t) {
@@ -171,7 +171,7 @@
     if (rail) rail.style.setProperty('--wm-rail-bg', 'rgba(255,255,255,' + o.toFixed(3) + ')');
   }
   function cycleRail() {
-    railState.stage = (railState.stage + 1) % RAIL_STAGES;   // 0→1→2→0
+    railState.stage = (railState.stage + 1) % RAIL_STAGES;   // 0→1→0
     applyRailStage();
     persistRail().catch(() => {});
   }
@@ -2207,7 +2207,7 @@
     el.style.setProperty('--wm-panel-bg', 'rgba(242,244,247,' + o.toFixed(3) + ')');
   }
   // 读取 CSS 变量数值。必须从 body 作用域读取：布局变量可能在 body 上被覆盖
-  // （如 body.rail-2 把 --wm-rail-w 改为 196px），从 documentElement 读会一直得到
+  // （如 body.rail-1 把 --wm-rail-w 改为 196px），从 documentElement 读会一直得到
   // :root 的 48px，导致 rail 展开时面板宽度上限偏大、右缘越出窗口。
   function cssNum(name, dflt) {
     const scope = HOST.document.body || HOST.document.documentElement;
@@ -2806,7 +2806,7 @@
     const railSaved = manifest.rail;
     if (railSaved && typeof railSaved === 'object') {
       const stage = Number(railSaved.stage);
-      railState.stage = (stage >= 0 && stage < RAIL_STAGES) ? stage : 1;
+      railState.stage = (stage >= 0 && stage < RAIL_STAGES) ? stage : 0;
       railState.hidden = (railSaved.hidden && typeof railSaved.hidden === 'object') ? railSaved.hidden : {};
       railState.opacity = (typeof railSaved.opacity === 'number') ? railSaved.opacity : 1;
     }
