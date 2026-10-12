@@ -39,7 +39,7 @@ __GOAL__
 | --- | --- | --- | --- |
 | `id` | ✅ | string | 全局唯一键，同时是静态资源 URL 的一段；只用小写字母、数字、`-`、`_` |
 | `name` | 建议 | string | 设置面板与图标栏里显示的名称 |
-| `icon` | ❌ | string | 宿主内置图标名：`list` / `pencil` / `history` / `image` / `globe` / `panel-left` / `layout-panel-left` / `settings`；也可直接写一段自己的 `<svg ...>...</svg>`；写其它字符则按文本渲染。不填取名称首字母 |
+| `icon` | ❌ | string | 宿主内置图标名：`list` / `pencil` / `history` / `image` / `globe` / `panel-left` / `panel-top` / `layout-panel-left` / `settings`；也可直接写一段自己的 `<svg ...>...</svg>`；写其它字符则按文本渲染。不填取名称首字母 |
 | `slot` | ✅ | object \\| string | 见下。**必须显式声明**，不写会把 id 当区域名，插件不会出现在界面上 |
 | `entry` | ❌ | string | 入口 HTML，默认 `index.html` |
 | `configSchema` | ❌ | array | 用户可配置项，见 §3 |

@@ -53,6 +53,7 @@
     image: '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
     globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
     'panel-left': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+    'panel-top': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/>',
     'layout-panel-left': '<rect width="7" height="18" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
@@ -211,9 +212,17 @@
     if (!iconsEl) return;
     applyRailStage();
     iconsEl.innerHTML = '';
+    // 1) 固定区域（同区域互斥，最多一个生效）：按「区域」共用一个图标——同区域多个插件
+    //    （如原生会话 / 涂鸦会话）不再各占一个图标，避免认知负担；点击弹出候选菜单切换。
+    fixedAreaIds().forEach((area) => { iconsEl.appendChild(makeAreaRailButton(area)); });
+    // 2) 多实例类型（float 自由浮窗 / modal 模态弹窗，可多个同时存在）：逐个插件各占一个图标。
+    //    panel 内容插件不进白条，由「面板容器」区域图标统辖。
     groupState.plugins
       .filter(isRailPlugin)
-      .filter((p) => (p.slotDef || {}).type !== 'panel')   // panel 内容插件不进白条，由下方「面板容器」开关统辖
+      .filter((p) => {
+        const t = (p.slotDef || {}).type;
+        return t === 'float' || t === 'modal';
+      })
       .forEach((p) => {
         const btn = HOST.document.createElement('button');
         btn.className = 'rail-ico';
@@ -227,56 +236,17 @@
         nm.textContent = p.name || p.id;
         btn.appendChild(nm);
         updateRailButton(btn, p);   // 初始高亮
-        railButtons[p.id] = btn;    // 登记，供面板开合状态即时刷新高亮
+        railButtons[p.id] = btn;    // 登记，供开合状态即时刷新高亮
         btn.addEventListener('click', () => {
           if (p.railAction) { callAction(p.railAction, {}).catch(() => {}); return; }  // 例如设置 → 打开设置面板
-          // fixed：同一区域同时只能有一个插件生效。点击「未生效」的插件＝先关掉占位者再打开它
-          // （占位者自动让位，无需用户手动关闭）；点击「已生效」的插件＝关闭它，该区域随之空出。
-          if ((p.slotDef || {}).type === 'fixed') {
-            if (pluginVisible(p)) setPluginHidden(p.id, true);
-            else activateSlotPlugin(p);
-          } else {
-            // float / modal（如插件市场）：与设置面板同一套开关语义——开=显示实例，关=隐藏。
-            // 旧写法 setPluginHidden(p.id, !pluginVisible(p)) 参数被取反：点关闭态仍是关闭、
-            // 点开启态仍是开启，导致这类插件在白条里永远点不动。
-            togglePluginOpen(p);
-          }
+          // float / modal：开=显示实例，关=隐藏（与设置面板同一套开关语义）
+          togglePluginOpen(p);
           buildRail();
         });
         iconsEl.appendChild(btn);
       });
-    // 面板容器开关（宿主固有资产，非插件）：存在 type=panel 内容插件时才显示，控制中栏容器的显隐
-    if (hasPanelsDef()) {
-      const cb = HOST.document.createElement('button');
-      cb.className = 'rail-ico';
-      cb.title = '面板容器';
-      const cg = HOST.document.createElement('span');
-      cg.className = 'rail-glyph';
-      paintIcon(cg, 'layout-panel-left', '▦');
-      cb.appendChild(cg);
-      const cnm = HOST.document.createElement('span');
-      cnm.className = 'rail-name';
-      cnm.textContent = '面板容器';
-      cb.appendChild(cnm);
-      updateContainerRail(cb);
-      railButtons['__panel__'] = cb;
-      cb.addEventListener('click', () => {
-        const builtinActive = !railHidden('__panel__') && !panelContainerPlugin();
-        if (builtinActive) {
-          // 内置容器正在入驻：再点＝关闭该区域，让出中栏
-          setContainerHidden(true);
-        } else {
-          // 让内置容器入驻：同区域的入驻插件先全部让位（与其它单例槽同一互斥规则）
-          if (!railState.hidden) railState.hidden = {};
-          (slotMap['panel-container'] || []).forEach((p) => { railState.hidden[p.id] = true; });
-          if ((slotMap['panel-container'] || []).length) refreshFixedSlot('panel-container');
-          setContainerHidden(false);
-          buildRail();
-          persistActive();
-        }
-      });
-      iconsEl.appendChild(cb);
-    }
+    // 面板容器（内置容器）不再单列开关：它是 panel-container 区域的候选之一，
+    // 已并入上方的「区域图标」（见 makeAreaRailButton / areaCandidates）。
     // 设置按钮（宿主固有资产，非插件）：固定在图标栏末尾
     const sb = HOST.document.createElement('button');
     sb.className = 'rail-ico';
@@ -294,6 +264,150 @@
     iconsEl.appendChild(sb);
     railButtons['__settings__'] = sb;
     applyRailOpacity();
+  }
+
+  // ---- 固定区域：白条按区域合并图标（同区域互斥，最多一个生效）----
+  // 区域显示名复用设置面板的 AREA_LABEL（单一来源，见下方「UI 插件主面板」分组）
+  const BUILTIN_CONTAINER = { id: '__panel__', name: '内置容器', builtinContainer: true };
+  // 面板容器区域（含内置容器候选）在白条/菜单里的统一字形：窗口 + 顶部标签条
+  const PANEL_AREA_ICON = 'panel-top';
+  function areaLabel(area) { return AREA_LABEL[area] || area; }
+  // 需要按区域合并图标的固定区域（type=fixed）
+  function fixedAreaIds() {
+    return Object.keys(slotMap).filter((sid) => {
+      const list = slotMap[sid] || [];
+      return list.length > 0 && (list[0].slotDef || {}).type === 'fixed';
+    });
+  }
+  // 区域候选：panel-container 额外含宿主内置容器（合成候选，非插件）；其余区域即该区域插件
+  function areaCandidates(area) {
+    const list = (slotMap[area] || []).slice();
+    if (area === 'panel-container') return [BUILTIN_CONTAINER].concat(list);
+    return list;
+  }
+  // 区域当前生效的候选（全部关闭时返回 null）
+  function areaActive(area) {
+    if (area === 'panel-container') {
+      const plug = panelContainerPlugin();
+      if (plug) return plug;
+      return railHidden('__panel__') ? null : BUILTIN_CONTAINER;
+    }
+    return pluginBySlot[area] || null;
+  }
+  // 切换区域到某个候选：内置容器=让全部入驻插件让位并打开内置容器；插件=activateSlotPlugin（含互斥+持久化）
+  function activateAreaCandidate(area, cand) {
+    if (cand && cand.builtinContainer) {
+      if (!railState.hidden) railState.hidden = {};
+      (slotMap[area] || []).forEach((p) => { railState.hidden[p.id] = true; });
+      if ((slotMap[area] || []).length) refreshFixedSlot(area);
+      setContainerHidden(false);
+      return;
+    }
+    if (cand) activateSlotPlugin(cand);
+  }
+  // 关闭整个区域：普通固定区域关掉当前生效插件即空出；panel-container 连内置容器一起关
+  function deactivateArea(area) {
+    if (area === 'panel-container') {
+      if (!railState.hidden) railState.hidden = {};
+      (slotMap[area] || []).forEach((p) => { railState.hidden[p.id] = true; });
+      if ((slotMap[area] || []).length) refreshFixedSlot(area);
+      setContainerHidden(true);
+      return;
+    }
+    const cur = pluginBySlot[area];
+    if (cur) setPluginHidden(cur.id, true);
+  }
+  // 重算区域图标的 on/off 与字形（内置容器与入驻插件互斥切换、开关变化后即时刷新）
+  function refreshAreaRail(area) {
+    const btn = railButtons['__area__:' + area];
+    if (!btn) return;
+    const active = areaActive(area);
+    btn.classList.remove('on', 'off');
+    btn.classList.add(active ? 'on' : 'off');
+    const g = btn.querySelector('.rail-glyph');
+    if (!g) return;
+    // 区域内置容器（含区域全关时的兜底）统一用面板容器字形，避免落到文本兜底
+    const target = active || areaCandidates(area)[0] || null;
+    if (!target || target.builtinContainer) paintIcon(g, PANEL_AREA_ICON, '▤');
+    else paintPluginIcon(g, target);
+  }
+  // 区域图标：区域生效=on；点击弹出候选菜单（仅一个候选时直接开/关）
+  function makeAreaRailButton(area) {
+    const btn = HOST.document.createElement('button');
+    btn.className = 'rail-ico';
+    btn.title = areaLabel(area);
+    const g = HOST.document.createElement('span');
+    g.className = 'rail-glyph';
+    btn.appendChild(g);
+    const nm = HOST.document.createElement('span');
+    nm.className = 'rail-name';
+    nm.textContent = areaLabel(area);
+    btn.appendChild(nm);
+    railButtons['__area__:' + area] = btn;
+    refreshAreaRail(area);
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();   // 触发按钮自身阻止冒泡，避免被 body 的统一收起立刻关掉菜单
+      const cands = areaCandidates(area);
+      const active = areaActive(area);
+      if (cands.length <= 1) {
+        if (active) deactivateArea(area);
+        else if (cands[0]) activateAreaCandidate(area, cands[0]);
+        buildRail();
+        return;
+      }
+      openAreaMenu(area, btn, cands, active);
+    });
+    return btn;
+  }
+  // 区域候选菜单：列出该区域全部候选（含内置容器），点击即切换；区域生效时附「关闭」项
+  function openAreaMenu(area, anchor, cands, active) {
+    const already = HOST.document.getElementById('rail-area-menu');
+    closePanelMenus();
+    if (already) return;   // 再次点同一区域图标 = 收起
+    const menu = HOST.document.createElement('div');
+    menu.className = 'wm-pp_menu';
+    menu.id = 'rail-area-menu';
+    cands.forEach((c) => {
+      const isActive = !!active && active.id === c.id;
+      const item = HOST.document.createElement('div');
+      item.className = 'wm-pp_menu-item' + (isActive ? ' active' : '');
+      const g = HOST.document.createElement('span');
+      g.className = 'wm-pp_menu-ico';
+      if (c.builtinContainer) paintIcon(g, PANEL_AREA_ICON, '▤');
+      else paintPluginIcon(g, c);
+      item.appendChild(g);
+      const nm = HOST.document.createElement('span');
+      nm.textContent = c.name || c.id;
+      item.appendChild(nm);
+      if (isActive) {
+        const tag = HOST.document.createElement('span');
+        tag.className = 'wm-pp_menu-tag';
+        tag.textContent = '使用中';
+        item.appendChild(tag);
+      }
+      item.addEventListener('click', () => { closePanelMenus(); activateAreaCandidate(area, c); buildRail(); });
+      menu.appendChild(item);
+    });
+    if (active) {
+      const off = HOST.document.createElement('div');
+      off.className = 'wm-pp_menu-item';
+      const og = HOST.document.createElement('span');
+      og.className = 'wm-pp_menu-ico';
+      paintIcon(og, 'x', '✕');
+      off.appendChild(og);
+      const onm = HOST.document.createElement('span');
+      onm.textContent = '关闭' + areaLabel(area);
+      off.appendChild(onm);
+      off.addEventListener('click', () => { closePanelMenus(); deactivateArea(area); buildRail(); });
+      menu.appendChild(off);
+    }
+    HOST.document.body.appendChild(menu);
+    const r = anchor.getBoundingClientRect();
+    const top = Math.min(r.top, HOST.innerHeight - menu.offsetHeight - 8);
+    menu.style.left = (r.right + 6) + 'px';
+    menu.style.right = 'auto';
+    menu.style.top = Math.max(8, top) + 'px';
+    syncNativeCover();
   }
 
   // ---- 工具 ----
@@ -1733,9 +1847,7 @@
         const pid = origin && origin.pluginId;
         if (!pid) throw new Error('缺少调用方插件');
         setPluginHidden(pid, true);
-        const pbtn = railButtons[pid];
-        const pdef = groupState.plugins.find((x) => x.id === pid);
-        if (pbtn && pdef) updateRailButton(pbtn, pdef);
+        buildRail();   // 固定区域已按区域合并图标，重建即可反映显隐
         return { status: 'ok' };
       }
       // ---- 配置 ----
@@ -2159,16 +2271,8 @@
     if (!railState.hidden) railState.hidden = {};
     if (hidden) railState.hidden['__panel__'] = true; else delete railState.hidden['__panel__'];
     applySlotHidden('panel', hidden);
-    updateContainerRail();
+    refreshAreaRail('panel-container');   // 区域图标随内置容器/入驻插件互斥切换即时刷新
     persistRail().catch(() => {});
-  }
-  function updateContainerRail(btnOverride) {
-    const btn = btnOverride || railButtons['__panel__'];
-    if (!btn) return;
-    btn.classList.remove('on', 'off');
-    // 内置容器与入驻插件是同一区域（panel-container）的两个候选，互斥：插件生效时内置容器显示为关闭
-    const builtinActive = !railHidden('__panel__') && !panelContainerPlugin();
-    btn.classList.add(builtinActive ? 'on' : 'off');
   }
   function hasPanelsDef() {
     // panel-container 区域有插件入驻时，中栏容器同样存在（由该插件提供）
