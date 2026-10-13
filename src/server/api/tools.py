@@ -1329,7 +1329,10 @@ def _install_ui_plugin_by_name(name: str, notes: list = None, seen: set = None) 
     if not safe_name or safe_name in (".", ".."):
         raise HTTPException(status_code=400, detail="非法 UI 插件 name")
     if safe_name in seen:
-        return {"status": "skip", "message": f"UI 插件 '{safe_name}' 已在本次安装链中处理过"}
+        return {
+            "status": "skip",
+            "message": f"UI 插件 '{safe_name}' 已在本次安装链中处理过",
+        }
     seen.add(safe_name)
 
     registry = _http_get_json(UI_PLUGIN_REGISTRY_URL)
@@ -1411,7 +1414,9 @@ def list_installed_ui_plugins_api():
         return _scan_user_ui_plugins()
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"读取本地 UI 插件列表失败: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"读取本地 UI 插件列表失败: {str(e)}"
+        )
 
 
 @router.post("/market/ui-plugins/install")
