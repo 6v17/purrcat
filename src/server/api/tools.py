@@ -865,17 +865,17 @@ SKILL_REGISTRY_URL = (
 )
 # UI 插件（极简模式 webmin 插件系统）官方发布源
 UI_PLUGIN_REGISTRY_URL = (
-    "https://raw.githubusercontent.com/PurrPod/ui-plugin/main/registry.json"
+    "https://raw.githubusercontent.com/PurrPod/ui-plugins/main/registry.json"
 )
 UI_PLUGIN_CODE_BASE = (
-    "https://raw.githubusercontent.com/PurrPod/ui-plugin/main/plugins"
+    "https://raw.githubusercontent.com/PurrPod/ui-plugins/main/plugins"
 )
 # Agent Loop（PARADIGM 范式）官方发布源
 AGENTLOOP_REGISTRY_URL = (
-    "https://raw.githubusercontent.com/PurrPod/agentloop/main/registry.json"
+    "https://raw.githubusercontent.com/PurrPod/agentloops/main/registry.json"
 )
 AGENTLOOP_CODE_BASE = (
-    "https://raw.githubusercontent.com/PurrPod/agentloop/main/agentloops"
+    "https://raw.githubusercontent.com/PurrPod/agentloops/main/agentloops"
 )
 
 
@@ -1389,7 +1389,7 @@ class UninstallUiPluginReq(BaseModel):
 
 @router.get("/market/ui-plugins")
 def get_ui_plugin_registry_api():
-    """从官方 PurrPod/ui-plugin 仓库拉取 registry.json 返回前端市场"""
+    """从官方 PurrPod/ui-plugins 仓库拉取 registry.json 返回前端市场"""
     try:
         data = _http_get_json(UI_PLUGIN_REGISTRY_URL)
         return {
@@ -1418,7 +1418,7 @@ def list_installed_ui_plugins_api():
 def install_ui_plugin_api(req: InstallUiPluginReq):
     """
     安装 UI 插件到用户插件根（~/.purrcat/webmin-plugins）：
-      从 registry 拿到该插件的文件清单，逐文件从 PurrPod/ui-plugin 仓库下载落盘；
+      从 registry 拿到该插件的文件清单，逐文件从 PurrPod/ui-plugins 仓库下载落盘；
       再按插件声明的 dependency 逐一补齐 skill/mcp/sensor/graph/agentloop/plugin 依赖，
       缺失或失败只记录说明，不阻断插件本体安装。
     """
