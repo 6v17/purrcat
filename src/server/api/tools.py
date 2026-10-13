@@ -7,6 +7,8 @@ import urllib.request
 import zipfile
 import traceback
 import json
+
+import yaml
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -28,11 +30,17 @@ from src.utils.config import (
     SENSOR_CONFIG_PATH,
     SENSOR_EXTENSION_DIR,
     GRAPHS_DIR,
+    PARADIGMS_DIR,
     get_sensor_config,
     _save_json_file,
 )
 from src.utils.graph_api import list_graphs
 from src.utils.skill_helper import _find_skill_md_file
+
+# 极简宿主的插件依赖类型白名单与用户插件根：与 webmin.py 共用同一份定义，
+# 避免两处各写一份常量后逐渐漂移。（webmin.py 不 import 本文件，无循环依赖）
+from src.server.api import plugin_runtime
+from src.server.api.webmin import DEP_TYPES, USER_PLUGIN_ROOT
 
 router = APIRouter(prefix="/api/tools", tags=["Tools Management"])
 
@@ -855,6 +863,20 @@ MCP_REGISTRY_URL = "https://raw.githubusercontent.com/PurrPod/mcps/main/registry
 SKILL_REGISTRY_URL = (
     "https://raw.githubusercontent.com/PurrPod/skills/main/registry.json"
 )
+# UI 插件（极简模式 webmin 插件系统）官方发布源
+UI_PLUGIN_REGISTRY_URL = (
+    "https://raw.githubusercontent.com/PurrPod/ui-plugin/main/registry.json"
+)
+UI_PLUGIN_CODE_BASE = (
+    "https://raw.githubusercontent.com/PurrPod/ui-plugin/main/plugins"
+)
+# Agent Loop（PARADIGM 范式）官方发布源
+AGENTLOOP_REGISTRY_URL = (
+    "https://raw.githubusercontent.com/PurrPod/agentloop/main/registry.json"
+)
+AGENTLOOP_CODE_BASE = (
+    "https://raw.githubusercontent.com/PurrPod/agentloop/main/agentloops"
+)
 
 
 def _ensure_graph_mcp_deps(mcp_names) -> list:
@@ -1101,3 +1123,342 @@ def uninstall_graph_api(req: UninstallGraphReq):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"删除 Graph 失败: {str(e)}")
+
+
+# ==========================================
+# 12. UI 插件市场：Registry + 已安装列表 + 安装（含依赖自动补齐）+ 卸载
+# ==========================================
+def _extract_registry_items(data, *keys) -> list:
+    """从 registry 数据中提取条目列表（兼容 list 与 { <key>: [...] } / { items|data: [...] }）。"""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in tuple(keys) + ("items", "data"):
+            if isinstance(data.get(key), list):
+                return data[key]
+    return []
+
+
+def _normalize_dependency_list(raw) -> list:
+    """归一化依赖清单：只保留白名单类型，统一为 {"type","id"}（白名单即宿主的 DEP_TYPES）。"""
+    out = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        dep_type = str(item.get("type") or "").strip()
+        dep_id = str(item.get("id") or "").strip()
+        if dep_type in DEP_TYPES and dep_id:
+            out.append({"type": dep_type, "id": dep_id})
+    return out
+
+
+def _scan_user_ui_plugins() -> list:
+    """列出用户插件根下已安装的 UI 插件（含 plugin.json 的目录，跳过 <id>.trash）。"""
+    names = []
+    if not os.path.isdir(USER_PLUGIN_ROOT):
+        return names
+    for name in sorted(os.listdir(USER_PLUGIN_ROOT)):
+        if name.endswith(".trash"):
+            continue
+        if os.path.isfile(os.path.join(USER_PLUGIN_ROOT, name, "plugin.json")):
+            names.append(name)
+    return names
+
+
+def _install_sensor_by_name(name: str) -> str:
+    """按名字从官方 sensors 市场安装一个 Sensor，返回处理说明。"""
+    safe_name = os.path.basename(str(name or "")).replace("\\", "/")
+    if not safe_name or safe_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="非法 sensor name")
+    registry = _http_get_json(SENSORS_REGISTRY_URL)
+    sensors = registry.get("sensors", []) if isinstance(registry, dict) else []
+    entry = next(
+        (
+            s
+            for s in sensors
+            if isinstance(s, dict)
+            and str(s.get("name", "")).strip().lower() == safe_name.lower()
+        ),
+        None,
+    )
+    if entry is None:
+        raise HTTPException(
+            status_code=404, detail=f"市场注册表中找不到 Sensor '{safe_name}'"
+        )
+    res = install_sensor_api(InstallSensorReq(sensor=entry))
+    return (res or {}).get("message") or f"Sensor '{safe_name}' 已安装"
+
+
+def _install_graph_by_name(name: str) -> dict:
+    """按名字从官方 graphs 市场安装一个 Graph（含其声明的 mcp/skill 依赖）。"""
+    return install_graph_api(InstallGraphReq(name=name))
+
+
+def _install_agentloop_by_name(name: str) -> str:
+    """按名字从官方 agentloop 市场安装一个 Agent Loop（范式）到 paradigms 目录。"""
+    safe_name = os.path.basename(str(name or "")).replace("\\", "/")
+    if not safe_name or safe_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="非法 agentloop name")
+
+    registry = _http_get_json(AGENTLOOP_REGISTRY_URL)
+    entry = next(
+        (
+            a
+            for a in _extract_registry_items(registry, "agentloops")
+            if isinstance(a, dict)
+            and str(a.get("name", "")).strip().lower() == safe_name.lower()
+        ),
+        None,
+    )
+    if entry is None:
+        raise HTTPException(
+            status_code=404, detail=f"市场注册表中找不到 AgentLoop '{safe_name}'"
+        )
+
+    files = [str(f) for f in (entry.get("files") or []) if str(f).strip()]
+    if f"{safe_name}.yaml" not in files:
+        files.insert(0, f"{safe_name}.yaml")
+    for rel in files:
+        if rel.startswith(("/", "\\")) or ".." in rel.replace("\\", "/").split("/"):
+            raise HTTPException(
+                status_code=502, detail=f"注册表文件清单含非法路径: {rel}"
+            )
+
+    os.makedirs(PARADIGMS_DIR, exist_ok=True)
+    written = []
+    for rel in files:
+        url = f"{AGENTLOOP_CODE_BASE}/{rel}"
+        try:
+            raw = _http_download(url)
+        except Exception as e:
+            raise HTTPException(
+                status_code=502, detail=f"下载 AgentLoop 文件失败 ({url}): {e}"
+            )
+        dest = os.path.join(PARADIGMS_DIR, *rel.replace("\\", "/").split("/"))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(raw)
+        written.append(rel)
+
+    # 落盘后做一次 YAML 解析校验：失败时报错但不回滚已写入文件
+    for rel in written:
+        if not rel.endswith((".yaml", ".yml")):
+            continue
+        path = os.path.join(PARADIGMS_DIR, *rel.replace("\\", "/").split("/"))
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            if not isinstance(data, dict) or not data.get("hooks"):
+                raise ValueError("YAML 缺少 hooks 字段")
+        except Exception as e:
+            raise HTTPException(
+                status_code=502, detail=f"AgentLoop 文件校验失败 ({rel}): {e}"
+            )
+
+    return f"AgentLoop '{safe_name}' 已安装到 {PARADIGMS_DIR}（{len(written)} 个文件）"
+
+
+def _install_ui_plugin_entry(entry: dict, notes: list, seen: set) -> dict:
+    """按注册表条目把 UI 插件文件夹落盘到用户插件根，然后递归补齐其依赖。"""
+    name = str(entry.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=502, detail="UI 插件注册表条目缺少 name")
+
+    files = [str(f) for f in (entry.get("files") or []) if str(f).strip()]
+    if "plugin.json" not in files:
+        files.insert(0, "plugin.json")
+    # 相对路径防御：不允许绝对路径 / 上跳
+    for rel in files:
+        if rel.startswith(("/", "\\")) or ".." in rel.replace("\\", "/").split("/"):
+            raise HTTPException(
+                status_code=502, detail=f"注册表文件清单含非法路径: {rel}"
+            )
+
+    # 重装场景下清掉旧目录，保证与市场版本一致
+    target_dir = os.path.join(USER_PLUGIN_ROOT, name)
+    if os.path.isdir(target_dir):
+        shutil.rmtree(target_dir)
+    os.makedirs(target_dir, exist_ok=True)
+
+    plugin_data = None
+    downloaded = []
+    for rel in files:
+        url = f"{UI_PLUGIN_CODE_BASE}/{name}/{rel}"
+        try:
+            raw = _http_download(url)
+        except Exception as e:
+            raise HTTPException(
+                status_code=502, detail=f"下载 UI 插件文件失败 ({url}): {e}"
+            )
+        dest = os.path.join(target_dir, *rel.replace("\\", "/").split("/"))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(raw)
+        downloaded.append(rel)
+        if rel == "plugin.json":
+            try:
+                plugin_data = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                raise HTTPException(
+                    status_code=502, detail=f"UI 插件 plugin.json 解析失败: {e}"
+                )
+
+    if not isinstance(plugin_data, dict):
+        raise HTTPException(status_code=502, detail="UI 插件缺少合法的 plugin.json")
+
+    # 依赖：注册表条目声明优先，其次回退到 plugin.json 的 dependency 字段
+    deps = _normalize_dependency_list(entry.get("dependency"))
+    if not deps:
+        deps = _normalize_dependency_list(plugin_data.get("dependency"))
+    for dep in deps:
+        _ensure_market_dep(dep["type"], dep["id"], notes, seen)
+
+    return {
+        "status": "success",
+        "message": f"UI 插件 '{name}' 已安装到 {target_dir}（{len(downloaded)} 个文件）",
+    }
+
+
+def _install_ui_plugin_by_name(name: str, notes: list = None, seen: set = None) -> dict:
+    """从官方 ui-plugin 仓库按名字安装一个 UI 插件（seen 防依赖成环）。"""
+    notes = notes if notes is not None else []
+    seen = seen if seen is not None else set()
+    safe_name = os.path.basename(str(name or "")).replace("\\", "/")
+    if not safe_name or safe_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="非法 UI 插件 name")
+    if safe_name in seen:
+        return {"status": "skip", "message": f"UI 插件 '{safe_name}' 已在本次安装链中处理过"}
+    seen.add(safe_name)
+
+    registry = _http_get_json(UI_PLUGIN_REGISTRY_URL)
+    entry = next(
+        (
+            p
+            for p in _extract_registry_items(registry, "plugins")
+            if isinstance(p, dict)
+            and str(p.get("name", "")).strip().lower() == safe_name.lower()
+        ),
+        None,
+    )
+    if entry is None:
+        raise HTTPException(
+            status_code=404, detail=f"市场注册表中找不到 UI 插件 '{safe_name}'"
+        )
+    return _install_ui_plugin_entry(entry, notes, seen)
+
+
+def _ensure_market_dep(dep_type: str, dep_id: str, notes: list, seen: set) -> None:
+    """按类型把一个依赖交给对应安装通道；失败只记 notes，不中断整单安装。"""
+    try:
+        if dep_type == "skill":
+            notes.extend(_ensure_graph_skill_deps([dep_id]))
+        elif dep_type == "mcp":
+            notes.extend(_ensure_graph_mcp_deps([dep_id]))
+        elif dep_type == "sensor":
+            notes.append(_install_sensor_by_name(dep_id))
+        elif dep_type == "graph":
+            notes.append(
+                _install_graph_by_name(dep_id).get("message")
+                or f"Graph '{dep_id}' 已安装"
+            )
+        elif dep_type == "plugin":
+            notes.append(
+                _install_ui_plugin_by_name(dep_id, notes, seen).get("message")
+                or f"UI 插件 '{dep_id}' 已处理"
+            )
+        elif dep_type == "agentloop":
+            notes.append(_install_agentloop_by_name(dep_id))
+        else:
+            notes.append(f"不支持的依赖类型 '{dep_type}'，已跳过")
+    except HTTPException as e:
+        notes.append(f"{dep_type} 依赖 '{dep_id}' 安装失败({e.detail})，已跳过")
+    except Exception as e:
+        traceback.print_exc()
+        notes.append(f"{dep_type} 依赖 '{dep_id}' 安装失败({e})，已跳过")
+
+
+class InstallUiPluginReq(BaseModel):
+    name: str
+
+
+class UninstallUiPluginReq(BaseModel):
+    name: str
+
+
+@router.get("/market/ui-plugins")
+def get_ui_plugin_registry_api():
+    """从官方 PurrPod/ui-plugin 仓库拉取 registry.json 返回前端市场"""
+    try:
+        data = _http_get_json(UI_PLUGIN_REGISTRY_URL)
+        return {
+            "version": data.get("version") if isinstance(data, dict) else None,
+            "repository": data.get("repository") if isinstance(data, dict) else None,
+            "plugins": _extract_registry_items(data, "plugins"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=502, detail=f"拉取 UI 插件注册表失败: {str(e)}")
+
+
+@router.get("/market/ui-plugins/installed")
+def list_installed_ui_plugins_api():
+    """返回用户插件根（~/.purrcat/webmin-plugins）下已安装的 UI 插件名字列表"""
+    try:
+        return _scan_user_ui_plugins()
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"读取本地 UI 插件列表失败: {str(e)}")
+
+
+@router.post("/market/ui-plugins/install")
+def install_ui_plugin_api(req: InstallUiPluginReq):
+    """
+    安装 UI 插件到用户插件根（~/.purrcat/webmin-plugins）：
+      从 registry 拿到该插件的文件清单，逐文件从 PurrPod/ui-plugin 仓库下载落盘；
+      再按插件声明的 dependency 逐一补齐 skill/mcp/sensor/graph/agentloop/plugin 依赖，
+      缺失或失败只记录说明，不阻断插件本体安装。
+    """
+    try:
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="缺少 UI 插件 name")
+        notes = []
+        res = _install_ui_plugin_by_name(name, notes, set())
+        message = res.get("message") or f"UI 插件 '{name}' 已安装"
+        if notes:
+            message += "。" + "；".join(notes)
+        return {"status": "success", "message": message}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"安装 UI 插件失败: {str(e)}")
+
+
+@router.post("/market/ui-plugins/uninstall")
+def uninstall_ui_plugin_api(req: UninstallUiPluginReq):
+    """卸载 UI 插件：把 {USER_PLUGIN_ROOT}/{name} 移动为 <name>.trash（可恢复）。"""
+    try:
+        name = req.name.strip()
+        if not name or any(c in name for c in ("/", "\\", "..")):
+            raise HTTPException(status_code=400, detail="非法的插件 name")
+
+        target = os.path.join(USER_PLUGIN_ROOT, name)
+        if not os.path.isdir(target):
+            raise HTTPException(status_code=404, detail=f"未安装 UI 插件 '{name}'")
+
+        trash = os.path.join(USER_PLUGIN_ROOT, f"{name}.trash")
+        if os.path.exists(trash):
+            shutil.rmtree(trash, ignore_errors=True)
+        plugin_runtime.stop(name)  # 先停插件自带的后端子进程，再移动目录
+        shutil.move(target, trash)
+        return {"status": "success", "message": f"UI 插件 '{name}' 已删除"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"卸载 UI 插件失败: {str(e)}")

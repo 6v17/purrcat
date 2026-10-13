@@ -121,10 +121,18 @@
   .btn.danger { background: var(--err); border-color: transparent; color: #fff; }
   .btn.danger:hover { background: var(--err); filter: brightness(1.08); }
 
-  /* 「即将上线」占位 */
-  .soon { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; }
-  .soon-title { font-size: 15px; font-weight: 700; }
-  .soon-desc { max-width: 340px; font-size: 12.5px; line-height: 1.8; color: var(--dim); }
+  /* UI 插件展示图位：列表缩略图 / 详情大图；无图时渲染灰底占位块 */
+  .item-thumb {
+    width: 100%; height: 86px; margin-bottom: 7px; border-radius: 8px;
+    object-fit: cover; display: block; background: var(--bg-soft); border: 1px solid var(--line);
+  }
+  .d-thumb {
+    width: 100%; height: 190px; margin-top: 10px; border-radius: 10px;
+    object-fit: cover; display: block; background: var(--bg-soft); border: 1px solid var(--line);
+  }
+  .item-thumb.ph, .d-thumb.ph { display: flex; align-items: center; justify-content: center; color: var(--dim); }
+  .item-thumb.ph svg { width: 22px; height: 22px; }
+  .d-thumb.ph svg { width: 34px; height: 34px; }
 
   /* 轻提示条（插件自带，不弹宿主级弹窗） */
   .toast {
@@ -230,13 +238,13 @@
     });
   }
 
-  // ---- 标签页定义（最后一条为即将上线的 UI 插件占位）----
+  // ---- 标签页定义 ----
   var TABS = [
     { id: 'skill', label: 'Skill', ph: '搜索名称 / 作者 / 仓库' },
     { id: 'mcp', label: 'MCP', ph: '搜索名称 / 说明' },
     { id: 'sensor', label: '传感器', ph: '搜索名称 / 说明' },
     { id: 'graph', label: 'Graph', ph: '搜索名称 / 说明' },
-    { id: 'ui', label: 'UI 插件', soon: true }
+    { id: 'ui', label: 'UI 插件', ph: '搜索名称 / 说明' }
   ];
   function tabDef(id) {
     for (var i = 0; i < TABS.length; i++) if (TABS[i].id === id) return TABS[i];
@@ -349,9 +357,18 @@
       (Array.isArray(r[1]) ? r[1] : []).forEach(function (n) { if (n) st.installed.add(String(n).toLowerCase()); });
     });
   }
+  function loadUi(st) {
+    return Promise.all([
+      jsonFetch('/api/tools/market/ui-plugins?t=' + Date.now()),
+      jsonFetch('/api/tools/market/ui-plugins/installed').catch(function () { return []; })
+    ]).then(function (r) {
+      st.items = (r[0] && r[0].plugins) || [];
+      st.installed = new Set();
+      (Array.isArray(r[1]) ? r[1] : []).forEach(function (n) { if (n) st.installed.add(String(n).toLowerCase()); });
+    });
+  }
   function load(tabId, force) {
     var st = state[tabId];
-    if (tabDef(tabId).soon) { render(); return Promise.resolve(); }
     if (st.loading) return Promise.resolve();
     if (st.loaded && !force) return Promise.resolve();
     st.loading = true; st.error = '';
@@ -359,7 +376,8 @@
     var job =
       tabId === 'skill' ? loadSkills(st) :
       tabId === 'mcp' ? loadMcps(st) :
-      tabId === 'sensor' ? loadSensors(st) : loadGraphs(st);
+      tabId === 'sensor' ? loadSensors(st) :
+      tabId === 'ui' ? loadUi(st) : loadGraphs(st);
     return job
       .then(function () { st.loaded = true; })
       .catch(function (e) { st.error = String((e && e.message) || e || '加载失败'); })
@@ -385,6 +403,10 @@
     graph: {
       install: function (it) { return jsonFetch('/api/tools/market/graphs/install', post({ name: it.name })); },
       uninstall: function (it) { return jsonFetch('/api/tools/market/graphs/uninstall', post({ name: it.name })); }
+    },
+    ui: {
+      install: function (it) { return jsonFetch('/api/tools/market/ui-plugins/install', post({ name: it.name })); },
+      uninstall: function (it) { return jsonFetch('/api/tools/market/ui-plugins/uninstall', post({ name: it.name })); }
     }
   };
   function toggleInstall(tabId, it) {
@@ -408,9 +430,9 @@
   }
 
   function fieldsOf(it) {
-    return active === 'skill'
-      ? [it.name, it.desc, it.repo, it.author]
-      : [it.name, it.desc, it.description];
+    if (active === 'skill') return [it.name, it.desc, it.repo, it.author];
+    if (active === 'ui') return [it.name, it.description, it['description-zh']];
+    return [it.name, it.desc, it.description];
   }
   function descEn(it) {
     return (active === 'skill' || active === 'mcp') ? (it.desc || '') : (it.description || '');
@@ -517,7 +539,6 @@
   }
   function renderSearch() {
     var st = state[active];
-    if (tabDef(active).soon) { searchWrap.style.display = 'none'; return; }
     searchWrap.style.display = '';
     if (active === 'skill') {
       searchInput.placeholder = st.layout === 'repo'
@@ -528,8 +549,20 @@
     }
     if (searchInput.value !== st.q) searchInput.value = st.q;
   }
+  // UI 插件展示图位：有图用图，无图渲染统一灰底占位块（图片位预留给后续投稿）
+  function thumbOf(it, cls) {
+    if (it.image) {
+      var img = el('img', cls);
+      img.src = it.image; img.alt = it.name || ''; img.loading = 'lazy';
+      return img;
+    }
+    var box = el('div', cls + ' ph');
+    box.innerHTML = svgIcon('<rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m4 17 5-4.5 3.5 3 3-2.5L20 17"/>');
+    return box;
+  }
   function itemCard(st, it) {
     var card = el('div', 'item' + (st.sel && st.sel.name === it.name ? ' on' : ''));
+    if (active === 'ui') card.appendChild(thumbOf(it, 'item-thumb'));
     var row = el('div', 'item-name');
     row.appendChild(el('span', 'nm', it.name || '(未命名)'));
     if (isInstalled(active, it)) row.appendChild(el('span', 'chip', '已安装'));
@@ -545,7 +578,6 @@
   function renderList() {
     var st = state[active];
     listEl.innerHTML = '';
-    if (tabDef(active).soon) return;
     if (st.error) { listEl.appendChild(el('div', 'hint err', st.error)); return; }
     if (st.loading && !st.items.length) { listEl.appendChild(el('div', 'hint', '加载中…')); return; }
     // Skill「按仓库」：仓库列表 → 下钻到该仓库内的 Skill 列表
@@ -584,13 +616,6 @@
   function renderDetail() {
     var st = state[active];
     detailEl.innerHTML = '';
-    if (tabDef(active).soon) {
-      var soon = el('div', 'soon');
-      soon.appendChild(el('div', 'soon-title', 'UI 插件市场'));
-      soon.appendChild(el('div', 'soon-desc', '即将上线：在这里浏览、安装与管理极简模式的 UI 插件（侧栏 / 输入框 / 会话 / 面板 / 弹窗等区域插件）。'));
-      detailEl.appendChild(soon);
-      return;
-    }
     // Skill「按仓库」下钻且未选中具体 Skill：展示仓库详情（含一键下载全部）
     if (active === 'skill' && st.layout === 'repo' && st.repo && !st.sel) { renderRepoDetail(st); return; }
     var it = st.sel;
@@ -610,6 +635,9 @@
     if (it.repo) bits.push(repoName(it.repo));
     if (it.version) bits.push('v' + it.version);
     if (bits.length) detailEl.appendChild(el('div', 'd-meta', bits.join(' · ')));
+
+    // UI 插件展示图位（有图用图，无图为统一灰底占位块）
+    if (active === 'ui') detailEl.appendChild(thumbOf(it, 'd-thumb'));
 
     var zh = descZh(it);
     var showZh = st.showZh && !!zh;
@@ -635,6 +663,14 @@
         envBox.appendChild(el('div', 'd-env-row', k + ' = ' + it.env[k]));
       });
       detailEl.appendChild(envBox);
+    }
+    if (active === 'ui' && Array.isArray(it.dependency) && it.dependency.length) {
+      detailEl.appendChild(el('div', 'd-sub', '依赖（下载时自动安装）'));
+      var depBox = el('div');
+      it.dependency.forEach(function (d) {
+        depBox.appendChild(el('div', 'd-env-row', d.type + ' · ' + d.id));
+      });
+      detailEl.appendChild(depBox);
     }
 
     var key = String(it.name || '');
@@ -694,7 +730,6 @@
     renderList();
   });
   document.getElementById('refreshBtn').addEventListener('click', function () {
-    if (tabDef(active).soon) return;
     var btn = this;
     btn.classList.add('spin');
     load(active, true).then(function () { btn.classList.remove('spin'); });
