@@ -1467,3 +1467,93 @@ def uninstall_ui_plugin_api(req: UninstallUiPluginReq):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"卸载 UI 插件失败: {str(e)}")
+
+
+# ==========================================
+# 13. AgentLoop 市场：Registry + 已安装列表 + 安装（含依赖补齐）+ 卸载
+# ==========================================
+def _scan_installed_agentloops() -> list:
+    """列出 paradigms 目录下已安装的 AgentLoop 名字（去掉 .yaml/.yml 后缀）。"""
+    names = []
+    if not os.path.isdir(PARADIGMS_DIR):
+        return names
+    for f in sorted(os.listdir(PARADIGMS_DIR)):
+        if f.endswith((".yaml", ".yml")):
+            names.append(os.path.splitext(f)[0])
+    return names
+
+
+class InstallAgentloopReq(BaseModel):
+    name: str
+
+
+class UninstallAgentloopReq(BaseModel):
+    name: str
+
+
+@router.get("/market/agentloops")
+def get_agentloop_registry_api():
+    """从官方 PurrPod/agentloops 仓库拉取 registry.json 返回前端市场"""
+    try:
+        data = _http_get_json(AGENTLOOP_REGISTRY_URL)
+        return {
+            "version": data.get("version") if isinstance(data, dict) else None,
+            "repository": data.get("repository") if isinstance(data, dict) else None,
+            "agentloops": _extract_registry_items(data, "agentloops"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=502, detail=f"拉取 AgentLoop 注册表失败: {str(e)}")
+
+
+@router.get("/market/agentloops/installed")
+def list_installed_agentloops_api():
+    """返回 paradigms 目录（~/.purrcat/paradigms）下已安装的 AgentLoop 名字列表"""
+    try:
+        return _scan_installed_agentloops()
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"读取本地 AgentLoop 列表失败: {str(e)}")
+
+
+@router.post("/market/agentloops/install")
+def install_agentloop_api(req: InstallAgentloopReq):
+    """
+    安装 AgentLoop（范式 YAML）到 ~/.purrcat/paradigms：
+      从注册表取文件清单，逐文件从 PurrPod/agentloops 仓库下载落盘，
+      落盘后解析 YAML 校验 hooks；缺失或校验失败会报错。
+    """
+    try:
+        name = req.name.strip()
+        if not name or any(c in name for c in ("/", "\\", "..")):
+            raise HTTPException(status_code=400, detail="非法的 AgentLoop name")
+        return {"status": "success", "message": _install_agentloop_by_name(name)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"安装 AgentLoop 失败: {str(e)}")
+
+
+@router.post("/market/agentloops/uninstall")
+def uninstall_agentloop_api(req: UninstallAgentloopReq):
+    """卸载 AgentLoop：删除 paradigms 目录下对应的 YAML（默认 PARADIGM 除外）。"""
+    try:
+        name = req.name.strip()
+        if not name or any(c in name for c in ("/", "\\", "..")):
+            raise HTTPException(status_code=400, detail="非法的 AgentLoop name")
+        if name.lower() == "paradigm":
+            raise HTTPException(status_code=400, detail="默认 AgentLoop（PARADIGM）不可删除")
+
+        target = os.path.join(PARADIGMS_DIR, f"{name}.yaml")
+        if not os.path.isfile(target):
+            raise HTTPException(status_code=404, detail=f"未安装 AgentLoop '{name}'")
+        os.remove(target)
+        return {"status": "success", "message": f"AgentLoop '{name}' 已删除"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"卸载 AgentLoop 失败: {str(e)}")

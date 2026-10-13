@@ -168,6 +168,10 @@
 | GET | `/api/tools/market/ui-plugins/installed` | 已安装 UI 插件（用户根 `~/.purrcat/webmin-plugins`）名字列表 |
 | POST | `/api/tools/market/ui-plugins/install` | 安装 UI 插件（含依赖 skill/mcp/sensor/graph/agentloop/plugin 自动安装） |
 | POST | `/api/tools/market/ui-plugins/uninstall` | 卸载 UI 插件（目录移入 `<id>.trash`） |
+| GET | `/api/tools/market/agentloops` | 从官方 `PurrPod/agentloops` 拉取 `registry.json` 给前端市场 |
+| GET | `/api/tools/market/agentloops/installed` | 已安装 AgentLoop（`~/.purrcat/paradigms/*.yaml`）名字列表 |
+| POST | `/api/tools/market/agentloops/install` | 安装 AgentLoop（范式 YAML 落盘 `paradigms/`，含 YAML hooks 校验） |
+| POST | `/api/tools/market/agentloops/uninstall` | 卸载 AgentLoop（删除对应 YAML，默认 `PARADIGM` 除外） |
 
 ---
 
