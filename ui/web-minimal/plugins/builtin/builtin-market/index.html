@@ -244,7 +244,8 @@
     { id: 'mcp', label: 'MCP', ph: '搜索名称 / 说明' },
     { id: 'sensor', label: '传感器', ph: '搜索名称 / 说明' },
     { id: 'graph', label: 'Graph', ph: '搜索名称 / 说明' },
-    { id: 'ui', label: 'UI 插件', ph: '搜索名称 / 说明' }
+    { id: 'ui', label: 'UI 插件', ph: '搜索名称 / 说明' },
+    { id: 'agentloop', label: 'AgentLoop', ph: '搜索名称 / 说明' }
   ];
   function tabDef(id) {
     for (var i = 0; i < TABS.length; i++) if (TABS[i].id === id) return TABS[i];
@@ -367,6 +368,16 @@
       (Array.isArray(r[1]) ? r[1] : []).forEach(function (n) { if (n) st.installed.add(String(n).toLowerCase()); });
     });
   }
+  function loadAgentloops(st) {
+    return Promise.all([
+      jsonFetch('/api/tools/market/agentloops?t=' + Date.now()),
+      jsonFetch('/api/tools/market/agentloops/installed').catch(function () { return []; })
+    ]).then(function (r) {
+      st.items = (r[0] && r[0].agentloops) || [];
+      st.installed = new Set();
+      (Array.isArray(r[1]) ? r[1] : []).forEach(function (n) { if (n) st.installed.add(String(n).toLowerCase()); });
+    });
+  }
   function load(tabId, force) {
     var st = state[tabId];
     if (st.loading) return Promise.resolve();
@@ -377,7 +388,8 @@
       tabId === 'skill' ? loadSkills(st) :
       tabId === 'mcp' ? loadMcps(st) :
       tabId === 'sensor' ? loadSensors(st) :
-      tabId === 'ui' ? loadUi(st) : loadGraphs(st);
+      tabId === 'ui' ? loadUi(st) :
+      tabId === 'agentloop' ? loadAgentloops(st) : loadGraphs(st);
     return job
       .then(function () { st.loaded = true; })
       .catch(function (e) { st.error = String((e && e.message) || e || '加载失败'); })
@@ -407,6 +419,10 @@
     ui: {
       install: function (it) { return jsonFetch('/api/tools/market/ui-plugins/install', post({ name: it.name })); },
       uninstall: function (it) { return jsonFetch('/api/tools/market/ui-plugins/uninstall', post({ name: it.name })); }
+    },
+    agentloop: {
+      install: function (it) { return jsonFetch('/api/tools/market/agentloops/install', post({ name: it.name })); },
+      uninstall: function (it) { return jsonFetch('/api/tools/market/agentloops/uninstall', post({ name: it.name })); }
     }
   };
   function toggleInstall(tabId, it) {
@@ -431,7 +447,7 @@
 
   function fieldsOf(it) {
     if (active === 'skill') return [it.name, it.desc, it.repo, it.author];
-    if (active === 'ui') return [it.name, it.description, it['description-zh']];
+    if (active === 'ui' || active === 'agentloop') return [it.name, it.description, it['description-zh']];
     return [it.name, it.desc, it.description];
   }
   function descEn(it) {
@@ -664,7 +680,7 @@
       });
       detailEl.appendChild(envBox);
     }
-    if (active === 'ui' && Array.isArray(it.dependency) && it.dependency.length) {
+    if ((active === 'ui' || active === 'agentloop') && Array.isArray(it.dependency) && it.dependency.length) {
       detailEl.appendChild(el('div', 'd-sub', '依赖（下载时自动安装）'));
       var depBox = el('div');
       it.dependency.forEach(function (d) {
