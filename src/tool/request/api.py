@@ -2,12 +2,9 @@
 
 import json
 import os
-import urllib.request
-import zipfile
-import io
 
 from src.tool.request.request_operations import REQUESTS_FILE, REQUEST_LOCK
-from src.utils.config import FILE_CONFIG_PATH, SKILL_DIR, AGENT_VM_DIR
+from src.utils.config import FILE_CONFIG_PATH, AGENT_VM_DIR
 from src.utils.graph_api import graph_file
 
 
@@ -149,43 +146,6 @@ def _grant_file_permission(req_type: str, target: str):
         json.dump(config, f, indent=2, ensure_ascii=False)
 
 
-def _install_skill_from_github(skill_name: str):
-    """下载并安装特定 Skill"""
-    url = "https://github.com/PurrPod/skillpod/archive/refs/heads/main.zip"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    response = urllib.request.urlopen(req)
-    zip_data = response.read()
-
-    dest_base = SKILL_DIR
-
-    extracted = False
-    with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
-        for file_info in z.infolist():
-            parts = file_info.filename.split("/")
-            if (
-                len(parts) >= 4
-                and parts[1] in ["official", "community"]
-                and parts[2] == skill_name
-            ):
-                rel_path = file_info.filename.split(f"/{skill_name}/", 1)[1]
-                if not rel_path:
-                    continue
-                local_path = os.path.join(dest_base, skill_name, rel_path)
-                if file_info.is_dir():
-                    os.makedirs(local_path, exist_ok=True)
-                else:
-                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                    with open(local_path, "wb") as f:
-                        f.write(z.read(file_info.filename))
-                extracted = True
-
-    if not extracted:
-        raise Exception(f"仓库未找到技能 '{skill_name}'")
-    from src.tool.search.skill_search import SkillSearcher
-
-    SkillSearcher().reload_index()
-
-
 def resolve_request(
     req_id: str,
     approved: bool,
@@ -207,9 +167,7 @@ def resolve_request(
         # 处理人类的通过决策
         if approved and not ignore:
             try:
-                if req_type == "skill_install":
-                    _install_skill_from_github(target)
-                elif req_type in ["file_read", "file_write"]:
+                if req_type in ["file_read", "file_write"]:
                     _grant_file_permission(req_type, target)
                 # ---- 技能盲测逻辑：批准后由系统自动在后台运行 ----
                 elif req_type == "skill_test":
@@ -322,7 +280,7 @@ def resolve_request(
                 "sensor_merge",
             ]:
                 callback_msg += (
-                    "\n系统已为你自动下发权限或安装插件，请直接继续执行被挂起的任务。"
+                    "\n系统已为你自动下发权限，请直接继续执行被挂起的任务。"
                 )
 
             from src.agent import agent_force_push
