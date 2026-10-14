@@ -66,6 +66,10 @@ class AgentManager:
         # 恢复 Token 进度（权威来源为会话 meta.json，而非不含该字段的 index.json）
         if session_id in all_sessions:
             self._agent.window_token = SessionStore.get_session_window_token(session_id)
+            # 恢复本会话累计消耗（主/子分支聚合后取主干值）
+            self._agent.consumed_tokens = SessionStore.get_session_consumed_tokens(
+                session_id
+            )["main"]
 
         self._sensor_thread = threading.Thread(
             target=self._agent.sensor, daemon=True, name="AgentSensorThread"
@@ -141,6 +145,10 @@ class AgentManager:
             self._agent.window_token = SessionStore.get_session_window_token(
                 target_session_id
             )
+            # 恢复目标会话的累计消耗（主/子分支聚合后取主干值）
+            self._agent.consumed_tokens = SessionStore.get_session_consumed_tokens(
+                target_session_id
+            )["main"]
 
         # 载入该会话绑定的范式（未绑定则回落默认 PARADIGM.yaml）
         from src.utils.paradigm_api import resolve_paradigm_path
@@ -191,6 +199,7 @@ class AgentManager:
         with self._agent._history_lock:
             self._agent.session_id = new_id
             self._agent.window_token = 0
+            self._agent.consumed_tokens = 0
             self._agent.current_history = clean_history
 
         # 新会话立刻按所选范式工作（未选则默认 PARADIGM.yaml）
@@ -237,6 +246,7 @@ class AgentManager:
         self._notify_save()
         safe_history = self._agent.get_history()
         current_token = self._agent.window_token
+        current_consumed = self._agent.consumed_tokens
 
         # 分支继承当前会话绑定的范式（仅在非默认范式时记录）
         inherit_paradigm = None
@@ -254,6 +264,7 @@ class AgentManager:
             branch_alias=branch_alias,
             paradigm=inherit_paradigm,
             window_token=current_token,
+            consumed_tokens=current_consumed,
         )
 
         new_history = SessionStore.load_session_history(new_id)
@@ -261,6 +272,7 @@ class AgentManager:
         with self._agent._history_lock:
             self._agent.session_id = new_id
             self._agent.window_token = current_token
+            self._agent.consumed_tokens = current_consumed
             self._agent.current_history = new_history
 
         self._agent.model.bind_task(new_id, "AgentMain")
@@ -357,6 +369,7 @@ class AgentManager:
                 self._agent.session_id,
                 safe_history,
                 window_token=self._agent.window_token,
+                consumed_tokens=self._agent.consumed_tokens,
             )
 
 

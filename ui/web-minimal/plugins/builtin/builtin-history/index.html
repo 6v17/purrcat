@@ -926,7 +926,10 @@
     if (branchBusy || !activeSessionId) return;
     branchBusy = true; rerenderActions();
     callAction('session.branch', { session_id: activeSessionId, alias: '' })
-      .then(function () { toast('已创建分支会话'); })
+      .then(function (res) {
+        if (res && res.status === 'busy') { toast('Agent 正忙，请等当前任务完成后再拉取分支'); return; }
+        toast('已创建分支会话');
+      })
       .catch(function (e) { toast('分支失败：' + (e.message || e)); })
       .finally(function () { branchBusy = false; rerenderActions(); });
   }
@@ -1434,14 +1437,19 @@
       modeMenu.appendChild(b);
     });
   }
-  // 当前 Mode 取自会话 meta.json（'' = 默认 PARADIGM）
+  // 当前 Mode 取自会话 meta.json（'' = 默认 PARADIGM）；草稿态（新会话未发送）取自宿主 draftParadigm
   function loadMode() {
     curSessionId = '';
     currentMode = '';
     setModeLabel();
     callAction('state.get').then(function (s) {
       curSessionId = (s && s.activeSessionId) || '';
-      if (!curSessionId) return;
+      if (!curSessionId) {
+        // 草稿态：会话尚未创建，展示用户在宿主里预选的范式（空串=默认）
+        currentMode = (s && s.draftParadigm) || '';
+        setModeLabel();
+        return;
+      }
       return fetch('/api/sessions/' + encodeURIComponent(curSessionId) + '/paradigm')
         .then(function (r) { return r.json(); })
         .then(function (d) { currentMode = (d && d.paradigm) || ''; setModeLabel(); })
@@ -1450,8 +1458,14 @@
   }
   function setMode(name) {
     closeModeMenu();
-    if (!curSessionId) { alert('请先发送一条消息以创建会话'); return; }
     if (name === currentMode) return;
+    // 草稿态：会话尚未创建，先把选择的 Agent Loop 记到宿主，首条消息建会话时再生效
+    if (!curSessionId) {
+      callAction('session.setDraftParadigm', { paradigm: name })
+        .then(function () { currentMode = name; setModeLabel(); })
+        .catch(function (e) { alert('Mode 切换失败: ' + String((e && e.message) || e)); });
+      return;
+    }
     fetch('/api/sessions/' + encodeURIComponent(curSessionId) + '/paradigm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1475,14 +1489,14 @@
     if (!modeWrap.contains(e.target)) closeModeMenu();
   });
 
-  // ---------- 上下文占用圆环（对齐完整模式的 /api/agent/token 进度）----------
-  // 黑色弧 = 已占用，浅色轨道 = 未占用；hover 显示已占用/剩余/最大窗口/百分比
+  // ---------- 上下文占用圆环 + 本会话累计消耗 ----------
+  // 黑色弧 = 上下文已占用，浅色轨道 = 未占用；hover 显示占用明细与本会话消耗（主/子）
   var ctxArc = document.getElementById('ctxArc');
   var ctxTip = document.getElementById('ctxTip');
   var CTX_C = 2 * Math.PI * 9;   // 圆环周长（r=9）
 
   function fmtNum(n) { return Number(n || 0).toLocaleString('en-US'); }
-  function renderCtx(used, max) {
+  function renderCtx(used, max, consumedTotal, consumedMain, consumedSub) {
     used = Number(used) || 0;
     max = Number(max) || 0;
     var ratio = max > 0 ? Math.min(1, used / max) : 0;
@@ -1490,10 +1504,12 @@
     var arcLen = ratio > 0 ? Math.max(ratio * CTX_C, 2.4) : 0;
     ctxArc.setAttribute('stroke-dasharray', arcLen.toFixed(2) + ' ' + CTX_C.toFixed(2));
     var pct = max > 0 ? (used / max) * 100 : 0;
-    // 精简单行，避免气泡过高
+    var cTotal = Number(consumedTotal) || 0;
+    var cMain = Number(consumedMain) || 0;
+    var cSub = Number(consumedSub) || 0;
     ctxTip.innerHTML =
-      '已占用 <b>' + fmtNum(used) + ' / ' + fmtNum(max) + '</b>' +
-      '（<b>' + pct.toFixed(1) + '%</b>）';
+      '上下文 <b>' + fmtNum(used) + ' / ' + fmtNum(max) + '</b>（<b>' + pct.toFixed(1) + '%</b>）' +
+      '<br>本会话消耗 <b>' + fmtNum(cTotal) + '</b>（主 <b>' + fmtNum(cMain) + '</b> · 子 <b>' + fmtNum(cSub) + '</b>）';
   }
   var viewedSessionId = '';   // 当前“正在查看”的会话：圆环按会话展示其落盘用量
   function refreshCtx() {
@@ -1503,7 +1519,12 @@
     if (viewedSessionId) url += '?session_id=' + encodeURIComponent(viewedSessionId);
     fetch(url)
       .then(function (r) { return r.json(); })
-      .then(function (d) { renderCtx(d && d.window_token, d && d.max_token); })
+      .then(function (d) {
+        renderCtx(
+          d && d.window_token, d && d.max_token,
+          d && d.consumed_total, d && d.consumed_main, d && d.consumed_sub
+        );
+      })
       .catch(function () {});
   }
   refreshCtx();
@@ -1580,6 +1601,7 @@
       ensurePoll();
       load(activeSessionId);
       resyncEmpty();
+      refreshCtx();   // 有消息落地即刷新累计消耗，比 5s 轮询更跟手
     } else if (m.event === 'conversation.local') {
       ensurePoll();   // 刚发送，后端即将 busy，立即进入快速轮询
       if (currentBranchId !== 'main') return;   // 子代理分支视图只读，乐观消息属于主干，不渲染

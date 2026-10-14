@@ -107,6 +107,7 @@ class SubAgentRunner:
         self.display_branch_id = display_branch_id  # 模型可见的极简 ID (b1)
         self.action = action
         self.window_token = 0  # 🌟 新增：用于追踪当前子分支的窗口 Token 消耗
+        self.consumed_tokens = 0  # 🌟 本子分支累计消耗（所有 LLM 调用 usage.total_tokens 之和）
 
         # 🌟 批量转换物理路径
         self.deliverable_paths = [convert_sandbox_path(d) for d in deliverable]
@@ -127,6 +128,7 @@ class SubAgentRunner:
             branch_id=self.internal_branch_id,
             deliverable=self.deliverable_paths,
             action=self.action,
+            consumed_tokens=self.consumed_tokens,
         )
 
     def _build_system_prompt(self):
@@ -438,7 +440,9 @@ class SubAgentRunner:
 
             # 🌟 追踪 Token 进度
             if response and hasattr(response, "usage") and response.usage:
-                self.window_token = response.usage.total_tokens
+                total_tokens = getattr(response.usage, "total_tokens", 0) or 0
+                self.window_token = total_tokens
+                self.consumed_tokens += total_tokens
 
             msg_resp = response.choices[0].message
             assist_msg = {"role": "assistant", "content": msg_resp.content or ""}

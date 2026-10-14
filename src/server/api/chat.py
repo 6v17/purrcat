@@ -402,12 +402,15 @@ def _run_memory_compression():
 
 @router.get("/agent/token")
 def get_token_status_api(session_id: str = None):
-    """获取上下文 Token 使用进度。
+    """获取上下文 Token 使用进度 + 本会话累计消耗。
 
     传入 session_id（前端“正在查看”的会话）且它不是 Agent 当前挂载的会话时，
     返回该会话【落盘】的用量 —— 因为点击会话并不会切换后端 Agent，若不这样处理，
     历史会话的圆环永远显示的是别的会话（常常是 0）的用量。
     指定的会话正好是 Agent 当前会话时，仍返回实时内存值，保证对话中即时刷新。
+
+    consumed_* 为本会话累计消耗（含子代理）：活跃会话主干取内存实时值、
+    子代理取落盘聚合值；非活跃会话整体取落盘聚合值。
     """
     try:
         _ensure_manager_initialized()
@@ -415,17 +418,42 @@ def get_token_status_api(session_id: str = None):
         from src.agent.session_store import SessionStore as _SS
 
         agent = _AM()._agent
+        max_token = get_agent_max_token()
+
         if session_id and (agent is None or agent.session_id != session_id):
+            consumed = _SS.get_session_consumed_tokens(session_id)
             return {
                 "window_token": _SS.get_session_window_token(session_id),
-                "max_token": get_agent_max_token(),
+                "max_token": max_token,
+                "consumed_main": consumed["main"],
+                "consumed_sub": consumed["sub"],
+                "consumed_total": consumed["total"],
             }
-        return {"window_token": get_window_token(), "max_token": get_agent_max_token()}
+
+        consumed_main = agent.consumed_tokens if agent is not None else 0
+        consumed_sub = (
+            _SS.get_session_consumed_tokens(agent.session_id)["sub"]
+            if agent is not None
+            else 0
+        )
+        return {
+            "window_token": get_window_token(),
+            "max_token": max_token,
+            "consumed_main": consumed_main,
+            "consumed_sub": consumed_sub,
+            "consumed_total": consumed_main + consumed_sub,
+        }
     except Exception:
         import traceback
 
         traceback.print_exc()
-        return {"window_token": 0, "max_token": 1000000}
+        return {
+            "window_token": 0,
+            "max_token": 1000000,
+            "consumed_main": 0,
+            "consumed_sub": 0,
+            "consumed_total": 0,
+        }
 
 
 @router.delete("/sessions/{session_id}/branches/{branch_id}")

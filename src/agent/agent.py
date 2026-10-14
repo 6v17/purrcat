@@ -39,6 +39,8 @@ class Agent:
         self._interaction_id = 0
         self.pending_force_push = []
         self.window_token = 0
+        # 🌟 本会话累计消耗（所有 LLM 调用 usage.total_tokens 之和，压缩记忆不清零）
+        self.consumed_tokens = 0
         self._stop_event = threading.Event()
         # 🌟 工具打断信号：专用于掐断正在执行的工具（与 _stop_event 的永久停机语义分离）
         self._tool_interrupt_event = threading.Event()
@@ -453,6 +455,8 @@ class Agent:
 
                 if usage is not None:
                     self.window_token = usage.total_tokens
+                    # 🌟 累计本会话消耗（子代理在 SubAgentRunner 中另行累计）
+                    self.consumed_tokens += getattr(usage, "total_tokens", 0) or 0
                     # 🌟 ACP 总线：上下文用量（编辑器侧 usage_update 词汇）
                     from src.server.acp.bus import get_bus
                     from src.utils.config import get_model_config

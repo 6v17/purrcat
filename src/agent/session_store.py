@@ -158,6 +158,30 @@ class SessionStore:
             return 0
 
     @classmethod
+    def get_session_consumed_tokens(cls, session_id):
+        """读取会话累计 Token 消耗（贯通主干与所有子代理分支）。
+
+        权威来源同样是会话文件夹内的 meta.json：遍历 branches，把主干
+        （branch_id == "main"）计入 main，其余子代理分支计入 sub，
+        返回 {"main", "sub", "total"}。异常时安全回退为全 0。
+        """
+        meta_path = os.path.join(SESSIONS_DIR, session_id, "meta.json")
+        main_total, sub_total = 0, 0
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            branches = meta.get("branches", {}) or {}
+            for bid, info in branches.items():
+                value = int((info or {}).get("consumed_tokens", 0) or 0)
+                if bid == "main":
+                    main_total += value
+                else:
+                    sub_total += value
+        except Exception:
+            return {"main": 0, "sub": 0, "total": 0}
+        return {"main": main_total, "sub": sub_total, "total": main_total + sub_total}
+
+    @classmethod
     def load_session_history(cls, session_id, branch_id="main"):
         """🌟 重构：从会话文件夹内的特定分支文件加载历史"""
         filename = "main.json" if branch_id == "main" else f"sub_{branch_id}.json"
@@ -223,6 +247,7 @@ class SessionStore:
         window_token=0,
         deliverable=None,
         action=None,
+        consumed_tokens=None,
     ):
         """🌟 重构：线程安全地进行多文件分支隔离归档，并追溯分叉拓扑"""
         session_dir = os.path.join(SESSIONS_DIR, session_id)
@@ -272,12 +297,18 @@ class SessionStore:
                 meta_data["branches"] = {}
 
             if branch_id == "main":
+                prev_main = meta_data["branches"].get("main", {}) or {}
                 meta_data["branches"]["main"] = {
                     "status": "active",
                     "updated_at": timestamp,
                     "window_token": window_token,
+                    # 未显式传入时保留旧值，避免其它调用方把累计消耗清零
+                    "consumed_tokens": consumed_tokens
+                    if consumed_tokens is not None
+                    else prev_main.get("consumed_tokens", 0),
                 }
             else:
+                prev_sub = meta_data["branches"].get(branch_id, {}) or {}
                 meta_data["branches"][branch_id] = {
                     "status": "active"
                     if branch_id in meta_data.get("active_branches", {})
@@ -286,6 +317,9 @@ class SessionStore:
                     "deliverable": deliverable,
                     "action": action,
                     "updated_at": timestamp,
+                    "consumed_tokens": consumed_tokens
+                    if consumed_tokens is not None
+                    else prev_sub.get("consumed_tokens", 0),
                 }
 
             try:
@@ -326,6 +360,7 @@ class SessionStore:
         branch_alias=None,
         paradigm=None,
         window_token=0,
+        consumed_tokens=None,
     ):
         new_session_id = cls._generate_id()
         cls.save_session(
@@ -335,6 +370,7 @@ class SessionStore:
             alias=branch_alias,
             paradigm=paradigm,
             window_token=window_token,
+            consumed_tokens=consumed_tokens,
         )
         return new_session_id
 

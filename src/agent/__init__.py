@@ -80,6 +80,16 @@ def get_window_token():
     )
 
 
+def get_session_consumed_tokens(session_id):
+    """读取某会话的累计 Token 消耗（贯通主干与所有子代理分支）。
+
+    返回 {"main", "sub", "total"}；仅读盘（meta.json），不含实时内存值。
+    """
+    from src.agent.session_store import SessionStore
+
+    return SessionStore.get_session_consumed_tokens(session_id)
+
+
 def get_agent_max_token():
     """上下文窗口上限：跟随当前模型配置里的 max_token。
 
@@ -116,4 +126,5 @@ __all__ = [
     "flush_agent_memory",
     "get_window_token",
     "get_agent_max_token",
+    "get_session_consumed_tokens",
 ]

@@ -106,7 +106,7 @@
 | POST | `/api/chat/batch` | 批量发送 |
 | POST | `/api/chat/interrupt` | 人类强制打断：物理掐断正在执行的工具 |
 | POST | `/api/chat/compress-memory` | 手动触发记忆压缩：全局大总结并截断上下文 |
-| GET | `/api/agent/token` | 获取上下文 Token 使用进度（query `session_id`） |
+| GET | `/api/agent/token` | 获取上下文 Token 进度与本会话累计消耗（query `session_id`）；返回 `window_token`、`max_token`、`consumed_main`、`consumed_sub`、`consumed_total` |
 
 ---
 
@@ -165,8 +165,8 @@
 | POST | `/api/tools/market/graphs/install` | 安装 Graph（文件夹结构） |
 | POST | `/api/tools/market/graphs/uninstall` | 删除 `{GRAPHS_DIR}/{name}` 文件夹 |
 | GET | `/api/tools/market/ui-plugins` | 从官方 `PurrPod/ui-plugins` 拉取 `registry.json` 给前端市场 |
-| GET | `/api/tools/market/ui-plugins/installed` | 已安装 UI 插件（用户根 `~/.purrcat/webmin-plugins`）名字列表 |
-| POST | `/api/tools/market/ui-plugins/install` | 安装 UI 插件（含依赖 skill/mcp/sensor/graph/agentloop/plugin 自动安装） |
+| GET | `/api/tools/market/ui-plugins/installed` | 已安装 UI 插件名字列表（用户根 + 沙盒根合并去重） |
+| POST | `/api/tools/market/ui-plugins/install` | 安装 UI 插件到其声明的 `root`（user→用户根，sandbox→沙盒根；含依赖 skill/mcp/sensor/graph/agentloop/plugin 自动安装） |
 | POST | `/api/tools/market/ui-plugins/uninstall` | 卸载 UI 插件（目录移入 `<id>.trash`） |
 | GET | `/api/tools/market/agentloops` | 从官方 `PurrPod/agentloops` 拉取 `registry.json` 给前端市场 |
 | GET | `/api/tools/market/agentloops/installed` | 已安装 AgentLoop（`~/.purrcat/paradigms/*.yaml`）名字列表 |
