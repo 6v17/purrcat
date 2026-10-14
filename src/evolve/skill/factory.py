@@ -19,14 +19,20 @@ def skill_improve_init(
 ) -> tuple[str, str]:
     """初始化 Skill 进化沙盒，返回 (系统提示, workplace_id)"""
     short_uuid = uuid.uuid4().hex[:5]
+    source_skill_dir = os.path.join(SKILL_DIR, skill_name)
+    if is_upgrade and not os.path.isdir(source_skill_dir):
+        return (
+            f"❌ 无法执行升级：未找到名为 '{skill_name}' 的正式技能，"
+            f"请确认名称，或改用改进模式（is_upgrade=false）创建。",
+            "",
+        )
+
     workplace_root = os.path.join(AGENT_VM_DIR, "skill_workplace", short_uuid)
     workplace_skill_dir = os.path.join(workplace_root, skill_name)
 
     if os.path.exists(workplace_root):
         shutil.rmtree(workplace_root, ignore_errors=True)
     os.makedirs(workplace_root, exist_ok=True)
-
-    source_skill_dir = os.path.join(SKILL_DIR, skill_name)
 
     if is_upgrade:
         shutil.copytree(source_skill_dir, workplace_skill_dir)
@@ -207,11 +213,19 @@ def skill_rollback(skill_name: str) -> str:
             capture_output=True,
         )
 
-        # 提交回滚记录
+        # 提交回滚记录（HEAD~1 与当前内容一致时 git 会报 "nothing to commit"，不算回滚失败）
         current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         commit_msg = f"rollback skill {skill_name} to previous state at {current_date}"
-
-        subprocess.run(["git", "commit", "-m", commit_msg], cwd=skills_root, check=True)
+        commit_res = subprocess.run(
+            ["git", "commit", "-m", commit_msg],
+            cwd=skills_root,
+            capture_output=True,
+            text=True,
+        )
+        if commit_res.returncode != 0 and "nothing to commit" not in (
+            commit_res.stdout + commit_res.stderr
+        ):
+            return f"回滚执行异常：{commit_res.stderr.strip() or commit_res.stdout.strip()}"
 
         return (
             f"回滚成功！'{skill_name}' 已恢复至上一个版本，并生成了 Rollback Commit。"
