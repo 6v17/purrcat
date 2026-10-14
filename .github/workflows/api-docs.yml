@@ -6,7 +6,7 @@ on:
     paths:
       - "src/server/**"
       - "main.py"
-      - "docs/server-api.md"
+      - "docs/api/**"
       - "scripts/check_api_docs.py"
       - ".github/workflows/api-docs.yml"
   pull_request:
@@ -14,7 +14,7 @@ on:
     paths:
       - "src/server/**"
       - "main.py"
-      - "docs/server-api.md"
+      - "docs/api/**"
       - "scripts/check_api_docs.py"
       - ".github/workflows/api-docs.yml"
 
@@ -32,5 +32,5 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Verify docs/server-api.md matches src/server routes
+      - name: Verify docs/api matches src/server routes
         run: python scripts/check_api_docs.py

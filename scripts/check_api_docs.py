@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""校验 docs/server-api.md 与 src/server 的真实路由是否一致。
+"""校验 docs/api/ 下的 API 文档与 src/server 的真实路由是否一致。
 
 只做**校验**，绝不改写文档。若发现漂移则非零退出，供 CI 拦截。
 
@@ -8,8 +8,8 @@
 
 比对范围：
     真实路由 = src/server/api/*.py 的全部路由 + main.py 中 /api 开头的路由
-    文档路由 = docs/server-api.md 中的表格行（如 “| GET | /api/xxx |”）
-              以及标题（如 “### GET /api/xxx”）
+    文档路由 = docs/api/**/*.md 中的表格行（如 “| GET | ` /api/xxx ` |”）
+              以及标题（如 “### GET ` /api/xxx ` ”）
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 API_DIR = ROOT / "src" / "server" / "api"
 MAIN_PY = ROOT / "main.py"
-DOC = ROOT / "docs" / "server-api.md"
+DOCS_DIR = ROOT / "docs" / "api"
 
 HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options"}
 VALID_METHODS = {m.upper() for m in HTTP_METHODS} | {"WS"}
@@ -94,7 +94,9 @@ def extract_routes() -> set[tuple[str, str]]:
 DOC_ROW_RE = re.compile(
     r"^\|\s*([A-Z]{2,7}(?:\s*/\s*[A-Z]{2,7})*)\s*\|\s*`(/(?:api|acp)/[^`]+)`"
 )
-DOC_HEAD_RE = re.compile(r"^#{1,6}\s+([A-Z]{2,7})\s+`(/(?:api|acp)/[^`]+)`")
+DOC_HEAD_RE = re.compile(
+    r"^#{1,6}\s+([A-Z]{2,7}(?:\s*/\s*[A-Z]{2,7})*)\s+`(/(?:api|acp)/[^`]+)`"
+)
 
 
 def _is_real_path(path: str) -> bool:
@@ -103,26 +105,27 @@ def _is_real_path(path: str) -> bool:
 
 
 def extract_documented() -> set[tuple[str, str]]:
-    """从文档中抽取 (方法, 归一化路径)。"""
+    """从 docs/api 下所有 Markdown 中抽取 (方法, 归一化路径)。"""
     documented: set[tuple[str, str]] = set()
-    for line in DOC.read_text(encoding="utf-8").splitlines():
-        for regex in (DOC_HEAD_RE, DOC_ROW_RE):
-            m = regex.match(line)
-            if not m:
-                continue
-            path = normalize_path(m.group(2))
-            if not _is_real_path(path):
-                continue
-            for method in m.group(1).split("/"):
-                method = method.strip()
-                if method in VALID_METHODS:
-                    documented.add((method, path))
+    for doc in sorted(DOCS_DIR.rglob("*.md")):
+        for line in doc.read_text(encoding="utf-8").splitlines():
+            for regex in (DOC_HEAD_RE, DOC_ROW_RE):
+                m = regex.match(line)
+                if not m:
+                    continue
+                path = normalize_path(m.group(2))
+                if not _is_real_path(path):
+                    continue
+                for method in m.group(1).split("/"):
+                    method = method.strip()
+                    if method in VALID_METHODS:
+                        documented.add((method, path))
     return documented
 
 
 def main() -> int:
-    if not DOC.is_file():
-        print(f"[ERROR] 文档不存在：{DOC}", file=sys.stderr)
+    if not DOCS_DIR.is_dir():
+        print(f"[ERROR] 文档目录不存在：{DOCS_DIR}", file=sys.stderr)
         return 1
 
     actual = extract_routes()
@@ -145,7 +148,7 @@ def main() -> int:
         print(f"\n[过期] 文档记录了但代码中不存在（{len(stale)}）：")
         for method, path in stale:
             print(f"  {method:6} {path}")
-    print("\n请更新 docs/server-api.md 后重试（本脚本只校验，不会自动改写文档）。")
+    print("\n请更新 docs/api/ 下的文档后重试（本脚本只校验，不会自动改写文档）。")
     return 1
 
 
