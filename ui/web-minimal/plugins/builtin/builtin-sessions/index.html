@@ -43,7 +43,6 @@
   }
   .dhead:hover { background: var(--hover); }
   .dhead .dtitle { font-size: 13px; font-weight: 600; }
-  .dhead .spacer { flex: 1; }
   .chev {
     flex: none; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center;
     color: var(--dim); transition: transform 0.15s ease;
@@ -58,13 +57,20 @@
   .badge.zero { display: none; }
   .dbody { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-top: 4px; }
   .drawer:not(.open) .dbody { display: none; }
-  .dhead .new {
-    flex: none; width: 26px; height: 26px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px; line-height: 1; color: var(--label-2nd, #4c5560);
-    background: transparent; border: none; border-radius: 6px; cursor: pointer;
+  /* 新建会话：独立按钮，位于会话列表上方（不再寄生在列表头里） */
+  .new-session {
+    flex: none; width: 100%; display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px; margin-bottom: 8px; text-align: left;
+    font: inherit; font-size: 13px; font-weight: 600; color: var(--label);
+    background: transparent; border: none; border-radius: 10px; cursor: pointer;
   }
-  .dhead .new:hover { background: var(--hover); }
+  .new-session:hover { background: var(--hover); }
+  .new-session .ns-ic {
+    flex: none; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
+    color: var(--label-2nd, #4c5560);
+  }
+  .new-session .ns-ic svg { display: block; width: 16px; height: 16px; }
+  .new-session:hover .ns-ic { color: var(--accent); }
 
   /* ---------- 列表 ---------- */
   .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
@@ -145,15 +151,49 @@
   .rbtn.no { background: #fff; color: #16191d; font-weight: 600; }
   .rbtn.no:hover { background: rgba(15, 17, 21, 0.08); }
   .empty { padding: 14px 8px; font-size: 12px; color: var(--dim); text-align: center; }
+
+  /* ---------- Agent 忙碌提示弹层（插件自带，遮罩铺满侧栏） ---------- */
+  .busy-mask {
+    position: fixed; inset: 0; z-index: 40; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(15, 17, 21, .32); padding: 14px;
+  }
+  .busy-mask.on { display: flex; }
+  .busy {
+    width: 100%; max-width: 250px; background: var(--wm-bl-0, #fff); border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(15, 17, 21, .22); padding: 16px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+  }
+  .busy-ic {
+    width: 40px; height: 40px; border-radius: 999px; background: #EBCB8B; color: #16191d;
+    display: flex; align-items: center; justify-content: center;
+    animation: busy-spin 1.4s linear infinite;
+  }
+  .busy-ic svg { width: 22px; height: 22px; }
+  @keyframes busy-spin { to { transform: rotate(360deg); } }
+  .busy h3 { font-size: 14px; font-weight: 600; color: var(--label); }
+  .busy p { font-size: 12px; color: var(--label-2nd, #4c5560); line-height: 1.55; }
+  .busy button {
+    width: 100%; font: inherit; font-size: 12.5px; font-weight: 600; padding: 8px 0;
+    border-radius: 8px; cursor: pointer; border: 1px solid var(--accent, #16191d);
+    background: var(--accent, #16191d); color: #fff;
+  }
+  .busy button:hover { background: #000; }
 </style>
 </head>
 <body>
+  <!-- 新建会话：独立按钮，置于会话列表上方 -->
+  <button id="newBtn" class="new-session" title="新建会话" aria-label="新建会话">
+    <span class="ns-ic">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 8v6"/><path d="M9 11h6"/></svg>
+    </span>
+    <span class="ns-tx">新建会话</span>
+  </button>
+
   <div class="drawer open" id="drawerSessions">
     <div class="dhead" id="headSessions">
       <span class="chev"></span>
       <span class="dtitle">会话列表</span>
-      <span class="spacer"></span>
-      <button id="newBtn" class="new" title="新建会话" aria-label="新建会话">＋</button>
     </div>
     <div class="dbody"><div id="list" class="list"></div></div>
   </div>
@@ -165,6 +205,18 @@
       <span class="badge zero" id="pendBadge">0</span>
     </div>
     <div class="dbody"><div id="reqList" class="list"></div></div>
+  </div>
+
+  <!-- Agent 忙碌提示：切到其它会话 / 新建 / 拉分支被宿主拦截时弹出 -->
+  <div class="busy-mask" id="busyMask">
+    <div class="busy">
+      <div class="busy-ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>
+      </div>
+      <h3>Agent 正忙</h3>
+      <p>喵~ Agent 正在埋头苦干中！为了保护数据安全，请等待当前任务完成后，再切换会话或拉取新分支哦！</p>
+      <button id="busyOk" type="button">知道了</button>
+    </div>
   </div>
 
 <script>
@@ -188,6 +240,7 @@
   var listEl = document.getElementById('list');
   var reqListEl = document.getElementById('reqList');
   var badgeEl = document.getElementById('pendBadge');
+  var busyMask = document.getElementById('busyMask');
   var sessions = [];
   var requests = [];
   var activeId = '';                                  // 当前活动会话（由宿主 state 对账）
@@ -218,6 +271,14 @@
     else if (m.type === 'event' && m.event === 'requests.updated') loadRequests();
   });
   callAction('config.get', { plugin_id: 'builtin-sessions' }).then(applyPanel).catch(function () {});
+
+  /* ---------------- Agent 忙碌提示 ---------------- */
+  // 宿主在 Agent 工作时会拒绝切换/新建/拉分支，返回 {status:'busy'}；此处弹出提示。
+  function showBusy() { busyMask.classList.add('on'); }
+  function hideBusy() { busyMask.classList.remove('on'); }
+  document.getElementById('busyOk').addEventListener('click', hideBusy);
+  busyMask.addEventListener('click', function (ev) { if (ev.target === busyMask) hideBusy(); });
+  function handleBusy(res) { if (res && res.status === 'busy') { showBusy(); return true; } return false; }
 
   /* ---------------- 会话列表 ---------------- */
   function findSession(id) {
@@ -268,7 +329,7 @@
       card.className = 'item' + (s.id === activeId ? ' active' : '') + (editingId === s.id ? ' editing' : '');
       card.addEventListener('click', function () {
         // 点行内按钮/确认条时不切换会话（由子元素自行 stopPropagation）
-        callAction('session.switch', { session_id: s.id }).catch(function () {});
+        callAction('session.switch', { session_id: s.id }).then(handleBusy).catch(function () {});
       });
 
       // 删除确认态：整张卡片换成「删除「名称」？[删除][取消]」
@@ -482,8 +543,7 @@
   }
 
   /* ---------------- 抽屉交互 ---------------- */
-  document.getElementById('headSessions').addEventListener('click', function (ev) {
-    if (ev.target && ev.target.closest && ev.target.closest('#newBtn')) return;
+  document.getElementById('headSessions').addEventListener('click', function () {
     document.getElementById('drawerSessions').classList.toggle('open');
   });
   document.getElementById('headPending').addEventListener('click', function () {
@@ -491,7 +551,7 @@
   });
   document.getElementById('newBtn').addEventListener('click', function (ev) {
     ev.stopPropagation();
-    callAction('sessions.new').then(function () { load(); }).catch(function () {});
+    callAction('sessions.new').then(function (res) { if (!handleBusy(res)) load(); }).catch(function () {});
   });
 
   // 抽屉箭头图标（内联 SVG，避免额外图标依赖）

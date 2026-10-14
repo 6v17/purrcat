@@ -34,6 +34,10 @@
     activeBranchId: 'main',   // 当前查看的分支视图（main / 子代理分支），供输入框判定只读
     sessions: [],
     empty: true,
+    // 草稿态：点「新建会话」后不落盘、不进列表，仅前端占位欢迎界面；
+    // 首条消息发送时才按 draftParadigm 建会话并生成系统提示词。
+    draft: false,
+    draftParadigm: '',
     plugins: [],              // manifest 注解后的插件列表（供设置面板使用）
   };
   // 最左图标栏状态：stage 0=仅图标 1=图标+文字；hidden=各插件隐藏开关（持久化）；opacity=白条透明度
@@ -1613,15 +1617,31 @@
 
   async function ensureSessionId(sessionId) {
     if (sessionId) return sessionId;
-    const created = await (await fetch('/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
+    // 草稿态下首个消息到此：此刻才真正建会话，并把用户选的范式一并带入，
+    // 保证系统提示词用「所选范式」生成（而非默认范式）。
+    const created = await (await fetch('/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paradigm: groupState.draftParadigm || '' }) })).json();
     if (created && created.id) {
       groupState.activeSessionId = created.id;
+      groupState.draft = false;
+      groupState.draftParadigm = '';
       await refreshSessions();
       updateEmpty();
       broadcastSessions('session.switched', { session_id: created.id });
       return created.id;
     }
     return '';
+  }
+
+  // 当前活动会话的后台 Agent 是否仍在工作（/status 的 is_thinking，与历史面板同源）。
+  // 用于「Agent 忙碌时禁止切换会话/新建/拉分支」，保护正在进行的任务数据。
+  // 探测失败一律视为空闲（不阻断），避免会话暂不可用时完全无法操作。
+  async function activeSessionBusy() {
+    const sid = groupState.activeSessionId;
+    if (!sid) return false;
+    try {
+      const st = await (await fetch('/api/sessions/' + encodeURIComponent(sid) + '/status')).json();
+      return !!(st && st.is_thinking);
+    } catch (_) { return false; }
   }
 
   // ---- 本地 Electron 对话框 ----
@@ -1681,12 +1701,25 @@
         return groupState.sessions;
       }
       case 'sessions.new': {
-        const res = await (await fetch('/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
-        if (res && res.id) { groupState.activeSessionId = res.id; await refreshSessions(); updateEmpty(); broadcastSessions('session.switched', { session_id: res.id }); }
-        return res;
+        // Agent 忙碌时禁止新建并切走，避免打断正在进行的任务
+        if (await activeSessionBusy()) return { status: 'busy' };
+        // 纯前端草稿态：不落盘、不进列表。会话延迟到首条消息时由 ensureSessionId 创建，
+        // 届时按 draftParadigm 生成系统提示词。
+        groupState.draft = true;
+        groupState.draftParadigm = '';
+        groupState.activeSessionId = '';
+        await refreshSessions();
+        updateEmpty();
+        broadcastSessions('session.switched', { session_id: '' });
+        return { status: 'ok', draft: true };
       }
       case 'session.switch': {
-        if (payload.session_id) { groupState.activeSessionId = payload.session_id; await refreshSessions(); updateEmpty(); broadcastSessions('session.switched', { session_id: payload.session_id }); }
+        const target = String(payload.session_id || '');
+        // 切到「同一个」会话无需拦截；切到不同会话时若 Agent 忙碌则拒绝（对齐原 UI：等待任务完成再切换）
+        if (target && target !== groupState.activeSessionId && (await activeSessionBusy())) return { status: 'busy' };
+        // 切到已有会话即退出草稿态（放弃未发送的新会话占位）
+        if (target) groupState.draft = false;
+        if (target) { groupState.activeSessionId = target; await refreshSessions(); updateEmpty(); broadcastSessions('session.switched', { session_id: target }); }
         return { status: 'ok' };
       }
       // 重命名会话：对齐后端 PUT /api/sessions/{id}/rename
@@ -1748,6 +1781,8 @@
         return (await fetch('/api/chat/interrupt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })).json();
       // 会话分支：基于当前会话新建分支并切换过去（对齐后端 POST /api/sessions/{id}/branch）
       case 'session.branch': {
+        // Agent 忙碌时禁止拉取分支（原 UI 同样拦截），避免新分支会话与进行中任务相互干扰
+        if (await activeSessionBusy()) return { status: 'busy' };
         const sid = String(payload.session_id || groupState.activeSessionId || '');
         if (!sid) throw new Error('缺少 session_id');
         const res = await fetch('/api/sessions/' + encodeURIComponent(sid) + '/branch', {
@@ -1964,6 +1999,13 @@
       // 网页链接统一路由：主进程拦下的 target=_blank/window.open 与插件显式调用都走这里
       case 'browser.openUrl':
         return openUrlInBrowserPanel(payload.url);
+      // 草稿态下选择 Agent Loop（范式）：仅记录在宿主，待首条消息建会话时生效。
+      // 与 session.* 系列同属宿主对外契约，插件无需感知彼此即可热插拔。
+      case 'session.setDraftParadigm': {
+        if (!groupState.draft) return { status: 'noop' };
+        groupState.draftParadigm = String(payload.paradigm || '');
+        return { status: 'ok', paradigm: groupState.draftParadigm };
+      }
       case 'state.get':
         return { ...groupState, plugins: undefined };
       // 子代理分支视图切换：会话插件据此切换查看分支（同时由分支状态进入/退出输入只读）

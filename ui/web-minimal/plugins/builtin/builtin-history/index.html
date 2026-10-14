@@ -1513,11 +1513,12 @@
   }
   var viewedSessionId = '';   // 当前“正在查看”的会话：圆环按会话展示其落盘用量
   function refreshCtx() {
+    // 无「正在查看」的会话（草稿态 / 无会话）：圆环置空。
+    // 否则不带 session_id 请求会拿到后端当前挂载会话的实时用量，误显示上一个会话的额度。
+    if (!viewedSessionId) { renderCtx(0, 0, 0, 0, 0); return; }
     // 传入正在查看的会话：宿主点击会话不会切换后端 Agent，故由后端按会话读取落盘用量；
     // 若该会话正是 Agent 当前会话，后端会返回实时内存值（对话中即时刷新）。
-    var url = '/api/agent/token';
-    if (viewedSessionId) url += '?session_id=' + encodeURIComponent(viewedSessionId);
-    fetch(url)
+    fetch('/api/agent/token?session_id=' + encodeURIComponent(viewedSessionId))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         renderCtx(
