@@ -39,13 +39,13 @@
   .drawer:not(.open)#drawerPending { flex: 0 0 auto; }
   .dhead {
     flex: none; display: flex; align-items: center; gap: 8px;
-    padding: 5px 12px; border-radius: 8px; cursor: pointer; user-select: none;
+    padding: 9px 12px; border-radius: 10px; cursor: pointer; user-select: none;
   }
   .dhead:hover { background: var(--hover); }
-  .dhead .dtitle { font-size: 13px; font-weight: 600; }
+  .dhead .dtitle { font-size: 13px; font-weight: 600; color: var(--label); }
   .chev {
     flex: none; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
-    color: var(--dim); transition: transform 0.15s ease;
+    color: var(--label-2nd, #4c5560); transition: transform 0.15s ease;
   }
   .chev svg { display: block; width: 13px; height: 13px; }
   .drawer:not(.open) .chev { transform: rotate(-90deg); }
