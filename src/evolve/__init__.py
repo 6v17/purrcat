@@ -1,5 +1,5 @@
 """
-Skill 与 MCP 进化工厂模块 (evolve/__init__.py)
+Skill / MCP / Sensor / UI 插件 进化工厂模块 (evolve/__init__.py)
 
 采用纯沙盒拷贝模式，从架构层面切断所有潜在风险。
 Agent 在完全独立的 UUID 沙盒中工作，折腾坏了直接删，折腾好了由宿主机负责接管、Diff、合并和 Commit。
@@ -10,8 +10,11 @@ Agent 在完全独立的 UUID 沙盒中工作，折腾坏了直接删，折腾�
 - skill_request_handle: 处理人类审批
 - skill_rollback: 安全回滚
 - run_skill_eval_background: 自动化 Skill 沙盒测试
-- mcp_improve_init: 初始化 MCP Server 沙盒
+- mcp_improve_init / mcp_upgrade_init: 初始化 MCP Server 沙盒
 - run_mcp_eval_background: 自动化 MCP 并发测试
+- sensor_factory_init: 初始化 Sensor 沙盒（单文件 ACP 子进程）
+- run_sensor_eval_background: 自动化 Sensor 协议体检
+- ui_plugin_init: 生成 web-minimal UI 插件框架（宿主直接扫描，无 UUID 沙盒）
 
 架构优势：
 1. 沙盒隔离：利用 uuid 在 agent_vm/skill_workplace/ 和 agent_vm/mcp_workplace/ 内创建完全独立的测试/升级区
