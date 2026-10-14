@@ -175,13 +175,12 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
 
             main_session_id = manager.get_active_session_id()
 
-            # 🌟 捕获返回的 task_id
-            task_id = run_mcp_eval_background(workplace_id, mcp_name, main_session_id)
-            task_id_info = f" (Task ID: {task_id})" if isinstance(task_id, str) else ""
+            # 后台评测线程不注册到 Task 管理器，无 task_id 可查；完成后由系统级通知回报结果。
+            run_mcp_eval_background(workplace_id, mcp_name, main_session_id)
 
             msg = (
-                f"🚀 MCP '{mcp_name}' 的并发测试流水线已在后台启动！{task_id_info}\n"
-                f"💡 提示：你可以使用 `Task` 工具查询状态或挂起当前任务等待系统级通知。\n"
+                f"🚀 MCP '{mcp_name}' 的并发测试流水线已在后台启动！\n"
+                f"💡 提示：测试完成后系统会主动推送结果报告，请耐心等待系统级通知。\n"
             )
             if stale_warning:
                 msg = f"{stale_warning}\n\n{msg}"

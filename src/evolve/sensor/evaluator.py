@@ -84,7 +84,7 @@ def _get_next_iteration_dir(workplace_root: str) -> tuple[str, int]:
     max_idx = 0
     if os.path.exists(workplace_root):
         for item in os.listdir(workplace_root):
-            match = re.match(r"iteration-(\d+)", item)
+            match = re.match(r"iteration-(\d+)$", item)
             if match:
                 max_idx = max(max_idx, int(match.group(1)))
     next_idx = max_idx + 1
