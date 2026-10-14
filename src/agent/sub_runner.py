@@ -107,7 +107,9 @@ class SubAgentRunner:
         self.display_branch_id = display_branch_id  # 模型可见的极简 ID (b1)
         self.action = action
         self.window_token = 0  # 🌟 新增：用于追踪当前子分支的窗口 Token 消耗
-        self.consumed_tokens = 0  # 🌟 本子分支累计消耗（所有 LLM 调用 usage.total_tokens 之和）
+        self.consumed_tokens = (
+            0  # 🌟 本子分支累计消耗（所有 LLM 调用 usage.total_tokens 之和）
+        )
 
         # 🌟 批量转换物理路径
         self.deliverable_paths = [convert_sandbox_path(d) for d in deliverable]

@@ -40,7 +40,12 @@ from src.utils.skill_helper import _find_skill_md_file
 # 极简宿主的插件依赖类型白名单与用户插件根：与 webmin.py 共用同一份定义，
 # 避免两处各写一份常量后逐渐漂移。（webmin.py 不 import 本文件，无循环依赖）
 from src.server.api import plugin_runtime
-from src.server.api.webmin import DEP_TYPES, USER_PLUGIN_ROOT
+from src.server.api.webmin import (
+    DEP_TYPES,
+    ROOT_TO_DIR,
+    SANDBOX_PLUGIN_ROOT,
+    USER_PLUGIN_ROOT,
+)
 
 router = APIRouter(prefix="/api/tools", tags=["Tools Management"])
 
@@ -1154,17 +1159,18 @@ def _normalize_dependency_list(raw) -> list:
     return out
 
 
-def _scan_user_ui_plugins() -> list:
-    """列出用户插件根下已安装的 UI 插件（含 plugin.json 的目录，跳过 <id>.trash）。"""
-    names = []
-    if not os.path.isdir(USER_PLUGIN_ROOT):
-        return names
-    for name in sorted(os.listdir(USER_PLUGIN_ROOT)):
-        if name.endswith(".trash"):
+def _scan_installed_ui_plugins() -> list:
+    """列出「用户根 + 沙盒根」下已安装的 UI 插件（含 plugin.json 的目录，跳过 <id>.trash）。"""
+    names = set()
+    for root_dir in (USER_PLUGIN_ROOT, SANDBOX_PLUGIN_ROOT):
+        if not os.path.isdir(root_dir):
             continue
-        if os.path.isfile(os.path.join(USER_PLUGIN_ROOT, name, "plugin.json")):
-            names.append(name)
-    return names
+        for name in os.listdir(root_dir):
+            if name.endswith(".trash"):
+                continue
+            if os.path.isfile(os.path.join(root_dir, name, "plugin.json")):
+                names.add(name)
+    return sorted(names)
 
 
 def _install_sensor_by_name(name: str) -> str:
@@ -1260,8 +1266,21 @@ def _install_agentloop_by_name(name: str) -> str:
     return f"AgentLoop '{safe_name}' 已安装到 {PARADIGMS_DIR}（{len(written)} 个文件）"
 
 
+def _ui_plugin_root_dir(raw_root) -> str:
+    """把插件声明的 root 映射为落盘根目录（user → 用户根，sandbox → 沙盒根）。
+
+    内置插件随 App 分发、只读，不接受从市场安装；root 缺失或非法时按用户根兜底。
+    """
+    key = str(raw_root or "").strip().lower()
+    if key == "builtin":
+        raise HTTPException(
+            status_code=400, detail="内置插件随 App 分发，不支持从市场安装"
+        )
+    return ROOT_TO_DIR.get(key) or USER_PLUGIN_ROOT
+
+
 def _install_ui_plugin_entry(entry: dict, notes: list, seen: set) -> dict:
-    """按注册表条目把 UI 插件文件夹落盘到用户插件根，然后递归补齐其依赖。"""
+    """按注册表条目把 UI 插件文件夹落盘到其声明的 root，然后递归补齐其依赖。"""
     name = str(entry.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=502, detail="UI 插件注册表条目缺少 name")
@@ -1276,10 +1295,16 @@ def _install_ui_plugin_entry(entry: dict, notes: list, seen: set) -> dict:
                 status_code=502, detail=f"注册表文件清单含非法路径: {rel}"
             )
 
-    # 重装场景下清掉旧目录，保证与市场版本一致
-    target_dir = os.path.join(USER_PLUGIN_ROOT, name)
-    if os.path.isdir(target_dir):
-        shutil.rmtree(target_dir)
+    # 落盘根由注册表条目声明的 root 决定（user → 用户根，sandbox → 沙盒根），
+    # 不再全部塞进用户根；内置插件不接受市场安装。
+    root_dir = _ui_plugin_root_dir(entry.get("root"))
+    # 重装场景：清掉两个可写根下同名的旧目录，避免旧根残留把新装位置遮住（用户根优先级更高）
+    for stale_root in (USER_PLUGIN_ROOT, SANDBOX_PLUGIN_ROOT):
+        stale_dir = os.path.join(stale_root, name)
+        if os.path.isdir(stale_dir):
+            plugin_runtime.stop(name)
+            shutil.rmtree(stale_dir)
+    target_dir = os.path.join(root_dir, name)
     os.makedirs(target_dir, exist_ok=True)
 
     plugin_data = None
@@ -1409,9 +1434,9 @@ def get_ui_plugin_registry_api():
 
 @router.get("/market/ui-plugins/installed")
 def list_installed_ui_plugins_api():
-    """返回用户插件根（~/.purrcat/webmin-plugins）下已安装的 UI 插件名字列表"""
+    """返回已安装的 UI 插件名字列表（用户根 + 沙盒根两个可写根合并去重）"""
     try:
-        return _scan_user_ui_plugins()
+        return _scan_installed_ui_plugins()
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(
@@ -1422,7 +1447,8 @@ def list_installed_ui_plugins_api():
 @router.post("/market/ui-plugins/install")
 def install_ui_plugin_api(req: InstallUiPluginReq):
     """
-    安装 UI 插件到用户插件根（~/.purrcat/webmin-plugins）：
+    安装 UI 插件到其注册表条目声明的 root（user → 用户根 ~/.purrcat/webmin-plugins，
+    sandbox → 沙盒根 {AGENT_VM_DIR}/ui-plugin）：
       从 registry 拿到该插件的文件清单，逐文件从 PurrPod/ui-plugins 仓库下载落盘；
       再按插件声明的 dependency 逐一补齐 skill/mcp/sensor/graph/agentloop/plugin 依赖，
       缺失或失败只记录说明，不阻断插件本体安装。
@@ -1446,17 +1472,22 @@ def install_ui_plugin_api(req: InstallUiPluginReq):
 
 @router.post("/market/ui-plugins/uninstall")
 def uninstall_ui_plugin_api(req: UninstallUiPluginReq):
-    """卸载 UI 插件：把 {USER_PLUGIN_ROOT}/{name} 移动为 <name>.trash（可恢复）。"""
+    """卸载 UI 插件：在用户根 / 沙盒根中找到该插件目录，移动为同根下的 <name>.trash（可恢复）。"""
     try:
         name = req.name.strip()
         if not name or any(c in name for c in ("/", "\\", "..")):
             raise HTTPException(status_code=400, detail="非法的插件 name")
 
-        target = os.path.join(USER_PLUGIN_ROOT, name)
-        if not os.path.isdir(target):
+        target = None
+        for root_dir in (USER_PLUGIN_ROOT, SANDBOX_PLUGIN_ROOT):
+            cand = os.path.join(root_dir, name)
+            if os.path.isdir(cand):
+                target = cand
+                break
+        if target is None:
             raise HTTPException(status_code=404, detail=f"未安装 UI 插件 '{name}'")
 
-        trash = os.path.join(USER_PLUGIN_ROOT, f"{name}.trash")
+        trash = f"{target}.trash"
         if os.path.exists(trash):
             shutil.rmtree(trash, ignore_errors=True)
         plugin_runtime.stop(name)  # 先停插件自带的后端子进程，再移动目录
@@ -1505,7 +1536,9 @@ def get_agentloop_registry_api():
         raise
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=502, detail=f"拉取 AgentLoop 注册表失败: {str(e)}")
+        raise HTTPException(
+            status_code=502, detail=f"拉取 AgentLoop 注册表失败: {str(e)}"
+        )
 
 
 @router.get("/market/agentloops/installed")
@@ -1515,7 +1548,9 @@ def list_installed_agentloops_api():
         return _scan_installed_agentloops()
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"读取本地 AgentLoop 列表失败: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"读取本地 AgentLoop 列表失败: {str(e)}"
+        )
 
 
 @router.post("/market/agentloops/install")
@@ -1545,7 +1580,9 @@ def uninstall_agentloop_api(req: UninstallAgentloopReq):
         if not name or any(c in name for c in ("/", "\\", "..")):
             raise HTTPException(status_code=400, detail="非法的 AgentLoop name")
         if name.lower() == "paradigm":
-            raise HTTPException(status_code=400, detail="默认 AgentLoop（PARADIGM）不可删除")
+            raise HTTPException(
+                status_code=400, detail="默认 AgentLoop（PARADIGM）不可删除"
+            )
 
         target = os.path.join(PARADIGMS_DIR, f"{name}.yaml")
         if not os.path.isfile(target):

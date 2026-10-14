@@ -279,9 +279,7 @@ def resolve_request(
                 "mcp_merge",
                 "sensor_merge",
             ]:
-                callback_msg += (
-                    "\n系统已为你自动下发权限，请直接继续执行被挂起的任务。"
-                )
+                callback_msg += "\n系统已为你自动下发权限，请直接继续执行被挂起的任务。"
 
             from src.agent import agent_force_push
 
