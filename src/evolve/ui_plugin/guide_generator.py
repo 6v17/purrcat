@@ -39,7 +39,7 @@ __GOAL__
 | --- | --- | --- | --- |
 | `id` | ✅ | string | 全局唯一键，同时是静态资源 URL 的一段；只用小写字母、数字、`-`、`_` |
 | `name` | 建议 | string | 设置面板与图标栏里显示的名称 |
-| `icon` | ❌ | string | 宿主内置图标名：`list` / `pencil` / `history` / `image` / `globe` / `panel-left` / `panel-top` / `layout-panel-left` / `settings`；也可直接写一段自己的 `<svg ...>...</svg>`；写其它字符则按文本渲染。不填取名称首字母 |
+| `icon` | ❌ | string | 宿主内置图标名：`list` / `pencil` / `history` / `image` / `globe` / `panel-left` / `panel-top` / `layout-panel-left` / `plus` / `settings`；也可直接写一段自己的 `<svg ...>...</svg>`；写其它字符则按文本渲染。不填取名称首字母 |
 | `slot` | ✅ | object \\| string | 见下。**必须显式声明**，不写会把 id 当区域名，插件不会出现在界面上 |
 | `entry` | ❌ | string | 入口 HTML，默认 `index.html` |
 | `configSchema` | ❌ | array | 用户可配置项，见 §3 |
@@ -66,7 +66,7 @@ __GOAL__
 | `type` | `text`（默认）／`switch`／`number`／`select`／`range`／`wallpapers` |
 | `default` | 默认值；不写则 switch=false、number=0、select=第一个 option、其余为空串 |
 | `options` | 仅 `select`：字符串数组 |
-| `min` / `max` / `step` | 仅 `range`：默认 0~1、步长 0.01；key 叫 `opacity` 时会渲染成"透明度"滑块 |
+| `min` / `max` / `step` | 仅 `range`：`min` 默认 0、`max` 默认 1、`step` 默认 0.01；滑块初值取 `default`，未写则取 `max`；key 叫 `opacity` 时会渲染成"透明度"滑块（值越大越透明） |
 
 读取方式见 §5（`config.get` 或监听 `configApply`）。
 
@@ -78,7 +78,7 @@ __GOAL__
 | `pet` | 自由浮窗，可拖拽可缩放，多插件各自独立 | 常驻小工具、悬浮状态 |
 | `popup` | 模态弹窗，遮罩铺满主区，尺寸随窗口自适应 | 一次性向导、确认流程 |
 | `rail` | 最左图标栏（白条）里的一个入口 | 需要一键唤起的入口 |
-| `sidebar` / `input` / `background` / `conversation` | **单例槽**：同区域只有一个插件生效 | 替换当前左侧栏／输入框／背景／会话列表 |
+| `sidebar` / `session` / `background` | **单例槽**：同区域只有一个插件生效 | 替换当前的会话列表栏／会话正文／背景 |
 | `panel-container` | 宿主系统级容器本体，由宿主自己渲染 | 普通插件不要用 |
 
 区域由你决定：改 `plugin.json` 的 `slot.area` 即可（改完让用户 `Ctrl+R`）。
@@ -101,17 +101,29 @@ window.parent.postMessage({ type: 'callAction', id: id, actionId: 'state.get', p
 | --- | --- |
 | `{ type: 'callActionResult', id, ok, data \\| error }` | 上一次 callAction 的结果，按 id 对应 |
 | `{ type: 'configApply', config }` | 用户在设置面板改了配置 → 实时下发全量 config |
-| `{ type: 'event', event, data }` | 宿主广播事件：`host.unmount`（iframe 即将卸载，做收尾）、`host.nativeCover`（`{covered}` 原生视图需让位）、`layout.empty`（`{empty}`） |
+| `{ type: 'event', event, data }` | 宿主广播事件，见下表 |
+
+宿主广播的事件：
+
+| `event` | data | 含义 |
+| --- | --- | --- |
+| `host.unmount` | — | iframe 即将卸载，做收尾 |
+| `host.nativeCover` | `{covered}` | 原生视图（内置浏览器等）需让位 |
+| `layout.empty` | `{empty}` | 当前区域是否为空（未挂载任何插件） |
+| `session.switched` | `{session_id}` | 用户切换了会话 |
+| `branch.switched` | `{...}` | 用户切换了会话分支 |
+| `config.updated` | `{...}` | 配置已变更 |
+| `browser.openUrl` | `{url}` | 请求在浏览器打开某链接 |
+| `conversation.local` / `conversation.updated` | `{...}` | 本会话消息流发生变化 |
 
 可用的 actionId（payload 以宿主实现为准，见 `ui/web-minimal/assets/host.js` 的 dispatch）：
 
-* 会话／对话：`state.get`、`chat.send`、`chat.sendBatch`、`chat.interrupt`、`chat.traceToSkill`、`sessions.list`、`sessions.new`、`session.switch`、`session.rename`、`session.delete`、`session.branch`、`requests.list`、`requests.resolve`
+* 会话／对话：`state.get`、`chat.send`、`chat.sendBatch`、`chat.interrupt`、`chat.traceToSkill`、`sessions.list`、`sessions.new`、`session.switch`、`session.rename`、`session.delete`、`session.branch`、`session.setDraftParadigm`、`branch.select`、`requests.list`、`requests.resolve`
 * 配置：`config.get`（payload `{plugin_id}`）、`config.set`、`settings.meta`、`settings.open`、`settings.close`
-* 文件／数据：`dialog.files`、`dialog.folder`、`dialog.pickWallpaper`、`ref.graphs`
+* 文件／数据：`dialog.files`、`dialog.folder`、`dialog.resolveFiles`、`dialog.pickWallpaper`、`ref.graphs`
 * 容器（float 插件用）：`slot.move`、`slot.close`、`slot.hide`
 * 插件自身：`plugin.delete`、`plugin.rpc`（payload `{plugin_id, handler, payload}`，调自己的后端子进程）
-* 内置浏览器（原生视图，仅 Electron 主窗口可用）：`browser.available`、`browser.newTab`、`browser.closeTab`、`browser.navigate`、`browser.reload`、`browser.goBack`、`browser.goForward`、`browser.bounds`、`browser.hide`、`browser.locate`、`browser.pickStart`、`browser.pickEnd`、`browser.pickElement`、`browser.openExternal`、`browser.openUrl`
-* 其它：`input.dropdown`（输入区下拉时告知宿主让位）
+* 内置浏览器（原生视图，仅 Electron 主窗口可用）：`browser.available`、`browser.newTab`、`browser.switchTab`、`browser.closeTab`、`browser.navigate`、`browser.reload`、`browser.goBack`、`browser.goForward`、`browser.bounds`、`browser.hide`、`browser.locate`、`browser.pickStart`、`browser.pickEnd`、`browser.pickElement`、`browser.openExternal`、`browser.openUrl`
 
 调用可能失败（返回 `ok: false`）：一律用 `error` 文案降级提示，别让界面卡住。
 
@@ -140,7 +152,7 @@ window.parent.postMessage({ type: 'callAction', id: id, actionId: 'state.get', p
 ## 8. 铁律
 
 1. 只能引用插件目录内的文件：宿主的静态资源路由做了路径穿越校验，`../` 一律 404。
-2. 区域随你挑，但要知道代价：占用单例槽（sidebar / input / background / conversation）
+2. 区域随你挑，但要知道代价：占用单例槽（sidebar / session / background）
    会把内置插件顶掉——可以，但要在交付说明里告诉用户，以及怎么在设置面板里改回去。
 3. id 撞车时按 用户 > 沙盒(你) > 内置 生效；想改造内置插件请另起 id。
 4. 写完自检：`plugin.json` 必须能被 JSON 解析；逻辑多的把 JS 抽成独立 `.js` 文件并用

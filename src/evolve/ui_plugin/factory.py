@@ -16,7 +16,7 @@ from src.utils.config import AGENT_VM_DIR
 UI_PLUGIN_DIR = os.path.join(AGENT_VM_DIR, "ui-plugin")
 
 # 生成时的默认区域：panel 只是"不改就能跑"的保守起点，
-# 要入驻其它区域（sidebar / input / pet / popup ...）直接改 plugin.json 的 slot.area 即可。
+# 要入驻其它区域（sidebar / session / pet / popup ...）直接改 plugin.json 的 slot.area 即可。
 DEFAULT_AREA = "panel"
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
