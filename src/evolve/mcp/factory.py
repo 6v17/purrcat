@@ -202,6 +202,44 @@ uv add "mcp[cli]<2" httpx
     ) as f:
         f.write(setup_script)
 
+    # ⚠️ 宿主机以 Windows 为主：setup.sh 的 `source .venv/bin/activate` 在 PowerShell 下不可用，
+    #    故额外固化为 Windows 准备的等价脚本（UTF-8 无 BOM 写入，避免 TOML 解析失败；
+    #    用「行数组」而非 here-string，规避 PS 5.1 对 LF 行尾 here-string 的兼容问题）。
+    setup_ps1 = f"""# 若工程文件被清空需重建骨架时，保证存在无假入口的 pyproject。
+# package=false 禁止把工程作为整包安装，从根源上消除 src 空包与 demo 入口。
+$toml = @(
+  '[project]',
+  'name = "{mcp_name}"',
+  'version = "0.1.0"',
+  'description = "MCP server: {mcp_name}"',
+  'requires-python = ">=3.10"',
+  'dependencies = [',
+  '    "mcp[cli]<2",  # 框架约束：本骨架依赖 FastMCP，mcp 2.0.0 已移除，禁止升到 2.x',
+  '    "httpx",',
+  ']',
+  '',
+  '[tool.uv]',
+  'package = false'
+)
+if (-not (Test-Path pyproject.toml)) {{
+  [System.IO.File]::WriteAllText(
+    (Join-Path $PWD 'pyproject.toml'), ($toml -join \"`r`n\"),
+    (New-Object System.Text.UTF8Encoding $false))
+}}
+uv venv --allow-existing
+. .venv\\Scripts\\Activate.ps1
+uv add "mcp[cli]<2" httpx
+"""
+    # ⚠️ 必须带 UTF-8 BOM：PowerShell 5.1 对无 BOM 的文件按系统 ANSI 解码，
+    #    会把脚本里的中文（注释/字符串）读成乱码并导致解析失败。
+    with open(
+        os.path.join(workplace_mcp_dir, "setup.ps1"),
+        "w",
+        encoding="utf-8-sig",
+        newline="\n",
+    ) as f:
+        f.write(setup_ps1)
+
     # 3. 固化 Core 模块
     with open(os.path.join(workplace_mcp_dir, "core", "__init__.py"), "w") as f:
         f.write("")
@@ -404,10 +442,10 @@ def mcp_upgrade_init(mcp_name: str, goal: str = "") -> tuple[str, str]:
         shutil.rmtree(workplace_root, ignore_errors=True)
     os.makedirs(workplace_root, exist_ok=True)
 
-    def ignore_files(d, c):
-        return [".venv", "venv", "__pycache__", ".git", "node_modules", ".env", "*.pyc"]
-
-    shutil.copytree(target_dir, workplace_mcp_dir, ignore=ignore_files)
+    ignore = shutil.ignore_patterns(
+        ".venv", "venv", "__pycache__", ".git", "node_modules", ".env", "*.pyc"
+    )
+    shutil.copytree(target_dir, workplace_mcp_dir, ignore=ignore)
     # 老版本 MCP 没有配置文件，补齐模板（已有则保留 Agent/原版维护的内容）
     _ensure_server_config_template(workplace_mcp_dir)
     _write_goal_and_guide(workplace_root, mcp_name, goal)
@@ -469,19 +507,17 @@ def mcp_request_handle(workplace_root: str, mcp_name: str, is_approved: bool) ->
         _remove_dir_retry(target_dir)
     os.makedirs(os.path.dirname(target_dir), exist_ok=True)
 
-    def ignore_files(d, c):
-        return [
-            ".venv",
-            "venv",
-            "__pycache__",
-            ".git",
-            "node_modules",
-            ".env",
-            "*.pyc",
-            MCP_SERVER_CONFIG_FILE,
-        ]
-
-    shutil.copytree(source_dir, target_dir, ignore=ignore_files)
+    ignore = shutil.ignore_patterns(
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".git",
+        "node_modules",
+        ".env",
+        "*.pyc",
+        MCP_SERVER_CONFIG_FILE,
+    )
+    shutil.copytree(source_dir, target_dir, ignore=ignore)
 
     # 3. Git 自动接管
     mcps_root = os.path.join(DATA_ROOT, "mcps")

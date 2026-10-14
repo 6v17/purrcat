@@ -35,7 +35,7 @@ def generate_mcp_guide(mcp_name: str, goal: str = "", agent_vm_dir: str = "") ->
 * 🔴 **每次改动代码或工具描述后**，建议重新执行 `python scripts/evaluation.py` 刷新快照，避免报告用旧描述渲染。宿主机只读快照、**不会自动重跑**；若 schema_dump 比源码旧，`test_mcp` 会在返回中给出"快照可能已过期"提醒（不拦截，可自行判断是否忽略）。
 
 ## 4. 测试用例（evals.json）
-* `triggers`：至少 10 个正反例，检验 description 的语义竞争力；反例 `expected_tool` 设为 `null`。
+* `triggers`：建议 5-10 个正反例（至少 1 正 1 反，模板已给 2 个示例），检验 description 的语义竞争力；反例 `expected_tool` 设为 `null`。
 * `executions`：**最好不要超过 10 个用例，工具过多的话可以适当增加**（真实链路并发，过多会显著拉长盲测耗时）。覆盖所有边界场景的入参，检验 inputSchema 健壮性。每个执行用例按实际数据特性选一档断言：
   * **稳定不变量**（标记/字段名/错误信息/布尔）→ `expected_output`：校验返回值包含该子串。
   * **易变实时数据**（价格/排名/数量等会漂移）→ `not_empty: true`：只断言"返回非空"，不对具体值下判断，避免值漂移误红。
@@ -70,7 +70,7 @@ MCP 合并后将在**宿主机**上运行（宿主机读取 mcp_config.json 并�
 3. 该文件必须是格式合法的 JSON 且**不得重命名**，否则合并将直接报错失败！
 
 ## 7. 流水线
-① 编写 `tools/`、`core/` → ② `bash setup.sh` 建环境 → ③ `scripts/` 真实链路自测 →
+① 编写 `tools/`、`core/` → ② 建环境（Windows 跑 `powershell -ExecutionPolicy Bypass -File setup.ps1`，macOS/Linux 跑 `bash setup.sh`）→ ③ `scripts/` 真实链路自测 →
 ④ `python scripts/evaluation.py` 生成 schema_dump 与执行产物 →
 ⑤ `KernelUpgrade(action="test_mcp")` 呼叫宿主机盲测 →
 ⑥ 检查并修正 `mcp_server_config.json` →

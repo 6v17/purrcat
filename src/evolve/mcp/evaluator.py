@@ -47,7 +47,7 @@ def _get_next_iteration_dir(workplace_root: str) -> tuple[str, int]:
     max_idx = 0
     if os.path.exists(workplace_root):
         for item in os.listdir(workplace_root):
-            match = re.match(r"iteration-(\d+)", item)
+            match = re.match(r"iteration-(\d+)$", item)
             if match:
                 idx = int(match.group(1))
                 if idx > max_idx:
@@ -246,7 +246,7 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
                 )
                 report_lines.append(f"- **测试入参**: `{case_args}`")
                 report_lines.append(
-                    f"- **执行状态**: `FAIL` ❌（原因: {res.get('reason', state.upper() or res.get('error', ''))}）"
+                    f"- **执行状态**: `FAIL` ❌（原因: {res.get('reason') or res.get('error') or state}）"
                 )
                 if state == "exception":
                     report_lines.append("- **致命报错与堆栈信息 (Exception Stack)**:")
