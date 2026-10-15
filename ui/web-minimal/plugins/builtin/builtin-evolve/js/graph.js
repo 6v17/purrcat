@@ -482,6 +482,13 @@
       editBtn.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
       editBtn.onclick = function (e) { e.stopPropagation(); startRename(n, nameEl, head); };
       head.appendChild(editBtn);
+      // 删除节点入口（连带其两端连线），同样常驻头部右上角
+      var delBtn = EV.el('button', 'g-node-del');
+      delBtn.innerHTML = EV.icon('trash', 12);
+      delBtn.title = '删除节点';
+      delBtn.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+      delBtn.onclick = function (e) { e.stopPropagation(); deleteNode(n.id); };
+      head.appendChild(delBtn);
       head.style.overflow = 'hidden';
       nameEl.style.overflow = 'hidden';
       nameEl.style.textOverflow = 'ellipsis';
@@ -501,6 +508,19 @@
       worldEl.appendChild(el);
     });
     drawEdges();
+  }
+
+  // 删除节点：连带其两端连线一并移除，并清理已失效的选中态
+  function deleteNode(id) {
+    state.nodes = state.nodes.filter(function (n) { return n.id !== id; });
+    state.edges = state.edges.filter(function (e) { return e.source !== id && e.target !== id; });
+    if (state.selectedId === id) state.selectedId = null;
+    if (state.selectedEdgeId && !state.edges.some(function (e) { return e.id === state.selectedEdgeId; })) {
+      state.selectedEdgeId = null;
+    }
+    state.dirty = true;
+    renderCanvas();
+    renderToolbar();
   }
 
   // 头部名称：就地改名
@@ -1321,6 +1341,9 @@
       + 'border:none;border-radius:5px;background:transparent;color:#8b96a3;cursor:pointer}'
       + '.g-node:hover .g-node-edit{display:inline-flex}'
       + '.g-node-edit:hover{background:#e9edf1;color:#16191d}'
+      + '.g-node-del{flex:none;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;'
+      + 'border:none;border-radius:5px;background:transparent;color:#a7b0bb;cursor:pointer}'
+      + '.g-node-del:hover{background:#fdeceb;color:#c0392b}'
       + '.g-ports{display:flex;justify-content:space-between;padding:2px 0 8px}'
       + '.g-pcol{display:flex;flex-direction:column;gap:6px;min-width:0}'
       + '.g-pcol.r{align-items:flex-end}'
