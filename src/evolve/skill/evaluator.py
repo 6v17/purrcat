@@ -35,14 +35,22 @@ def _now_iso() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def run_skill_eval_background(workplace_id: str, skill_name: str, main_session_id: str):
-    """启动后台线程跑自动化流水线"""
+def run_skill_eval_background(
+    workplace_id: str, skill_name: str, main_session_id: str, new_iteration: bool = False
+):
+    """启动后台线程跑自动化流水线
+
+    new_iteration=True（极简 UI 手动点「运行评测」）：强制新开一代，Trigger 与盲测一并跑进这一代；
+    False（请求审批链路）：复用 Trigger 那一代，保持 trigger + 盲测同属一份报告。
+    """
 
     def _bg_task():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            report = loop.run_until_complete(_async_run_evals(workplace_id, skill_name))
+            report = loop.run_until_complete(
+                _async_run_evals(workplace_id, skill_name, new_iteration)
+            )
             from src.agent.manager import manager
 
             manager.agent_force_push(
@@ -89,8 +97,11 @@ def run_skill_trigger_eval_background(workplace_id: str, skill_name: str):
     ).start()
 
 
-def _run_trigger_evals(workplace_id: str, skill_name: str) -> str:
-    """以影子节点方式将沙盒技能注入检索快照，跑 triggers 激发测试"""
+def _run_trigger_evals(workplace_id: str, skill_name: str, target_dir: str = "") -> str:
+    """以影子节点方式将沙盒技能注入检索快照，跑 triggers 激发测试
+
+    target_dir 为空时新开一代；传入目录时把结果写进该代（手动「运行评测」会新开一代后复用它）。
+    """
     workplace_root = os.path.join(AGENT_VM_DIR, "skill_workplace", workplace_id)
     dev_skill_dir = os.path.join(workplace_root, skill_name)
     evals_file = os.path.join(dev_skill_dir, "evals", "evals.json")
@@ -130,7 +141,12 @@ def _run_trigger_evals(workplace_id: str, skill_name: str) -> str:
 
     searcher = SkillSearcher()
 
-    iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root)
+    if target_dir:
+        iteration_dir = target_dir
+        match = re.match(r"iteration-(\d+)$", os.path.basename(target_dir))
+        iteration_idx = int(match.group(1)) if match else _get_latest_iteration_idx(workplace_root)
+    else:
+        iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root)
     os.makedirs(iteration_dir, exist_ok=True)
 
     trigger_cases = []
@@ -633,7 +649,7 @@ async def _run_single_eval_case(
         )
 
 
-async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
+async def _async_run_evals(workplace_id: str, skill_name: str, new_iteration: bool = False) -> str:
     workplace_root = os.path.join(AGENT_VM_DIR, "skill_workplace", workplace_id)
     dev_skill_dir = os.path.join(workplace_root, skill_name)
     evals_file = os.path.join(dev_skill_dir, "evals", "evals.json")
@@ -651,9 +667,15 @@ async def _async_run_evals(workplace_id: str, skill_name: str) -> str:
     if not cases:
         return "测试报告：evals.json 中没有任何测试用例。"
 
-    # 盲测与最近一轮 Trigger 测试共用同一迭代目录
-    iteration_dir, iteration_idx = _get_eval_iteration_dir(workplace_root)
-    os.makedirs(iteration_dir, exist_ok=True)
+    if new_iteration:
+        # 手动「运行评测」：强制新开一代，Trigger 与盲测同属这一代
+        iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root)
+        os.makedirs(iteration_dir, exist_ok=True)
+        _run_trigger_evals(workplace_id, skill_name, iteration_dir)
+    else:
+        # 盲测与最近一轮 Trigger 测试共用同一迭代目录
+        iteration_dir, iteration_idx = _get_eval_iteration_dir(workplace_root)
+        os.makedirs(iteration_dir, exist_ok=True)
 
     # 🌟 核心拆分 2：启动错位并发任务池
     async def spawn_tasks():
