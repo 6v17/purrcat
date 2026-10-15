@@ -96,8 +96,8 @@
     extraHooks: {},
     baseline: '',
     dirty: false,
-    // 左列表两个抽屉的展开状态（重渲染后沿用）
-    drawers: { files: true, refs: true }
+    // 左列表抽屉的展开状态（重渲染后沿用）
+    drawers: { files: true }
   };
 
   // 「特殊引用说明」：与后端 hook_handler.py 的 PATH_ALIASES / @SYS / @USERQUERY 保持一致。
@@ -310,7 +310,7 @@
     }
   }
 
-  /* ---------------- 渲染：左列表（两个抽屉） ---------------- */
+  /* ---------------- 渲染：左列表 ---------------- */
   function renderSide() {
     sideBodyEl.innerHTML = '';
     sideBodyEl.appendChild(EV.drawer(
@@ -318,14 +318,11 @@
       function (open) { state.drawers.files = open; },
       renderFileList
     ));
-    sideBodyEl.appendChild(EV.drawer(
-      '特殊引用说明', REFS.length, state.drawers.refs,
-      function (open) { state.drawers.refs = open; },
-      renderRefs
-    ));
   }
 
-  function renderRefs(body) {
+  // 特殊引用说明：不再常驻左列表，改为工具栏按钮唤起的详情弹窗
+  function showRefsModal() {
+    var body = EV.el('div', 'refs');
     REFS.forEach(function (r) {
       var box = EV.el('div', 'ref');
       box.appendChild(EV.el('div', 'ref-k', r.k + '  ' + r.d));
@@ -333,6 +330,7 @@
       body.appendChild(box);
     });
     body.appendChild(EV.el('div', 'hint', '以上符号在 file_operation 里不展开，直接按路径读取文件；路径另支持 agent_vm/…、.purrcat/…、src/… 前缀。'));
+    EV.modal({ title: '特殊引用说明', node: body, width: '520px' });
   }
 
   function renderFileList(body) {
@@ -379,6 +377,13 @@
     create.appendChild(EV.el('span', null, '新建'));
     create.onclick = createFile;
     toolbarEl.appendChild(create);
+
+    var refsBtn = EV.el('button', 'btn');
+    refsBtn.innerHTML = EV.icon('info', 14);
+    refsBtn.appendChild(EV.el('span', null, '特殊引用说明'));
+    refsBtn.title = '查看 @RULES / @SOUL / @MEMORY / @INFO / @SYS / @USERQUERY 等特殊引用的展开状况';
+    refsBtn.onclick = showRefsModal;
+    toolbarEl.appendChild(refsBtn);
 
     var vizBtn = EV.el('button', 'btn');
     vizBtn.innerHTML = EV.icon('graph', 14);
