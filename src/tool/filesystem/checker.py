@@ -73,6 +73,21 @@ def run_code_check(file_path: str) -> str:
     return ""
 
 
+# 诊断行形如 "src/foo.py:12:5: ..."（ruff）或 "a.sh:3:1: warning ..."（shellcheck）
+# 或 "a.js:1:1 lint/xxx"（biome），统一按 "路径:行号(:列号)" 前缀识别
+_DIAG_LINE_RE = re.compile(r"^[^\s:]+:\d+(?::\d+)?")
+
+
+def count_code_check_issues(report: str) -> int:
+    """统计检查报告中的问题条数（供工具返回简短提示用，不展开报告内容）"""
+    if not report:
+        return 0
+    lines = [line.strip() for line in report.splitlines() if line.strip()]
+    diag_lines = [line for line in lines if _DIAG_LINE_RE.match(line)]
+    # 无法解析出诊断行时（如语法错误/未安装检查器），整条报告记为一条问题
+    return len(diag_lines) if diag_lines else len(lines)
+
+
 def _check_python(file_path: str) -> str:
     messages = []
 

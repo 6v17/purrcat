@@ -6,14 +6,14 @@ import hashlib
 import json
 from pathlib import PurePath
 from filelock import FileLock, Timeout
-from src.tool.filesystem.checker import run_code_check
+from src.tool.filesystem.checker import run_code_check, count_code_check_issues
 from src.tool.filesystem.exceptions import (
     FileSystemError,
     HostPathNotFoundError,
 )
 from src.tool.filesystem.utils import require_read, require_write, is_readable
 from src.tool.filesystem.history import track_edit, save_backup_meta
-from src.utils.config import PURRCAT_DIR, BUFFER_DIR
+from src.utils.config import PURRCAT_DIR, BUFFER_DIR, AGENT_VM_DIR
 
 MAX_LINES_TO_READ = 2000
 
@@ -22,6 +22,23 @@ os.makedirs(LOCK_DIR, exist_ok=True)
 
 CACHE_DIR = os.path.join(BUFFER_DIR, "filesystem")
 REGISTRY_FILE = os.path.join(CACHE_DIR, "registry.json")
+
+# 代码检查报告落盘目录（放在沙盒 buffer 内，避免污染用户项目）
+CHECK_REPORT_DIR = os.path.join(BUFFER_DIR, "filesystem", "lint")
+
+
+def _save_check_report(target_path: str, report: str) -> str:
+    """把完整检查报告写入 buffer 文件，返回 Agent 视角可读的沙盒路径"""
+    os.makedirs(CHECK_REPORT_DIR, exist_ok=True)
+    path_hash = hashlib.md5(target_path.encode("utf-8")).hexdigest()[:8]
+    report_path = os.path.join(
+        CHECK_REPORT_DIR, f"{os.path.basename(target_path)}.{path_hash}.lint.txt"
+    )
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(f"# 代码检查报告: {target_path}\n\n{report}\n")
+
+    rel = os.path.relpath(report_path, AGENT_VM_DIR).replace(os.sep, "/")
+    return f"/agent_vm/{rel}"
 
 
 def _normalize_newlines(text: str) -> str:
@@ -257,7 +274,12 @@ def edit_file(
     check_result = run_code_check(target_path)
     msg = f"成功更新文件 {os.path.basename(target_path)}"
     if check_result:
-        msg += f"\n\n[代码检查报告]:\n{check_result}"
+        report_path = _save_check_report(target_path, check_result)
+        issue_count = count_code_check_issues(check_result)
+        msg += (
+            f"\n\n🔎 代码检查到 {issue_count} 条问题，"
+            f"完整 lint 报告见（可自行 read 查看）：{report_path}"
+        )
 
     return {
         "path": target_path,
@@ -333,10 +355,7 @@ def write_file(path_from: str, content: str) -> dict:
         target_path, backup_id, diff_text
     )  # 🌟 核心：保存 metadata 供全局读取
 
-    check_result = run_code_check(target_path)
     msg = f"成功写入文件 {os.path.basename(target_path)} (长度: {len(content)})"
-    if check_result:
-        msg += f"\n\n[系统自动代码检查报告]:\n{check_result}"
 
     return {
         "path": target_path,
