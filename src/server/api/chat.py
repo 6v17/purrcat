@@ -283,8 +283,20 @@ def delete_session_api(session_id: str):
 def chat(req: ChatReq, background_tasks: BackgroundTasks):
     try:
         _ensure_manager_initialized()
-        background_tasks.add_task(_run_agent_task, req.session_id, req.message)
-        return {"status": "processing", "message": "Message pushed to agent"}
+
+        # 🌟 预处理：字数检验替换（与 Agent.force_push 保持一致）
+        from src.agent.agent import Agent
+
+        processed_message = Agent._buffer_long_user_input(req.message, "user")
+
+        # 后台传入已处理的 message：落盘占位符内嵌文件路径，若再 buffer 一次会生成
+        # 另一个路径，导致前端乐观消息与历史记录对不上、无法去重
+        background_tasks.add_task(_run_agent_task, req.session_id, processed_message)
+        return {
+            "status": "processing",
+            "message": "Message pushed to agent",
+            "processed_message": processed_message,
+        }
     except Exception as e:
         print(f"[ERROR] /api/chat - 异常: {e}")
         traceback.print_exc()
@@ -306,8 +318,9 @@ def chat_batch(req: ChatBatchReq, background_tasks: BackgroundTasks):
             event_content = Agent._buffer_long_user_input(event_content, event_type)
             processed_events.append({**event, "content": event_content})
 
-        # 后台仍走原流程，传入原始 events（force_push_batch 内部也会做字数检验）
-        background_tasks.add_task(_run_agent_batch_task, req.session_id, req.events)
+        # 后台传入已处理的 events：落盘占位符内嵌文件路径，若再 buffer 一次会生成
+        # 另一个路径，导致前端乐观消息与历史记录对不上、无法去重
+        background_tasks.add_task(_run_agent_batch_task, req.session_id, processed_events)
 
         return {"status": "processing", "processed_events": processed_events}
     except Exception as e:

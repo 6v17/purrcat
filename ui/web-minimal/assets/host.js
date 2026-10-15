@@ -1670,11 +1670,15 @@
         });
         if (!res.ok) throw new Error(await res.text());
         setEmpty(false);
+        const body = await res.json();
         // 乐观本地即时显示用户消息，随后 fetch 同步（后端异步写入，fetch 慢时也不丢"你好"）
-        if (payload.message) broadcast('session', 'conversation.local', { session_id: sessionId, events: [{ role: 'user', content: String(payload.message) }] });
+        // 用后端回传的 processed_message：超长输入会被后端替换为「已落盘」占位符，
+        // 若这里仍广播原文，占位符永远确认不掉原文，乐观消息会一直卡在列表最下方
+        const shown = body && typeof body.processed_message === 'string' ? body.processed_message : (payload.message || '');
+        if (shown) broadcast('session', 'conversation.local', { session_id: sessionId, events: [{ role: 'user', content: String(shown) }] });
         refreshSessions().then(updateEmpty);   // 更新 messages_count，维持 empty 状态准确
         broadcastSessions('conversation.updated', { session_id: sessionId });
-        return await res.json();
+        return body;
       }
       case 'chat.sendBatch': {
         let sessionId = await ensureSessionId(payload.session_id || groupState.activeSessionId);
@@ -1687,12 +1691,15 @@
         });
         if (!res.ok) throw new Error(await res.text());
         setEmpty(false);
-        // 乐观本地即时显示 type=user 的事件，随后 fetch 同步去重
-        const uv = Array.isArray(payload.events) ? payload.events.filter((e) => e && e.type === 'user').map((e) => ({ role: 'user', content: String(e.content || '') })) : [];
+        const body = await res.json();
+        // 乐观本地即时显示 type=user 的事件，随后 fetch 同步去重。
+        // 用后端回传的 processed_events：超长输入已替换为「已落盘」占位符，广播原文会卡在列表最下方
+        const evs = (body && Array.isArray(body.processed_events)) ? body.processed_events : (Array.isArray(payload.events) ? payload.events : []);
+        const uv = evs.filter((e) => e && e.type === 'user').map((e) => ({ role: 'user', content: String(e.content || '') }));
         if (uv.length) broadcast('session', 'conversation.local', { session_id: sessionId, events: uv });
         refreshSessions().then(updateEmpty);
         broadcastSessions('conversation.updated', { session_id: sessionId });
-        return await res.json();
+        return body;
       }
       case 'sessions.list': {
         const list = await (await fetch('/api/sessions')).json();
