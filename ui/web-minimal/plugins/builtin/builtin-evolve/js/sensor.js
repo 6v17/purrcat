@@ -19,7 +19,6 @@
     iterations: [],
     activeIteration: null,
     reportHtml: '',
-    benchmark: null,
     diffContent: '',
     diffLoading: false,
     running: false
@@ -99,7 +98,6 @@
       }
       state.activeIteration = null;
       state.reportHtml = '';
-      state.benchmark = null;
       renderBody();
     } catch (e) { /* noop */ }
   }
@@ -115,14 +113,6 @@
     } catch (e) {
       state.reportHtml = '';
       EV.toast('获取报告失败：' + e.message, true);
-    }
-    try {
-      var b = await EV.api.get('/api/evolve/test/benchmark' + EV.qs({
-        workplace_id: state.activeWp.workplace_id, iteration: iter, type: TYPE
-      }));
-      state.benchmark = b.benchmark || null;
-    } catch (e) {
-      state.benchmark = null;
     }
     renderBody();
   }
@@ -274,7 +264,7 @@
         state.activeWp = wp;
         state.activeFile = ''; state.fileContent = '';
         state.iterations = []; state.activeIteration = null; state.reportHtml = '';
-        state.benchmark = null; state.diffContent = ''; state.step = 'files';
+        state.diffContent = ''; state.step = 'files';
         state.running = false;
         renderSide();
         renderMain();
@@ -367,42 +357,6 @@
     return c;
   }
 
-  function smallNote(text) {
-    var n = EV.el('div', null, text);
-    n.style.fontSize = '11.5px';
-    n.style.color = 'var(--dim)';
-    n.style.lineHeight = '1.7';
-    n.style.marginTop = '6px';
-    return n;
-  }
-
-  // 协议体检结论卡：直接读 benchmark.json，不依赖报告排版
-  function benchmarkCard() {
-    var b = state.benchmark;
-    if (!b || !b.summary) return null;
-    var s = b.summary;
-    var card = EV.el('div', 'card');
-    var head = EV.el('div', 'card-head');
-    var title = EV.el('span', 'card-title');
-    if (s.errors) {
-      title.textContent = '结论：不通过';
-      title.style.color = 'var(--err)';
-    } else if (s.warnings) {
-      title.textContent = '结论：通过但有告警';
-      title.style.color = 'var(--warn)';
-    } else {
-      title.textContent = '结论：全部通过';
-      title.style.color = 'var(--ok)';
-    }
-    head.appendChild(title);
-    head.appendChild(EV.el('span', 'chip' + (s.errors ? ' err' : ''), '通过 ' + s.passed + '/' + s.total));
-    if (s.errors) head.appendChild(EV.el('span', 'chip err', '硬伤 ' + s.errors));
-    if (s.warnings) head.appendChild(EV.el('span', 'chip warn', '告警 ' + s.warnings));
-    card.appendChild(head);
-    card.appendChild(smallNote('Iteration ' + b.iteration + ' · 数据来源：宿主扮演网关实跑 sensor 子进程，非 Agent 自报。合并前必须全绿且证据不得早于最后一次代码改动。'));
-    return card;
-  }
-
   function renderBody() {
     bodyEl.innerHTML = '';
     if (!state.activeWp) { bodyEl.appendChild(emptyCenter()); return; }
@@ -463,13 +417,6 @@
       left.appendChild(lb);
 
       var right = EV.el('div', 'main');
-      var card = benchmarkCard();
-      if (card) {
-        var cardWrap = EV.el('div');
-        cardWrap.style.padding = '10px 14px 0';
-        cardWrap.appendChild(card);
-        right.appendChild(cardWrap);
-      }
       if (!state.reportHtml) {
         right.appendChild(EV.el('div', 'hint', '此轮次尚未生成体检报告。\n点击右上角「运行协议体检」启动真网关夹具。'));
       } else {
