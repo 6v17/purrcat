@@ -320,7 +320,9 @@ def chat_batch(req: ChatBatchReq, background_tasks: BackgroundTasks):
 
         # 后台传入已处理的 events：落盘占位符内嵌文件路径，若再 buffer 一次会生成
         # 另一个路径，导致前端乐观消息与历史记录对不上、无法去重
-        background_tasks.add_task(_run_agent_batch_task, req.session_id, processed_events)
+        background_tasks.add_task(
+            _run_agent_batch_task, req.session_id, processed_events
+        )
 
         return {"status": "processing", "processed_events": processed_events}
     except Exception as e:

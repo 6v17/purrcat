@@ -95,9 +95,7 @@
     hooks: emptyHooks(),
     extraHooks: {},
     baseline: '',
-    dirty: false,
-    // 左列表抽屉的展开状态（重渲染后沿用）
-    drawers: { files: true }
+    dirty: false
   };
 
   // 「特殊引用说明」：与后端 hook_handler.py 的 PATH_ALIASES / @SYS / @USERQUERY 保持一致。
@@ -310,14 +308,10 @@
     }
   }
 
-  /* ---------------- 渲染：左列表 ---------------- */
+  /* ---------------- 渲染：左列表（Paradigm 文件直列） ---------------- */
   function renderSide() {
     sideBodyEl.innerHTML = '';
-    sideBodyEl.appendChild(EV.drawer(
-      'Paradigm 文件', state.files.length, state.drawers.files,
-      function (open) { state.drawers.files = open; },
-      renderFileList
-    ));
+    renderFileList(sideBodyEl);
   }
 
   // 特殊引用说明：不再常驻左列表，改为工具栏按钮唤起的详情弹窗
