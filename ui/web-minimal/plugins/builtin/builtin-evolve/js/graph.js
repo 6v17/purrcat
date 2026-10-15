@@ -894,7 +894,7 @@
       };
       head.appendChild(del);
     }
-    // 保留右侧面板但支持收起（编辑已可直接在节点卡片上完成）；收起状态持久化
+    // 配置面板已并入左栏下半区；仍支持收起（编辑已可直接在节点卡片上完成），收起状态持久化
     var toggleBtn = EV.attachSideToggle(inspEl, head, '配置面板', function (collapsed) {
       state.inspCollapsed = collapsed;
       writeFlag(KEY_INSP, collapsed);
@@ -1486,12 +1486,14 @@
       + '.g-lrow .nm{font-style:italic}'
       + '.g-ladd{align-self:flex-start;margin-left:6px}'
       + '.g-lblock.r .g-ladd{align-self:flex-end;margin-left:0;margin-right:6px}'
-      + '.g-insp{width:292px;flex:none;border-left:1px solid rgba(15,17,21,.08);display:flex;flex-direction:column;min-height:0}'
-      // 右侧面板收起态：只留头部窄条与开关
-      + '.g-insp.ev-collapsed{width:46px}'
+      // 配置面板并入左栏：左栏加宽以容纳字段，面板作为下半区可收起
+      + '.side.g-side{width:300px}'
+      + '.g-insp{flex:none;max-height:52%;border-top:1px solid rgba(15,17,21,.08);display:flex;flex-direction:column;min-height:0}'
       + '.g-insp.ev-collapsed > .side-head{padding:8px 0 6px;justify-content:center}'
       + '.g-insp.ev-collapsed > .side-head > *:not(.side-toggle){display:none}'
-      + '.g-insp.ev-collapsed > .side-body{display:none}';
+      + '.g-insp.ev-collapsed > .side-body{display:none}'
+      // 左栏整体收起时配置面板一并隐藏
+      + '.side.g-side.ev-collapsed .g-insp{display:none}';
     var st = EV.el('style');
     st.textContent = css;
     document.head.appendChild(st);
@@ -1502,7 +1504,7 @@
       injectStyle();
       state.inspCollapsed = readFlag(KEY_INSP);   // 恢复上次的配置面板收起状态
 
-      var side = EV.el('div', 'side');
+      var side = EV.el('div', 'side g-side');
       var sideHead = EV.el('div', 'side-head');
       sideHead.appendChild(EV.el('span', null, '图谱'));
       sideHead.appendChild(EV.el('span', 'spacer'));
@@ -1510,6 +1512,10 @@
       side.appendChild(sideHead);
       sideBodyEl = EV.el('div', 'side-body');
       side.appendChild(sideBodyEl);
+
+      // 节点配置并入左栏下半区，不再单独占一列
+      inspEl = EV.el('div', 'g-insp');
+      side.appendChild(inspEl);
       root.appendChild(side);
 
       var main = EV.el('div', 'main');
@@ -1524,9 +1530,6 @@
       worldEl.appendChild(svgEl);
       canvasEl.appendChild(worldEl);
       shell.appendChild(canvasEl);
-
-      inspEl = EV.el('div', 'g-insp');
-      shell.appendChild(inspEl);
 
       main.appendChild(shell);
       root.appendChild(main);

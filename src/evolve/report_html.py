@@ -80,9 +80,10 @@ def badge(text, kind: str = "mute") -> str:
 # --------------------------------------------------------------------------- #
 # 基础版式块
 # --------------------------------------------------------------------------- #
-def stat(label, value, unit: str = "", icon_name: str = None, desc: str = "",
-         tone: str = "") -> str:
-    ic = f"<span class=\"ic\">{icon(icon_name, 15)}</span>" if icon_name else ""
+def stat(
+    label, value, unit: str = "", icon_name: str = None, desc: str = "", tone: str = ""
+) -> str:
+    ic = f'<span class="ic">{icon(icon_name, 15)}</span>' if icon_name else ""
     un = f'<span class="u">{esc(unit)}</span>' if unit else ""
     ds = f'<div class="d">{esc(desc)}</div>' if desc else ""
     tc = f" {tone}" if tone else ""
@@ -122,8 +123,9 @@ def code_block(text) -> str:
     return f'<pre class="code">{esc(text)}</pre>'
 
 
-def case(title, status: str = "", meta=None, notes=None, blocks=None,
-         badge_text: str = None) -> str:
+def case(
+    title, status: str = "", meta=None, notes=None, blocks=None, badge_text: str = None
+) -> str:
     """单条评测用例卡。meta: [(标签, 文本)]；notes: [文本]；blocks: [HTML 片段]"""
     kind, default_text = _STATUS.get(status, ("mute", ""))
     cls = f"case {status}" if status in _STATUS else "case"
@@ -135,9 +137,9 @@ def case(title, status: str = "", meta=None, notes=None, blocks=None,
             f'<span class="mi"><b>{esc(k)}</b>{esc(v)}</span>' for k, v in meta
         )
         out.append(f'<div class="m">{pairs}</div>')
-    for n in (notes or []):
+    for n in notes or []:
         out.append(f'<div class="pn">{esc(n)}</div>')
-    for blk in (blocks or []):
+    for blk in blocks or []:
         out.append(blk)
     out.append("</div>")
     return "".join(out)
@@ -158,7 +160,9 @@ def section(number, title, body) -> str:
 # --------------------------------------------------------------------------- #
 # trace2skill 专属：token 节省卡（黑底白字 + 红色大数字，图标化）
 # --------------------------------------------------------------------------- #
-def token_savings(saved: int, baseline: int, actual: int, source_label: str = "会话轨迹") -> str:
+def token_savings(
+    saved: int, baseline: int, actual: int, source_label: str = "会话轨迹"
+) -> str:
     """展示「该技能让后台盲测任务少花了多少 token」的图标化结论块。
 
     saved    = baseline - actual（正数表示技能省下了 token）
@@ -181,7 +185,7 @@ def token_savings(saved: int, baseline: int, actual: int, source_label: str = "�
         f'<span class="cmp"><b>{esc(source_label)}</b>{baseline:,} tokens</span>'
         f'<span class="cmp-arrow">{icon("arrow", 14)}</span>'
         f'<span class="cmp"><b>技能盲测均值</b>{actual:,} tokens</span>'
-        f'</div></div>'
+        f"</div></div>"
         f'<div class="saved-num"><span class="sv">{esc(saved_txt)}</span>'
         f'<span class="su">TOKENS SAVED</span></div>'
         f"</div>"
@@ -262,9 +266,15 @@ footer{margin-top:38px;border-top:1px solid #e2e2e2;padding-top:14px;display:fle
 """
 
 
-def page(title: str, subtitle: str = "", meta=None, blocks=None,
-         kicker: str = "PURRCAT · EVOLUTION FACTORY", footer_left: str = "",
-         footer_right: str = "") -> str:
+def page(
+    title: str,
+    subtitle: str = "",
+    meta=None,
+    blocks=None,
+    kicker: str = "PURRCAT · EVOLUTION FACTORY",
+    footer_left: str = "",
+    footer_right: str = "",
+) -> str:
     """组装完整自包含 HTML 报告页。
 
     title/subtitle: 纯文本；meta: [(标签, 文本)]；blocks: [HTML 片段]。
@@ -288,6 +298,6 @@ def page(title: str, subtitle: str = "", meta=None, blocks=None,
         f'<div class="kicker">{esc(kicker)}</div>'
         f"<h1>{esc(title)}</h1>{sub_html}</header>"
         f"{meta_html}{body}"
-        f'<footer><span>{esc(footer_left)}</span><span>{esc(footer_right)}</span></footer>'
+        f"<footer><span>{esc(footer_left)}</span><span>{esc(footer_right)}</span></footer>"
         "</main></body></html>"
     )

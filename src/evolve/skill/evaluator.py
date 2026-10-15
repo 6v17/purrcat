@@ -36,7 +36,10 @@ def _now_iso() -> str:
 
 
 def run_skill_eval_background(
-    workplace_id: str, skill_name: str, main_session_id: str, new_iteration: bool = False
+    workplace_id: str,
+    skill_name: str,
+    main_session_id: str,
+    new_iteration: bool = False,
 ):
     """启动后台线程跑自动化流水线
 
@@ -144,7 +147,9 @@ def _run_trigger_evals(workplace_id: str, skill_name: str, target_dir: str = "")
     if target_dir:
         iteration_dir = target_dir
         match = re.match(r"iteration-(\d+)$", os.path.basename(target_dir))
-        iteration_idx = int(match.group(1)) if match else _get_latest_iteration_idx(workplace_root)
+        iteration_idx = (
+            int(match.group(1)) if match else _get_latest_iteration_idx(workplace_root)
+        )
     else:
         iteration_dir, iteration_idx = _get_next_iteration_dir(workplace_root)
     os.makedirs(iteration_dir, exist_ok=True)
@@ -192,7 +197,9 @@ def _run_trigger_evals(workplace_id: str, skill_name: str, target_dir: str = "")
             success += 1
         elif should_trigger and not hit:
             item["status"] = "fail"
-            item["detail"] = f"激发失败（得分 {res['score']}，未进 Top 3 或低于唤醒阈值）"
+            item["detail"] = (
+                f"激发失败（得分 {res['score']}，未进 Top 3 或低于唤醒阈值）"
+            )
         elif not should_trigger and not hit:
             item["status"] = "pass"
             item["detail"] = "反例拦截成功（技能保持静默）"
@@ -274,9 +281,13 @@ def _render_skill_report(
             mean_tokens = int(round(sum(token_vals) / len(token_vals)))
             # 用例全部崩溃时 tokens 全为 0，此时对比会把整个会话累计量当成“节省量”，故不渲染
             if mean_tokens > 0:
-                blocks.append(H.token_savings(baseline - mean_tokens, baseline, mean_tokens))
+                blocks.append(
+                    H.token_savings(baseline - mean_tokens, baseline, mean_tokens)
+                )
             else:
-                blocks.append(H.note("盲测未产出有效 token 数据，本轮不做 token 节省对比。"))
+                blocks.append(
+                    H.note("盲测未产出有效 token 数据，本轮不做 token 节省对比。")
+                )
 
     overview = []
     if evals:
@@ -293,7 +304,11 @@ def _render_skill_report(
         token_mean = (rsum.get("tokens") or {}).get("mean")
         if token_mean is not None:
             overview.append(
-                {"label": "平均 Tokens", "value": f"{token_mean:g}", "icon_name": "coin"}
+                {
+                    "label": "平均 Tokens",
+                    "value": f"{token_mean:g}",
+                    "icon_name": "coin",
+                }
             )
         time_mean = (rsum.get("time_seconds") or {}).get("mean")
         if time_mean is not None:
@@ -311,7 +326,9 @@ def _render_skill_report(
                 "label": "Trigger 唤醒率",
                 "value": f"{trigger.get('passed', 0)}/{trigger.get('total', 0)}",
                 "icon_name": "zap",
-                "tone": "accent" if trigger.get("passed") == trigger.get("total") else "",
+                "tone": "accent"
+                if trigger.get("passed") == trigger.get("total")
+                else "",
             }
         )
     if overview:
@@ -649,7 +666,9 @@ async def _run_single_eval_case(
         )
 
 
-async def _async_run_evals(workplace_id: str, skill_name: str, new_iteration: bool = False) -> str:
+async def _async_run_evals(
+    workplace_id: str, skill_name: str, new_iteration: bool = False
+) -> str:
     workplace_root = os.path.join(AGENT_VM_DIR, "skill_workplace", workplace_id)
     dev_skill_dir = os.path.join(workplace_root, skill_name)
     evals_file = os.path.join(dev_skill_dir, "evals", "evals.json")

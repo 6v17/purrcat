@@ -291,7 +291,9 @@ def run_evals_api(req: TestRunReq):
         elif req.type == "sensor":
             run_sensor_eval_background(req.workplace_id, req.name)
         else:
-            run_skill_eval_background(req.workplace_id, req.name, req.session_id, new_iteration=True)
+            run_skill_eval_background(
+                req.workplace_id, req.name, req.session_id, new_iteration=True
+            )
         return {"status": "success", "message": "盲测已启动"}
     except Exception as e:
         traceback.print_exc()

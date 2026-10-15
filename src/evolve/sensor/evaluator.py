@@ -25,6 +25,7 @@ from src.utils.config import AGENT_VM_DIR, get_enriched_env
 def _now_iso() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+
 # 夹具回填给 sensor 的假会话号：sensor 后续所有 session/prompt 都必须带上它
 FIXTURE_SESSION_ID = "SID_TEST"
 
@@ -809,7 +810,9 @@ def _render_report(
         section_no += 1
 
     if not any(c["layer"] == "L1" for c in cases):
-        blocks.append(H.note("L1 未执行（uv 不可用或进程拉起失败），协议面完全未覆盖。"))
+        blocks.append(
+            H.note("L1 未执行（uv 不可用或进程拉起失败），协议面完全未覆盖。")
+        )
 
     uncovered = list(_UNCOVERED)
     if config.get("source") == "local":

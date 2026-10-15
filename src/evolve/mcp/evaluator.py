@@ -107,14 +107,24 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
     # 一、工具矩阵注册大盘
     if not schema_dump:
         reg_stat = [
-            {"label": "已注册工具", "value": "0", "icon_name": "server", "tone": "accent"}
+            {
+                "label": "已注册工具",
+                "value": "0",
+                "icon_name": "server",
+                "tone": "accent",
+            }
         ]
         reg_body = H.note(
             "服务异常：此 MCP Server 未能在 FastMCP 中成功注册任何有效的 Tool 工具。"
         )
     else:
         reg_stat = [
-            {"label": "已注册工具", "value": str(len(schema_dump)), "icon_name": "server", "tone": "ok"}
+            {
+                "label": "已注册工具",
+                "value": str(len(schema_dump)),
+                "icon_name": "server",
+                "tone": "ok",
+            }
         ]
         reg_rows = []
         for tool in schema_dump:
@@ -123,7 +133,9 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
                 if isinstance(tool.get("inputSchema"), dict)
                 else {}
             )
-            desc = (tool.get("description") or "⚠️ 未编写任何描述说明").replace("\n", " ")
+            desc = (tool.get("description") or "⚠️ 未编写任何描述说明").replace(
+                "\n", " "
+            )
             reg_rows.append(
                 [
                     f'<span class="mono">{H.esc(tool.get("name", ""))}</span>',
@@ -133,14 +145,20 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
             )
         reg_body = H.table(["工具名称", "功能描述", "参数量"], reg_rows)
     blocks.append(
-        H.section("01", "工具矩阵注册大盘（Schema Registration）", H.stats(reg_stat, cols=1) + reg_body)
+        H.section(
+            "01",
+            "工具矩阵注册大盘（Schema Registration）",
+            H.stats(reg_stat, cols=1) + reg_body,
+        )
     )
 
     # 二、语义检索与路由竞争分析
     triggers = evals_data.get("triggers", [])
     trig_stat = []
     if not triggers:
-        trig_body = H.note("未检测到 Trigger 测试用例，请在 evals.json 中配置激发路径。")
+        trig_body = H.note(
+            "未检测到 Trigger 测试用例，请在 evals.json 中配置激发路径。"
+        )
     elif not schema_dump:
         trig_body = H.note("无法分析激发路由：工具矩阵注册为空。")
     else:
@@ -162,7 +180,9 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
                     trigger_success += 1
                 else:
                     status = "fail"
-                    detail = f"激发失败（得分 {res['score']}，未进 Top 5 或低于唤醒阈值）"
+                    detail = (
+                        f"激发失败（得分 {res['score']}，未进 Top 5 或低于唤醒阈值）"
+                    )
             else:
                 if not res["is_triggered"]:
                     status = "pass"
@@ -178,10 +198,15 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
                     "title": f"案例 {idx + 1}：{query}",
                     "status": status,
                     "meta": [
-                        ("期望工具", expected_tool if expected_tool else "静默阻断（无）"),
+                        (
+                            "期望工具",
+                            expected_tool if expected_tool else "静默阻断（无）",
+                        ),
                         ("结果", detail),
                     ],
-                    "notes": ["语义竞争排布（Top K）：" + ("；".join(competitors) or "无")],
+                    "notes": [
+                        "语义竞争排布（Top K）：" + ("；".join(competitors) or "无")
+                    ],
                 }
             )
         trig_body = H.cases(items)
@@ -194,7 +219,11 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
             }
         ]
     trig_head = H.stats(trig_stat, cols=1) if trig_stat else ""
-    blocks.append(H.section("02", "模型意图激发分析（Trigger Semantic Routing）", trig_head + trig_body))
+    blocks.append(
+        H.section(
+            "02", "模型意图激发分析（Trigger Semantic Routing）", trig_head + trig_body
+        )
+    )
 
     # 三、用例并发执行与可用性断言
     #    判分依据沙盒产出的 verdict（pass/fail）：正常用例校验 expected_output，
@@ -218,7 +247,12 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
         fail_count = len(exec_results) - pass_count
         exec_stat = [
             {"label": "边界用例", "value": str(len(exec_results)), "icon_name": "list"},
-            {"label": "通过", "value": str(pass_count), "icon_name": "check", "tone": "ok"},
+            {
+                "label": "通过",
+                "value": str(pass_count),
+                "icon_name": "check",
+                "tone": "ok",
+            },
             {
                 "label": "失败",
                 "value": str(fail_count),
@@ -251,9 +285,7 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
                 ("状态", state),
             ]
             if not passed:
-                meta.append(
-                    ("原因", res.get("reason") or res.get("error") or state)
-                )
+                meta.append(("原因", res.get("reason") or res.get("error") or state))
 
             items.append(
                 {
@@ -268,7 +300,11 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
         exec_body = H.note(f"解析执行结果失败：{e}")
     exec_head = H.stats(exec_stat, cols=3) if exec_stat else ""
     blocks.append(
-        H.section("03", "用例并发真实执行校验（Execution & Robustness）", exec_head + exec_body)
+        H.section(
+            "03",
+            "用例并发真实执行校验（Execution & Robustness）",
+            exec_head + exec_body,
+        )
     )
 
     html = H.page(
