@@ -136,8 +136,7 @@
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   }
 
-  // 盲测与 trigger 共用迭代目录：可能新开一代，也可能就地更新当前代，
-  // 故轮询等待新目录出现后自动切到那一代；超时则原地刷新当前代
+  // 每次运行都会新开一代，故轮询等待新目录出现后自动切到那一代；超时则刷新当前列表
   function pollNewIteration(before) {
     stopPoll();
     var wp = state.activeWp;
