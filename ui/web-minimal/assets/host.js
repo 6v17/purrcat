@@ -1825,7 +1825,7 @@
         const initRes = await fetch('/api/evolve/init', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'skill', name, is_upgrade: !!payload.is_upgrade, goal }),
+          body: JSON.stringify({ type: 'skill', name, is_upgrade: !!payload.is_upgrade, goal, trace: true, session_id: sid }),
         });
         if (!initRes.ok) throw new Error((await initRes.text()) || '工厂分配失败');
         const initData = await initRes.json();

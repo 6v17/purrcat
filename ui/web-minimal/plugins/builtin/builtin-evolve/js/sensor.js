@@ -18,7 +18,7 @@
     fileContent: '',
     iterations: [],
     activeIteration: null,
-    reportMd: '',
+    reportHtml: '',
     benchmark: null,
     diffContent: '',
     diffLoading: false,
@@ -98,7 +98,7 @@
         return;
       }
       state.activeIteration = null;
-      state.reportMd = '';
+      state.reportHtml = '';
       state.benchmark = null;
       renderBody();
     } catch (e) { /* noop */ }
@@ -111,9 +111,10 @@
       var data = await EV.api.get('/api/evolve/test/report' + EV.qs({
         workplace_id: state.activeWp.workplace_id, name: state.activeWp.name, iteration: iter, type: TYPE
       }));
-      state.reportMd = data.report_md || '*此轮次尚未生成体检报告。*';
+      state.reportHtml = data.report_html || '';
     } catch (e) {
-      state.reportMd = '*获取报告失败：' + e.message + '*';
+      state.reportHtml = '';
+      EV.toast('获取报告失败：' + e.message, true);
     }
     try {
       var b = await EV.api.get('/api/evolve/test/benchmark' + EV.qs({
@@ -272,7 +273,7 @@
         stopPoll();
         state.activeWp = wp;
         state.activeFile = ''; state.fileContent = '';
-        state.iterations = []; state.activeIteration = null; state.reportMd = '';
+        state.iterations = []; state.activeIteration = null; state.reportHtml = '';
         state.benchmark = null; state.diffContent = ''; state.step = 'files';
         state.running = false;
         renderSide();
@@ -462,13 +463,22 @@
       left.appendChild(lb);
 
       var right = EV.el('div', 'main');
-      var sc = EV.el('div', 'scroll pad');
       var card = benchmarkCard();
-      if (card) sc.appendChild(card);
-      var mdEl = EV.el('div', 'md');
-      mdEl.innerHTML = EV.md(state.reportMd);
-      sc.appendChild(mdEl);
-      right.appendChild(sc);
+      if (card) {
+        var cardWrap = EV.el('div');
+        cardWrap.style.padding = '10px 14px 0';
+        cardWrap.appendChild(card);
+        right.appendChild(cardWrap);
+      }
+      if (!state.reportHtml) {
+        right.appendChild(EV.el('div', 'hint', '此轮次尚未生成体检报告。\n点击右上角「运行协议体检」启动真网关夹具。'));
+      } else {
+        var frame = EV.el('iframe', 'report-frame');
+        frame.setAttribute('sandbox', '');
+        frame.setAttribute('title', '协议体检报告');
+        frame.srcdoc = state.reportHtml;
+        right.appendChild(frame);
+      }
       wrap2.appendChild(left);
       wrap2.appendChild(right);
       bodyEl.appendChild(wrap2);

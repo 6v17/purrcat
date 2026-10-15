@@ -243,6 +243,9 @@
   .md th { background: var(--field-soft); }
   .md img { max-width: 100%; }
 
+  /* 报告视图：右侧以 iframe 承载瑞士风 HTML 报告（样式隔离），左侧仍保留迭代存档列表 */
+  .report-frame { flex: 1; min-height: 0; width: 100%; border: none; background: #eceae6; }
+
   /* ---------- 弹层 ---------- */
   .mask {
     position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;

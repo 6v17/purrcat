@@ -14,7 +14,7 @@
     toolsError: '',
     iterations: [],
     activeIteration: null,
-    reportMd: '',
+    reportHtml: '',
     diffContent: '',
     diffLoading: false
   };
@@ -65,7 +65,7 @@
         return;
       }
       state.activeIteration = null;
-      state.reportMd = '';
+      state.reportHtml = '';
       renderBody();
     } catch (e) { /* noop */ }
   }
@@ -77,9 +77,10 @@
       var data = await EV.api.get('/api/evolve/test/report' + EV.qs({
         workplace_id: state.activeWp.workplace_id, name: state.activeWp.name, iteration: iter, type: 'mcp'
       }));
-      state.reportMd = data.report_md || '*此轮次尚未生成测试报告。*';
+      state.reportHtml = data.report_html || '';
     } catch (e) {
-      state.reportMd = '*获取报告失败：' + e.message + '*';
+      state.reportHtml = '';
+      EV.toast('获取报告失败：' + e.message, true);
     }
     renderBody();
   }
@@ -187,7 +188,7 @@
         state.activeWp = wp;
         state.step = 'tools';
         state.tools = null; state.toolsError = '';
-        state.iterations = []; state.activeIteration = null; state.reportMd = '';
+        state.iterations = []; state.activeIteration = null; state.reportHtml = '';
         state.diffContent = '';
         renderSide();
         renderMain();
@@ -392,11 +393,15 @@
       left.appendChild(lb);
 
       var right = EV.el('div', 'main');
-      var sc2 = EV.el('div', 'scroll pad');
-      var mdEl = EV.el('div', 'md');
-      mdEl.innerHTML = EV.md(state.reportMd);
-      sc2.appendChild(mdEl);
-      right.appendChild(sc2);
+      if (!state.reportHtml) {
+        right.appendChild(EV.el('div', 'hint', '此轮次尚未生成测试报告。\n点击右上角「运行测试」启动流水线。'));
+      } else {
+        var frame = EV.el('iframe', 'report-frame');
+        frame.setAttribute('sandbox', '');
+        frame.setAttribute('title', 'MCP 测试报告');
+        frame.srcdoc = state.reportHtml;
+        right.appendChild(frame);
+      }
       wrap2.appendChild(left);
       wrap2.appendChild(right);
       bodyEl.appendChild(wrap2);
