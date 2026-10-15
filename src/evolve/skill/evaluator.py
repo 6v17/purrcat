@@ -210,7 +210,7 @@ def _get_latest_iteration_idx(workplace_root: str) -> int:
     max_idx = 0
     if os.path.exists(workplace_root):
         for item in os.listdir(workplace_root):
-            match = re.match(r"iteration-(\d+)", item)
+            match = re.match(r"iteration-(\d+)$", item)
             if match:
                 idx = int(match.group(1))
                 if idx > max_idx:
@@ -256,7 +256,11 @@ def _render_skill_report(
         token_vals = [int(c.get("tokens") or 0) for c in evals["cases"]]
         if baseline > 0 and token_vals:
             mean_tokens = int(round(sum(token_vals) / len(token_vals)))
-            blocks.append(H.token_savings(baseline - mean_tokens, baseline, mean_tokens))
+            # 用例全部崩溃时 tokens 全为 0，此时对比会把整个会话累计量当成“节省量”，故不渲染
+            if mean_tokens > 0:
+                blocks.append(H.token_savings(baseline - mean_tokens, baseline, mean_tokens))
+            else:
+                blocks.append(H.note("盲测未产出有效 token 数据，本轮不做 token 节省对比。"))
 
     overview = []
     if evals:
@@ -483,6 +487,8 @@ async def _run_single_eval_case(
         def ignore_eval_files(dir_path, contents):
             return ["evals", "README.md", ".git", ".gitignore", "__pycache__"]
 
+        # 同一代重跑评测时先清掉上一轮残留目录，否则 copytree 会撞上已存在目录（WinError 183）
+        shutil.rmtree(eval_run_dir, ignore_errors=True)
         shutil.copytree(dev_skill_dir, eval_run_dir, ignore=ignore_eval_files)
         outputs_dir = os.path.join(eval_run_dir, "outputs")
         os.makedirs(outputs_dir, exist_ok=True)
