@@ -38,7 +38,7 @@ curl 'http://127.0.0.1:8000/api/tools/skills'
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| `url` | body | string | 是 | Skill 所在 GitHub `tree` 地址，如 `https://github.com/owner/repo/tree/main/path/to/skill` |
+| `url` | body | string | 是 | Skill 所在 GitHub `tree` / `blob` 地址，如 `https://github.com/owner/repo/tree/main/path/to/skill`；目标目录内必须包含 `SKILL.md`，否则报错。链接若直接指向 `SKILL.md` 等文件，则自动取其所在文件夹 |
 
 **响应**
 
@@ -62,7 +62,7 @@ curl -X POST 'http://127.0.0.1:8000/api/tools/skills/install' -H 'Content-Type: 
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| `urls` | body | array&lt;string&gt; | 是 | 多个 Skill 的 GitHub `tree` 地址 |
+| `urls` | body | array&lt;string&gt; | 是 | 多个 Skill 的 GitHub `tree` / `blob` 地址（规则同 `/skills/install`，每个目录需含 `SKILL.md`） |
 
 **响应**
 

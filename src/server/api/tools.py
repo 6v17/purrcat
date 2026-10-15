@@ -108,9 +108,13 @@ class InstallSkillsBatchReq(BaseModel):
 
 
 def _parse_skill_github_url(url: str):
-    """解析 GitHub skill URL，返回 (owner, repo, branch, path)；不匹配则抛 400"""
+    """解析 GitHub skill URL，返回 (owner, repo, branch, path)；不匹配则抛 400
+
+    兼容 tree（目录）与 blob（文件）两种链接；若链接直接指向 SKILL.md 等文件，
+    则取其所在文件夹作为 skill 目录。
+    """
     match = re.match(
-        r"https?://github\.com/([^/]+)/([^/]+)/tree/([^/]+)(?:/(.*))?", url
+        r"https?://github\.com/([^/]+)/([^/]+)/(?:tree|blob)/([^/]+)(?:/(.*))?", url
     )
     if not match:
         raise HTTPException(
@@ -118,23 +122,42 @@ def _parse_skill_github_url(url: str):
             detail="URL格式错误！正确格式示例: https://github.com/owner/repo/tree/branch/path/to/skill",
         )
     owner, repo, branch, path = match.groups()
-    return owner, repo, branch, (path or "").strip("/")
+    path = (path or "").strip("/")
+    # 链接指向具体文件（如 SKILL.md）时，skill 目录取其所在文件夹
+    if path and "." in path.split("/")[-1]:
+        path = "/".join(path.split("/")[:-1])
+    return owner, repo, branch, path
 
 
 def _extract_skill_from_zip(zip_data: bytes, repo: str, path: str) -> str:
-    """从仓库 zip 字节流中解压单个 skill 子目录到 SKILL_DIR，返回 skill 名"""
+    """从仓库 zip 字节流中解压单个 skill 子目录到 SKILL_DIR，返回 skill 名
+
+    仅当目标目录内存在 SKILL.md 时才视为合法 Skill，否则直接报错。
+    """
     # 仓库根目录即 skill 时，用仓库名作为 skill 名
     skill_name = os.path.basename(path) if path else repo
 
     dest_dir = os.path.join(SKILL_DIR, skill_name)
 
-    # 覆盖式重装：先清掉旧目录，保证与仓库当前版本一致
-    if os.path.isdir(dest_dir):
-        shutil.rmtree(dest_dir)
-
     with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
         root_folder = z.namelist()[0].split("/")[0]
         target_prefix = f"{root_folder}/{path}".rstrip("/") + "/"
+
+        # 🌟 目录校验：目标文件夹必须包含 SKILL.md，否则不是合法 Skill
+        skill_md = (target_prefix + "SKILL.md").lower()
+        if not any(
+            f.filename.rstrip("/").lower() == skill_md
+            for f in z.infolist()
+            if not f.is_dir()
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"目录 '{path or repo}' 下未找到 SKILL.md，无法作为 Skill 安装",
+            )
+
+        # 校验通过后再覆盖式重装：先清掉旧目录，保证与仓库当前版本一致
+        if os.path.isdir(dest_dir):
+            shutil.rmtree(dest_dir)
 
         extracted_count = 0
         for file_info in z.infolist():

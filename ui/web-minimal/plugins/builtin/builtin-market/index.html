@@ -44,6 +44,29 @@
   .hbtn.spin svg { animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* 从链接下载 Skill：插件内自绘的小弹窗（非宿主级弹窗） */
+  .modal {
+    position: fixed; inset: 0; z-index: 30; display: none;
+    align-items: center; justify-content: center; padding: 18px;
+    background: rgba(22, 25, 29, .34);
+  }
+  .modal.on { display: flex; }
+  .modal-card {
+    width: 100%; max-width: 340px; padding: 14px;
+    background: #fff; border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(15, 17, 21, .22);
+  }
+  .modal-title { font-size: 13px; font-weight: 600; }
+  .modal-hint { margin-top: 6px; font-size: 11.5px; line-height: 1.6; color: var(--dim); }
+  .modal-input {
+    width: 100%; height: 32px; margin-top: 10px; padding: 0 11px;
+    font: inherit; font-size: 12.5px; color: var(--label);
+    background: var(--bg); border: 1px solid transparent; border-radius: 9px; outline: none;
+  }
+  .modal-input:focus { border-color: var(--accent); background: #fff; }
+  .modal-err { margin-top: 7px; font-size: 11.5px; line-height: 1.5; color: var(--err); word-break: break-all; }
+  .modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
   .tabs { flex: none; display: flex; gap: 2px; padding: 0 10px; overflow-x: auto; }
   .tab {
     flex: none; padding: 6px 10px; font: inherit; font-size: 12px;
@@ -161,6 +184,9 @@
 <body>
   <div class="head">
     <span class="title">插件市场</span>
+    <button class="hbtn" id="linkBtn" title="从链接下载 Skill" aria-label="从链接下载 Skill">
+      <svg viewBox="0 0 24 24"><path d="M12 3v10"/><path d="m7.5 8.5 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/></svg>
+    </button>
     <button class="hbtn" id="refreshBtn" title="刷新当前列表" aria-label="刷新">
       <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
     </button>
@@ -176,6 +202,19 @@
     <div class="detail" id="detail"></div>
   </div>
   <div class="toast" id="toast"></div>
+  <div class="modal" id="dlModal">
+    <div class="modal-card">
+      <div class="modal-title">从链接下载 Skill</div>
+      <div class="modal-hint">粘贴 GitHub 仓库中 Skill 文件夹的链接，目录内需包含 SKILL.md。</div>
+      <input class="modal-input" id="dlUrl" type="text" spellcheck="false" autocomplete="off"
+        placeholder="https://github.com/owner/repo/tree/branch/path/to/skill" />
+      <div class="modal-err" id="dlErr"></div>
+      <div class="modal-foot">
+        <button class="btn" id="dlCancel">取消</button>
+        <button class="btn primary" id="dlOk">下载</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 (function () {
@@ -276,6 +315,11 @@
   var searchWrap = document.getElementById('searchWrap');
   var searchInput = document.getElementById('search');
   var toastEl = document.getElementById('toast');
+  var linkBtn = document.getElementById('linkBtn');
+  var dlModal = document.getElementById('dlModal');
+  var dlUrl = document.getElementById('dlUrl');
+  var dlErr = document.getElementById('dlErr');
+  var dlOkBtn = document.getElementById('dlOk');
   var toastTimer = null;
 
   function toast(msg, isErr) {
@@ -514,6 +558,7 @@
 
   // ---- 渲染 ----
   function render() {
+    linkBtn.style.display = active === 'skill' ? '' : 'none';  // 「从链接下载」仅 Skill 页可用
     renderTabs();
     renderSubbar();
     renderSearch();
@@ -753,6 +798,39 @@
   document.getElementById('closeBtn').addEventListener('click', function () {
     // slot.hide：关闭并记住（与白条开关同一状态源），重启后仍保持关闭
     callAction('slot.hide').catch(function () {});
+  });
+
+  // ---- 从链接下载 Skill（小弹窗输入 GitHub 链接，后端校验目录内 SKILL.md 后整体下载）----
+  function openDl() {
+    dlUrl.value = ''; dlErr.textContent = '';
+    dlOkBtn.disabled = false; dlOkBtn.textContent = '下载';
+    dlModal.classList.add('on');
+    dlUrl.focus();
+  }
+  function closeDl() { dlModal.classList.remove('on'); }
+  function submitDl() {
+    var url = dlUrl.value.trim();
+    if (!url) { dlErr.textContent = '请输入 GitHub 链接'; dlUrl.focus(); return; }
+    if (dlOkBtn.disabled) return;
+    dlOkBtn.disabled = true; dlOkBtn.textContent = '下载中…'; dlErr.textContent = '';
+    jsonFetch('/api/tools/skills/install', post({ url: url }))
+      .then(function (d) {
+        closeDl();
+        toast((d && d.message) || 'Skill 下载成功');
+        return load('skill', true);
+      })
+      .catch(function (e) {
+        dlErr.textContent = String((e && e.message) || e || '下载失败');
+        dlOkBtn.disabled = false; dlOkBtn.textContent = '下载';
+      });
+  }
+  linkBtn.addEventListener('click', openDl);
+  document.getElementById('dlCancel').addEventListener('click', closeDl);
+  dlOkBtn.addEventListener('click', submitDl);
+  dlModal.addEventListener('click', function (e) { if (e.target === dlModal) closeDl(); });
+  dlUrl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') submitDl();
+    else if (e.key === 'Escape') closeDl();
   });
 
   // ---- 启动 ----
