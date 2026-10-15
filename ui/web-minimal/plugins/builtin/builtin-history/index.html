@@ -281,6 +281,38 @@
   .item.sel { color: var(--wm-accent, #16191d); font-weight: 600; }
   .lb-empty { font-size: 12px; color: var(--wm-label-dim, #8b96a3); padding: 8px; }
 
+  /* 自托管（心跳）：开关 + 间隔 + GOAL.md 编辑 */
+  .sh { display: flex; flex-direction: column; gap: 10px; width: 100%; padding: 2px 6px; }
+  .sh-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .sh-title { font-size: 13px; font-weight: 600; color: var(--wm-label, #16191d); }
+  .sh-switch { position: relative; display: inline-block; width: 42px; height: 24px; flex: none; }
+  .sh-switch input { opacity: 0; width: 0; height: 0; }
+  .sh-slider {
+    position: absolute; inset: 0; cursor: pointer; border-radius: 999px;
+    background: var(--wm-bl-200, #dfe4ea); transition: background .15s;
+  }
+  .sh-slider::before {
+    content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px;
+    background: #fff; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s;
+  }
+  .sh-switch input:checked + .sh-slider { background: #2fa36b; }
+  .sh-switch input:checked + .sh-slider::before { transform: translateX(18px); }
+  .sh-state { font-size: 12px; color: var(--wm-label-2nd, #4c5560); }
+  .sh-state.on { color: #2fa36b; font-weight: 600; }
+  .sh-field { display: flex; flex-direction: column; gap: 4px; }
+  .sh-label { font-size: 12px; font-weight: 600; color: var(--wm-label-2nd, #4c5560); }
+  .sh-interval, .sh-goal {
+    width: 100%; font: inherit; color: var(--wm-label, #16191d);
+    background: var(--wm-bg-input, #f2f4f7); border: 1px solid transparent;
+    border-radius: 8px; padding: 7px 9px; outline: none;
+  }
+  .sh-interval { font-size: 13px; }
+  .sh-interval:focus, .sh-goal:focus { border-color: var(--wm-accent, #16191d); }
+  .sh-goal { flex: 1; min-height: 96px; resize: none; font-size: 13px; line-height: 1.5; overflow-y: auto; }
+  .sh-hint { font-size: 11.5px; color: var(--wm-label-dim, #8b96a3); }
+  .sh-msg { font-size: 12px; min-height: 16px; color: var(--wm-accent, #16191d); }
+  .sh-msg.err { color: #d64545; }
+
   /* 已选引用 */
   .quotes { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; max-height: 56px; overflow-y: auto; }
   .quote {
@@ -1285,7 +1317,8 @@
     { t: 'folder', label: '＋ 文件夹', dialog: true },
     { t: 'skill', label: 'Skill' },
     { t: 'mcp', label: 'MCP' },
-    { t: 'graph', label: 'Graph' }
+    { t: 'graph', label: 'Graph' },
+    { t: 'selfhost', label: '自托管' }
   ];
   var activeCat = null;
   var cache = {};   // skill/mcp/graph 的 fetched items
@@ -1302,7 +1335,8 @@
       b.textContent = c.label;
       b.addEventListener('mouseenter', function () {
         setActive(c.t);
-        if (c.dialog) showRight(c.label, []);
+        if (c.t === 'selfhost') openSelfHost();
+        else if (c.dialog) showRight(c.label, []);
         else openCat(c.t);
       });
       b.addEventListener('click', function () { handleCatClick(c); });
@@ -1374,6 +1408,7 @@
   }
 
   function handleCatClick(c) {
+    if (c.t === 'selfhost') { openSelfHost(); return; }
     if (c.t === 'file') {
       callAction('dialog.files').then(function (r) {
         var p = pickPath(r);
@@ -1387,6 +1422,106 @@
     } else {
       openCat(c.t);
     }
+  }
+
+  // ---------- 自托管（心跳）：开关 + 间隔 + GOAL.md ----------
+  // 唯一数据源为后端 /api/tools/heartbeat（读写 GOAL.md 与 heartbeat.json）。
+  // 规则：GOAL.md 非空才允许启动；关闭自托管自动清空 GOAL.md。
+  var SH_MIN = 60;
+  var shEls = null;
+  function shMsg(text, isErr) {
+    if (!shEls) return;
+    shEls.msg.textContent = text || '';
+    shEls.msg.classList.toggle('err', !!isErr);
+  }
+  function shSetState(active) {
+    if (!shEls) return;
+    shEls.toggle.checked = !!active;
+    shEls.state.textContent = active ? '运行中' : '已停止';
+    shEls.state.classList.toggle('on', !!active);
+  }
+  function shInterval() {
+    var n = parseInt(shEls.interval.value, 10);
+    if (!n || n < SH_MIN) n = SH_MIN;
+    shEls.interval.value = n;
+    return n;
+  }
+  function shSave(active, goal) {
+    return fetch('/api/tools/heartbeat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interval: shInterval(), active: !!active, goal: goal || '' })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        if (!r.ok) throw new Error((d && d.detail) || ('HTTP ' + r.status));
+        return d;
+      });
+    });
+  }
+  function loadSelfHost() {
+    return fetch('/api/tools/heartbeat').then(function (r) { return r.json(); }).then(function (d) {
+      if (!shEls) return;
+      shEls.interval.value = (d && d.interval) || 1800;
+      shEls.goal.value = (d && d.goal) || '';
+      shSetState(!!(d && d.active));
+      shMsg('');
+    }).catch(function () { shMsg('读取自托管配置失败', true); });
+  }
+  function openSelfHost() {
+    setActive('selfhost');
+    rName.textContent = '自托管';
+    rItems.innerHTML = '';
+    var wrap = document.createElement('div');
+    wrap.className = 'sh';
+    wrap.innerHTML =
+      '<div class="sh-head"><span class="sh-title">自托管（心跳）</span>' +
+        '<label class="sh-switch"><input type="checkbox" id="shToggle"><span class="sh-slider"></span></label></div>' +
+      '<div class="sh-state" id="shState">已停止</div>' +
+      '<div class="sh-field"><span class="sh-label">心跳间隔（秒，最少 60）</span>' +
+        '<input class="sh-interval" id="shInterval" type="number" min="60" step="60" value="1800"></div>' +
+      '<div class="sh-field"><span class="sh-label">GOAL.md</span>' +
+        '<textarea class="sh-goal" id="shGoal" placeholder="写下本次自托管要持续追求的目标…"></textarea></div>' +
+      '<div class="sh-hint">必须填写 GOAL.md 才能启动；关闭自托管会自动清空 GOAL.md。</div>' +
+      '<div class="sh-msg" id="shMsg"></div>';
+    rItems.appendChild(wrap);
+    shEls = {
+      toggle: wrap.querySelector('#shToggle'),
+      interval: wrap.querySelector('#shInterval'),
+      goal: wrap.querySelector('#shGoal'),
+      state: wrap.querySelector('#shState'),
+      msg: wrap.querySelector('#shMsg')
+    };
+    shEls.toggle.addEventListener('change', function () {
+      var active = shEls.toggle.checked;
+      var goal = shEls.goal.value.trim();
+      if (active && !goal) {
+        shSetState(false);
+        shMsg('请先填写 GOAL.md 才能启动', true);
+        return;
+      }
+      shSave(active, active ? goal : '').then(function () {
+        if (!active) shEls.goal.value = '';   // 关闭后自动清空 GOAL.md
+        shSetState(active);
+        shMsg(active ? '自托管已启动' : '自托管已停止，GOAL.md 已清空');
+      }).catch(function (e) {
+        shSetState(!active);
+        shMsg(String((e && e.message) || e || '保存失败'), true);
+      });
+    });
+    shEls.interval.addEventListener('change', function () {
+      var active = shEls.toggle.checked;
+      shSave(active, active ? shEls.goal.value.trim() : '').then(function () {
+        shMsg('心跳间隔已更新为 ' + shEls.interval.value + ' 秒');
+      }).catch(function (e) { shMsg(String((e && e.message) || e), true); });
+    });
+    shEls.goal.addEventListener('change', function () {
+      if (!shEls.toggle.checked) return;   // 未启动时不落盘，保持 GOAL.md 为空
+      var goal = shEls.goal.value.trim();
+      if (!goal) { shMsg('GOAL.md 不能为空', true); return; }
+      shSave(true, goal).then(function () { shMsg('GOAL.md 已更新'); })
+        .catch(function (e) { shMsg(String((e && e.message) || e), true); });
+    });
+    loadSelfHost();
   }
 
   // ---------- 引用面板开合 ----------
