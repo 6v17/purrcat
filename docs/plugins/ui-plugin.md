@@ -92,7 +92,7 @@ ui-plugins/<id>/               # 市场仓库中的单元
 ### 5.1 插件 → 宿主
 
 ```js
-window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.get', payload: { key: 'color' } }, '*');
+window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.get', payload: { plugin_id: 'doodle-chat' } }, '*');
 ```
 
 - `type` 固定 `'callAction'`；`id` 为本次调用唯一标识（用于匹配响应）。
@@ -158,7 +158,7 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 | actionId | payload | 说明 |
 | --- | --- | --- |
 | `plugin.delete` | `—` | 卸载自身（内置插件不可删）|
-| `plugin.rpc` | `{ method, params }` | 调用插件自带 Node 后端（`backend.kind=npm`）|
+| `plugin.rpc` | `{ plugin_id, handler, payload }` | 调用插件自带 Node 后端（`backend.kind=npm`）|
 
 **内置浏览器（宿主原生，供插件复用）**
 
@@ -176,7 +176,6 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 | actionId | 说明 |
 | --- | --- |
 | `state.get` | 读取宿主全局状态快照 |
-| `input.dropdown` | 输入框下拉时告知宿主让位 |
 
 > 以宿主 `ui/web-minimal/assets/host.js` 的 `dispatch()` 为准；完整字段见 [../api/webmin.md](../api/webmin.md)。
 
@@ -184,12 +183,16 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 
 | `event` | 时机 | `data` |
 | --- | --- | --- |
-| `host.unmount` | 宿主卸载插件 | 插件 id |
-| `host.nativeCover` | 宿主原生界面覆盖插件的显示区域 | 覆盖信息 |
-| `layout.empty` | 布局空置（无会话等）| — |
-| `session.switched` | 当前会话切换 | 新会话信息 |
-| `branch.switched` | 对话分支切换 | 分支信息 |
-| `config.updated` | 插件配置被更新 | 新配置 |
+| `host.unmount` | 宿主卸载插件 | — |
+| `host.nativeCover` | 宿主原生界面覆盖插件的显示区域 | `{ covered }` |
+| `layout.empty` | 布局空置（无会话等）| `{ empty }` |
+| `session.switched` | 当前会话切换 | `{ session_id }` |
+| `branch.switched` | 对话分支切换 | `{ branch_id }` |
+| `conversation.local` / `conversation.updated` | 本会话消息流发生变化 | `{ session_id, events? }` |
+| `requests.updated` | 待办请求状态变化 | `{ request_id }` |
+| `config.updated` | 插件配置被更新 | `{ plugin_id, config }` |
+| `browser.openUrl` | 请求在浏览器打开某链接 | `{ url }` |
+| `browser.tabEvent` | 内置浏览器标签页事件 | 标签页事件对象 |
 
 ---
 
