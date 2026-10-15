@@ -145,6 +145,8 @@ curl -X PUT 'http://127.0.0.1:8000/api/evolve/file?workplace_id=wp-001&name=my-s
 
 启动盲测 / 评测（后台异步）。
 
+每次调用都会**新开一代**（`iteration-N`）。`skill` 类型会把 Trigger 激发测试与盲测一并跑进这一代，不复用最近一代；`mcp` / `sensor` 本就按新代归档。
+
 **请求**
 
 | 参数 | 位置 | 类型 | 必填 | 说明 |
