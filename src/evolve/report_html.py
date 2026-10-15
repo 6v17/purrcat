@@ -33,6 +33,7 @@ _ICONS = {
     '<path d="M7.5 14h9"/>',
     "zap": '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
     "trendDown": '<path d="m3 7 6 6 4-4 8 8"/><path d="M21 17v-6h-6"/>',
+    "arrowDown": '<path d="M12 4v16"/><path d="m6 14 6 6 6-6"/>',
     "coin": '<circle cx="12" cy="12" r="9"/><path d="M12 7v10"/>'
     '<path d="M9.5 9.5h5"/><path d="M9.5 14.5h5"/>',
     "tag": '<path d="M4 4h7l9 9-7 7-9-9z"/><circle cx="8" cy="8" r="1.4"/>',
@@ -50,9 +51,9 @@ _ICONS = {
 }
 
 _STATUS = {
-    "pass": ("ok", "通过", "check"),
-    "fail": ("err", "失败", "x"),
-    "warn": ("warn", "告警", "alert"),
+    "pass": ("ok", "通过"),
+    "fail": ("err", "失败"),
+    "warn": ("warn", "告警"),
 }
 
 
@@ -124,12 +125,11 @@ def code_block(text) -> str:
 def case(title, status: str = "", meta=None, notes=None, blocks=None,
          badge_text: str = None) -> str:
     """单条评测用例卡。meta: [(标签, 文本)]；notes: [文本]；blocks: [HTML 片段]"""
-    kind, default_text, ic_name = _STATUS.get(status, ("mute", "", "dot"))
+    kind, default_text = _STATUS.get(status, ("mute", ""))
     cls = f"case {status}" if status in _STATUS else "case"
     label = badge_text if badge_text is not None else default_text
     bd = badge(label, kind) if label else ""
-    ic = f'<span class="ci">{icon(ic_name, 15)}</span>' if status else ""
-    out = [f'<div class="{cls}"><div class="t">{ic}<span>{esc(title)}</span>{bd}</div>']
+    out = [f'<div class="{cls}"><div class="t"><span>{esc(title)}</span>{bd}</div>']
     if meta:
         pairs = "".join(
             f'<span class="mi"><b>{esc(k)}</b>{esc(v)}</span>' for k, v in meta
@@ -174,7 +174,7 @@ def token_savings(saved: int, baseline: int, actual: int, source_label: str = "�
         tone = "good"
     return (
         f'<div class="saved {tone}">'
-        f'<div class="saved-ic">{icon("trendDown", 30)}</div>'
+        f'<div class="saved-ic">{icon("arrowDown", 30)}</div>'
         f'<div class="saved-main">'
         f'<div class="saved-head">{esc(head)}</div>'
         f'<div class="saved-cmp">'
@@ -232,10 +232,6 @@ pre.code{background:#0f0f0f;color:#eaeaea;font:12px/1.6 ui-monospace,Consolas,mo
 .case.fail{border-left-color:#e2001a}
 .case.warn{border-left-color:#946000}
 .case .t{display:flex;align-items:center;gap:9px;font-size:14.5px;font-weight:700}
-.case .t .ci{display:inline-flex;color:#0a0a0a}
-.case.pass .t .ci{color:#0f7a43}
-.case.fail .t .ci{color:#e2001a}
-.case.warn .t .ci{color:#946000}
 .case .t>span{flex:1;min-width:0}
 .case .m{display:flex;flex-wrap:wrap;gap:16px;margin-top:9px;font-size:12.5px;color:#6b6b6b}
 .case .m .mi b{color:#0a0a0a;font-weight:700;margin-right:6px;letter-spacing:.02em}
