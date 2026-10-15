@@ -52,6 +52,8 @@ curl 'http://127.0.0.1:8000/api/evolve/list?type=skill'
 | name | body | string | 是 | 模块名称 |
 | is_upgrade | body | boolean | 是 | 是否为升级（`false` 为改进） |
 | goal | body | string | 否 | 本次构建目标（写入 `GOAL.md` 并嵌入 `GUIDE.md`），默认空串 |
+| trace | body | boolean | 否 | trace2skill 入口：为 `true` 时快照来源会话 Token 到沙盒 `trace_meta.json`，默认 `false` |
+| session_id | body | string | 否 | 来源会话 ID，配合 `trace` 使用 |
 
 **响应**
 
@@ -65,12 +67,14 @@ curl 'http://127.0.0.1:8000/api/evolve/list?type=skill'
 
 分配失败（无 `workplace_id`）返回 `400`；内部异常返回 `500`。
 
+当 `trace=true` 且 `type=skill` 且有 `session_id` 时，会把该会话的累计 Token 快照写入 `skill_workplace/<workplace_id>/trace_meta.json`，随后盲测报告据此对比展示「该技能让后台盲测任务少花了多少 token」。快照失败不影响建厂。
+
 **示例**
 
 ```bash
 curl -X POST 'http://127.0.0.1:8000/api/evolve/init' \
   -H 'Content-Type: application/json' \
-  -d '{"type": "skill", "name": "my-skill", "is_upgrade": false, "goal": "补全文档"}'
+  -d '{"type": "skill", "name": "my-skill", "is_upgrade": false, "goal": "补全文档", "trace": true, "session_id": "main"}'
 ```
 
 ---
@@ -197,7 +201,7 @@ curl 'http://127.0.0.1:8000/api/evolve/test/iterations?workplace_id=wp-001&type=
 
 ## GET `/api/evolve/test/report`
 
-读取某轮评测报告。
+读取某轮评测的 HTML 报告页。
 
 **请求**
 
@@ -211,10 +215,10 @@ curl 'http://127.0.0.1:8000/api/evolve/test/iterations?workplace_id=wp-001&type=
 **响应**
 
 ```json
-{ "report_md": "# 评测报告\n..." }
+{ "report_html": "<!DOCTYPE html>\n<html lang=\"zh-CN\">...</html>" }
 ```
 
-按类型读取报告：`mcp` 取 `test_report.md`，`sensor` 取 `protocol_report.md`，`skill` 合并 `trigger_report.md` 与 `eval_report.md`（`---` 分隔）。无报告时返回 `{ "report_md": "" }`。
+报告统一以自包含的瑞士国际主义风格 HTML 页面输出，各类型同取该轮次目录下的 `report.html`（`skill` 为 Trigger + 盲测合并的单一页面）。页面零外部依赖，前端以 iframe 直接承载，故接口不再返回文件清单或 Markdown。无报告时返回 `{ "report_html": "" }`。
 
 **示例**
 

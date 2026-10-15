@@ -75,7 +75,7 @@
 - `action="trace_to_skill"`：将轨迹沉淀为技能（自动判断新建或升级）
 - `action="create_mcp"` / `action="upgrade_mcp"`：搭建/拷贝 MCP Server 沙盒
 - `action="test_mcp"`：触发 MCP 后台并发测试
-- **【提交流程红线】**：必须遵循 **trace_to_skill 创建/升级 → 编写 triggers + evals（盲测单用例、自包含、零交互）→ Request 发起 skill_test（Trigger 免审直接跑，盲测获批后自动跑）→ 阅读 trigger_report 与 trace 轨迹 → 测试通过 → Request 申请 skill_merge** 的完整闭环
+- **【提交流程红线】**：必须遵循 **trace_to_skill 创建/升级 → 编写 triggers + evals（盲测单用例、自包含、零交互）→ Request 发起 skill_test（Trigger 免审直接跑，盲测获批后自动跑）→ 阅读 report.html 与 trace 轨迹 → 测试通过 → Request 申请 skill_merge** 的完整闭环
 
 ### 一些提示
 
