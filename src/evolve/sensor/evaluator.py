@@ -17,8 +17,13 @@ import re
 import subprocess
 import threading
 import time
+from datetime import datetime
 
 from src.utils.config import AGENT_VM_DIR, get_enriched_env
+
+
+def _now_iso() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # 夹具回填给 sensor 的假会话号：sensor 后续所有 session/prompt 都必须带上它
 FIXTURE_SESSION_ID = "SID_TEST"
@@ -730,59 +735,113 @@ def _render_report(
     iteration_idx: int,
     config: dict,
     cases: list,
+    iteration_dir: str,
 ) -> str:
+    """渲染瑞士风 HTML 体检报告（报告即输出物，不列文件清单）。"""
+    from src.evolve import report_html as H
+
     errors = [c for c in cases if not c["pass"] and c["level"] == "error"]
     warns = [c for c in cases if not c["pass"] and c["level"] == "warn"]
     passed = len([c for c in cases if c["pass"]])
 
-    lines = [f"# {sensor_name} 协议体检报告 (Iteration {iteration_idx})\n"]
     if errors:
-        lines.append(
-            f"## 结论：❌ 不通过（{len(errors)} 项硬伤，{len(warns)} 项告警）\n"
-        )
+        concl, tone = f"不通过：{len(errors)} 项硬伤，{len(warns)} 项告警", "accent"
     elif warns:
-        lines.append(f"## 结论：⚠️ 通过但有告警（{len(warns)} 项）\n")
+        concl, tone = f"通过但有告警：{len(warns)} 项", "warn"
     else:
-        lines.append("## 结论：✅ 全部通过\n")
+        concl, tone = "全部通过", "ok"
 
-    lines.append(
-        f"- 工作区: `sensor_workplace/{workplace_id}`\n"
-        f"- 通过: {passed}/{len(cases)}（错误 {len(errors)} / 告警 {len(warns)}）\n"
-        f"- 数据来源: 宿主扮演网关实跑 sensor 子进程，非 Agent 自报\n"
-    )
+    blocks = [
+        H.stats(
+            [
+                {
+                    "label": "体检结论",
+                    "value": "PASS" if not errors else "FAIL",
+                    "icon_name": "shield",
+                    "tone": tone,
+                    "desc": concl,
+                },
+                {
+                    "label": "通过",
+                    "value": f"{passed}/{len(cases)}",
+                    "icon_name": "check",
+                    "tone": "ok",
+                },
+                {
+                    "label": "错误",
+                    "value": str(len(errors)),
+                    "icon_name": "x",
+                    "tone": "accent" if errors else "",
+                },
+                {
+                    "label": "告警",
+                    "value": str(len(warns)),
+                    "icon_name": "alert",
+                    "tone": "warn" if warns else "",
+                },
+            ],
+            cols=4,
+        )
+    ]
 
+    section_no = 1
     for layer, title in (("L0", "L0 静态契约"), ("L1", "L1 协议夹具")):
         layer_cases = [c for c in cases if c["layer"] == layer]
         if not layer_cases:
             continue
-        lines.append(f"\n## {title}")
-        for case in layer_cases:
-            if case["pass"]:
-                icon = "✅"
-            elif case["level"] == "warn":
-                icon = "⚠️"
+        items = []
+        for c in layer_cases:
+            if c["pass"]:
+                status, label = "pass", "通过"
+            elif c["level"] == "warn":
+                status, label = "warn", "告警"
             else:
-                icon = "❌"
-            lines.append(f"- {icon} **{case['title']}** — {case['detail']}")
+                status, label = "fail", "硬伤"
+            items.append(
+                {
+                    "title": c["title"],
+                    "status": status,
+                    "badge_text": label,
+                    "notes": [c["detail"]],
+                }
+            )
+        blocks.append(H.section(f"{section_no:02d}", title, H.cases(items)))
+        section_no += 1
 
     if not any(c["layer"] == "L1" for c in cases):
-        lines.append("\n> L1 未执行（uv 不可用或进程拉起失败），协议面完全未覆盖。")
+        blocks.append(H.note("L1 未执行（uv 不可用或进程拉起失败），协议面完全未覆盖。"))
 
-    lines.append("\n## 未覆盖项（属真实链路，随 sensor_merge 人审）")
-    for item in _UNCOVERED:
-        lines.append(f"- {item}")
-
+    uncovered = list(_UNCOVERED)
     if config.get("source") == "local":
-        lines.append(
-            "\n> 该 sensor 声明 `source: local`（外部源可本地构造），"
-            "可考虑为它补一条本地源闭环用例，把上面前 4 项未覆盖项也自动化。"
+        uncovered.append(
+            "该 sensor 声明 source: local（外部源可本地构造），"
+            "可考虑为它补一条本地源闭环用例，把前 4 项未覆盖项也自动化。"
         )
-
-    lines.append(
-        "\n💡 修复硬伤后请再次 `Request(sensor_test)` 复跑；"
-        "L0/L1 全绿再申请 sensor_merge。"
+    blocks.append(
+        H.section(
+            f"{section_no:02d}",
+            "未覆盖项（属真实链路，随 sensor_merge 人审）",
+            H.bullets(uncovered),
+        )
     )
-    return "\n".join(lines)
+
+    html = H.page(
+        title=f"{sensor_name} · 协议体检报告",
+        subtitle="宿主扮演真网关拉起 sensor 子进程实测的契约与协议结果；数据来自真跑，非 Agent 自报。",
+        meta=[
+            ("Sensor", sensor_name),
+            ("迭代", f"Iteration {iteration_idx}"),
+            ("工作区", f"sensor_workplace/{workplace_id}"),
+            ("生成时间", _now_iso()),
+        ],
+        blocks=blocks,
+        kicker="PURRCAT · SENSOR FACTORY",
+        footer_left="Sensor Protocol Report",
+        footer_right=f"Iteration {iteration_idx:02d}",
+    )
+    with open(os.path.join(iteration_dir, "report.html"), "w", encoding="utf-8") as f:
+        f.write(html)
+    return html
 
 
 def _run_protocol_eval(workplace_id: str, sensor_name: str) -> str:
@@ -838,14 +897,12 @@ def _run_protocol_eval(workplace_id: str, sensor_name: str) -> str:
     ) as f:
         json.dump(benchmark, f, ensure_ascii=False, indent=2)
 
-    report = _render_report(sensor_name, workplace_id, iteration_idx, config, cases)
-    report += (
-        f"\n\n📁 取证文件：`iteration-{iteration_idx}/handshake.json`（全量抓包）、"
-        f"`benchmark.json`、`sensor_stderr.log`"
+    _render_report(
+        sensor_name, workplace_id, iteration_idx, config, cases, iteration_dir
     )
-    with open(
-        os.path.join(iteration_dir, "protocol_report.md"), "w", encoding="utf-8"
-    ) as f:
-        f.write(report)
 
-    return report
+    return (
+        f"🩺 协议体检完成：通过 {passed}/{len(cases)}（错误 {err_count} / 告警 "
+        f"{len([c for c in cases if not c['pass'] and c['level'] == 'warn'])}），"
+        f"报告已生成（iteration-{iteration_idx}/report.html）。"
+    )

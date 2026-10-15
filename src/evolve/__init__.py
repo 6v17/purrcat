@@ -22,7 +22,7 @@ Agent 在完全独立的 UUID 沙盒中工作，折腾坏了直接删，折腾�
 3. 渐进式指导：通过内置生成的规范指南文档充当隐式的 Agent Prompt
 4. 版本控制自动化：自动接管 Git 仓库的初始化、追踪与标准化 Commit Message 生成
 5. 完整的 Git Flow：Fork → Pull Request → Merge → Revert
-6. 自动化测试：后台执行 evals，生成完整的 eval_report.md / test_report.md 报告
+6. 自动化测试：后台执行 evals，生成瑞士风 HTML 结论页 report.html
 """
 
 from .skill.factory import (
@@ -34,6 +34,7 @@ from .skill.factory import (
 from .skill.evaluator import (
     run_skill_eval_background,
     run_skill_trigger_eval_background,
+    record_trace_meta,
 )
 from .mcp.factory import mcp_improve_init, mcp_upgrade_init, mcp_request_handle
 from .mcp.evaluator import run_mcp_eval_background
@@ -48,6 +49,7 @@ __all__ = [
     "skill_rollback",
     "run_skill_eval_background",
     "run_skill_trigger_eval_background",
+    "record_trace_meta",
     "mcp_improve_init",
     "mcp_upgrade_init",
     "run_mcp_eval_background",

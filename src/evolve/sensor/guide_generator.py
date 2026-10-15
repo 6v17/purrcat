@@ -182,8 +182,8 @@ echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"session
 | 7 | sessionId 回填 | 用 session/new 响应回传的 sessionId 发所有 prompt（回填错会让注入静默失效） |
 | 8 | 故障可见 | 异常不崩溃，关键路径日志可读 |
 
-体检产物落在 `iteration-N/`：`protocol_report.md`、`benchmark.json`、`handshake.json`（全量抓包）、
-`sensor_stderr.log`。**外部渠道未被 mock**，所以"Agent 回复在渠道里长什么样""幂等去重""游标续传"
+体检产物落在 `iteration-N/`：`report.html`（瑞士风 HTML 体检报告，结论与逐条判据一页呈现）、`benchmark.json`、
+`handshake.json`（全量抓包）、`sensor_stderr.log`。**外部渠道未被 mock**，所以"Agent 回复在渠道里长什么样""幂等去重""游标续传"
 这类真实链路行为不在自动体检范围内，报告会显式列在「未覆盖项」里——别把它们当成已验证。
 
 ## 8. 提交合并

@@ -75,13 +75,13 @@ description: 1-200 字符，祈使句，描述用户意图而非底层实现，�
 
 你**无权**直接运行测试！须调用 `Request(request_type="skill_test", target="工作区uuid/{skill_name}")` 发起，两级流程如下：
 
-1. **Trigger 激发测试（免审）**：提交后立即在后台运行（影子节点注入真实检索环境，检验 description 能否击败现存技能被唤醒），完成后收到系统级通知，报告归档在 `iteration-N/trigger_report.md`（与随后获批的盲测同属一代）。
+1. **Trigger 激发测试（免审）**：提交后立即在后台运行（影子节点注入真实检索环境，检验 description 能否击败现存技能被唤醒），完成后收到系统级通知，报告归档在 `iteration-N/report.html`（与随后获批的盲测同属一代）。
 2. **后台盲测（需审批）**：用户批准后系统自动在后台双 Agent 隔离环境运行盲测。若本地无 skill_eval 图，盲测会被自动跳过（工具会明确提示），需用户安装测试图后重新申请。
-3. 阅读本次产物（统一归档在 `iteration-N`，Trigger 与盲测报告同目录）：
-   * `iteration-N/trigger_report.md`：激发唤醒率与语义竞争者，若被其他技能抢占需修改 description 划清界限。
-   * `benchmark.json`：全局通过率 (mean)、耗时/Tokens 及标准差 (stddev)。
-   * `eval_report.md`：本次用例的裁判评估结论。
-   * `trace.md` (必读)：测试工人的行为轨迹，看它在哪一步偏离了你的指令。
+3. 阅读本次产物（统一归档在 `iteration-N`，Trigger 与盲测共用同一份报告）：
+   * `iteration-N/report.html`（必读）：Trigger 激发唤醒率、语义竞争者、盲测通过率/耗时/Tokens 等结论一页呈现；若被其他技能抢占需修改 description 划清界限。
+   * `iteration-N/trigger_result.json` / `eval_result.json`：上述结论的结构化数据。
+   * `iteration-N/benchmark.json`：全局通过率 (mean)、耗时/Tokens 及标准差 (stddev)。
+   * `iteration-N/trace.md` (必读)：测试工人的行为轨迹，看它在哪一步偏离了你的指令。
 4. 若盲测申请被拒绝，根据用户批注继续修复后再次申请。
 
 ## 5. 升级迭代诊断 (Eval-driven)

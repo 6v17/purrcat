@@ -6,6 +6,7 @@ from src.tool.utils.format import error_response, text_response
 from src.utils.config import SKILL_DIR, AGENT_VM_DIR
 from src.evolve import (
     skill_improve_init,
+    record_trace_meta,
     mcp_improve_init,
     mcp_upgrade_init,
     run_mcp_eval_background,
@@ -30,9 +31,18 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
         if action == "trace_to_skill":
             is_upgrade = os.path.exists(os.path.join(SKILL_DIR, target))
 
-            sys_note, _ = skill_improve_init(
+            sys_note, workplace_id = skill_improve_init(
                 target, is_upgrade=is_upgrade, goal=kwargs.get("goal", "")
             )
+
+            # trace2skill：记录来源会话的 Token 快照，供后续盲测报告对比"省下多少 token"
+            if workplace_id:
+                try:
+                    from src.agent.manager import manager
+
+                    record_trace_meta(workplace_id, manager.get_active_session_id())
+                except Exception:
+                    pass
 
             status_str = "已" if is_upgrade else "未"
             action_str = "安排升级" if is_upgrade else "创建"

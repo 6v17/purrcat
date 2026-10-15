@@ -9,8 +9,13 @@ import asyncio
 import threading
 import re
 import shutil
+from datetime import datetime
 
 from src.utils.config import AGENT_VM_DIR
+
+
+def _now_iso() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def run_mcp_eval_background(workplace_id: str, mcp_name: str, main_session_id: str):
@@ -93,53 +98,57 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
         schema_dump = []
 
     # =========================================================================
-    # 生成纯粹、高可读性的专业 MCP Server 测试报告
+    # 渲染瑞士风 HTML 报告（报告即输出物，不列文件清单、不贴物理路径）
     # =========================================================================
-    report_lines = [
-        f"# 🔌 {mcp_name} 自动化测试与合规报告 (Iteration {iteration_idx})",
-        f"📂 **归档物理路径**: `{iteration_dir}`\n",
-    ]
+    from src.evolve import report_html as H
+
+    blocks = []
 
     # 一、工具矩阵注册大盘
-    report_lines.append("## 📊 一、工具矩阵注册大盘 (Schema Registration)")
     if not schema_dump:
-        report_lines.append(
-            "❌ **服务异常**：此 MCP Server 未能在 FastMCP 中成功注册任何有效的 Tool 工具！\n"
+        reg_stat = [
+            {"label": "已注册工具", "value": "0", "icon_name": "server", "tone": "accent"}
+        ]
+        reg_body = H.note(
+            "服务异常：此 MCP Server 未能在 FastMCP 中成功注册任何有效的 Tool 工具。"
         )
     else:
-        report_lines.append(
-            f"✅ **服务检查通过**：系统检测到当前服务已成功向 STDIO 协议注册 **{len(schema_dump)}** 个工具。\n"
-        )
-        report_lines.append(
-            "| 工具名称 (Tool Name) | 功能描述 (Description) | 参数量 (Params) |"
-        )
-        report_lines.append("| :--- | :--- | :--- |")
+        reg_stat = [
+            {"label": "已注册工具", "value": str(len(schema_dump)), "icon_name": "server", "tone": "ok"}
+        ]
+        reg_rows = []
         for tool in schema_dump:
             properties = (
                 tool.get("inputSchema", {}).get("properties", {})
                 if isinstance(tool.get("inputSchema"), dict)
                 else {}
             )
-            param_count = len(properties)
-            desc = tool.get("description", "⚠️ 未编写任何描述说明").replace("\n", " ")
-            report_lines.append(f"| `{tool['name']}` | {desc} | {param_count} 个 |")
-        report_lines.append("")
+            desc = (tool.get("description") or "⚠️ 未编写任何描述说明").replace("\n", " ")
+            reg_rows.append(
+                [
+                    f'<span class="mono">{H.esc(tool.get("name", ""))}</span>',
+                    H.esc(desc),
+                    f"{len(properties)} 个",
+                ]
+            )
+        reg_body = H.table(["工具名称", "功能描述", "参数量"], reg_rows)
+    blocks.append(
+        H.section("01", "工具矩阵注册大盘（Schema Registration）", H.stats(reg_stat, cols=1) + reg_body)
+    )
 
     # 二、语义检索与路由竞争分析
-    report_lines.append("## 🎯 二、模型意图激发分析 (Trigger Semantic Routing)")
     triggers = evals_data.get("triggers", [])
+    trig_stat = []
     if not triggers:
-        report_lines.append(
-            "⚠️ **未检测到 Trigger 测试用例**。请在 `evals.json` 中配置激发路径。\n"
-        )
+        trig_body = H.note("未检测到 Trigger 测试用例，请在 evals.json 中配置激发路径。")
     elif not schema_dump:
-        report_lines.append("⚠️ **无法分析激发路由**：因为工具矩阵注册为空。\n")
+        trig_body = H.note("无法分析激发路由：工具矩阵注册为空。")
     else:
         from src.tool.search.mcp_search import MCPSearcher
 
         searcher = MCPSearcher()
         trigger_success = 0
-
+        items = []
         for idx, t_case in enumerate(triggers):
             query = t_case.get("query", "")
             expected_tool = t_case.get("expected_tool")  # 可为 None 代表反例
@@ -148,44 +157,49 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
 
             if expected_tool:
                 if res["is_triggered"]:
-                    icon, status_text = (
-                        "✅",
-                        f"唤醒成功 (抢占第 {res['rank']} 名，得分: {res['score']})",
-                    )
+                    status = "pass"
+                    detail = f"唤醒成功（抢占第 {res['rank']} 名，得分 {res['score']}）"
                     trigger_success += 1
                 else:
-                    icon, status_text = (
-                        "❌",
-                        f"激发失败 (工具权重得分: {res['score']}，未进 Top 5 或低于唤醒阈值)",
-                    )
+                    status = "fail"
+                    detail = f"激发失败（得分 {res['score']}，未进 Top 5 或低于唤醒阈值）"
             else:
                 if not res["is_triggered"]:
-                    icon, status_text = "✅", "反例拦截成功 (工具保持绝对静默)"
+                    status = "pass"
+                    detail = "反例拦截成功（工具保持静默）"
                     trigger_success += 1
                 else:
-                    icon, status_text = (
-                        "❌",
-                        f"反例拦截失败 (不该触发却抢占了第 {res['rank']} 名)",
-                    )
+                    status = "fail"
+                    detail = f"反例拦截失败（不该触发却抢占了第 {res['rank']} 名）"
 
-            report_lines.append(f"### 案例 {idx + 1}: 用户请求 `{query}`")
-            report_lines.append(
-                f"- **期望工具**: `{expected_tool if expected_tool else '静默阻断 (无)'}`"
+            competitors = res.get("competitors") or []
+            items.append(
+                {
+                    "title": f"案例 {idx + 1}：{query}",
+                    "status": status,
+                    "meta": [
+                        ("期望工具", expected_tool if expected_tool else "静默阻断（无）"),
+                        ("结果", detail),
+                    ],
+                    "notes": ["语义竞争排布（Top K）：" + ("；".join(competitors) or "无")],
+                }
             )
-            report_lines.append(f"- **评测状态**: {icon} **{status_text}**")
-            report_lines.append("- **语义竞争排布 (Top K 路由树)**:")
-            for comp in res["competitors"]:
-                report_lines.append(f"  - {comp}")
-            report_lines.append("")
-
-        report_lines.append(
-            f"📈 **意图路由总唤醒率 (Trigger Pass Rate)**: **{trigger_success}/{len(triggers)}**\n"
-        )
+        trig_body = H.cases(items)
+        trig_stat = [
+            {
+                "label": "Trigger 唤醒率",
+                "value": f"{trigger_success}/{len(triggers)}",
+                "icon_name": "zap",
+                "tone": "accent" if trigger_success == len(triggers) else "",
+            }
+        ]
+    trig_head = H.stats(trig_stat, cols=1) if trig_stat else ""
+    blocks.append(H.section("02", "模型意图激发分析（Trigger Semantic Routing）", trig_head + trig_body))
 
     # 三、用例并发执行与可用性断言
     #    判分依据沙盒产出的 verdict（pass/fail）：正常用例校验 expected_output，
     #    expect_error 用例校验"必须抛错"，从"没抛异常"升级为"返回的内容是对的"。
-    report_lines.append("## ⚡ 三、用例并发真实执行校验 (Execution & Robustness)")
+    exec_stat = []
     try:
         with open(
             os.path.join(iteration_dir, "execution_results.json"), "r", encoding="utf-8"
@@ -202,12 +216,18 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
 
         pass_count = sum(1 for r in exec_results if _passed(r))
         fail_count = len(exec_results) - pass_count
+        exec_stat = [
+            {"label": "边界用例", "value": str(len(exec_results)), "icon_name": "list"},
+            {"label": "通过", "value": str(pass_count), "icon_name": "check", "tone": "ok"},
+            {
+                "label": "失败",
+                "value": str(fail_count),
+                "icon_name": "x",
+                "tone": "accent" if fail_count else "",
+            },
+        ]
 
-        report_lines.append(
-            f"📊 **执行统计**: 总计并发运行 **{len(exec_results)}** 个边界用例 | "
-            f"**通过 (pass)**: {pass_count} 个 | **失败 (fail)**: {fail_count} 个\n"
-        )
-
+        items = []
         for idx, res in enumerate(exec_results):
             # 安全地通过索引与原始 executions 用例结合，取到人类可读的 description 和入参
             case_desc = "未提供用例描述"
@@ -215,57 +235,60 @@ async def _async_run_mcp_evals(workplace_id: str, mcp_name: str) -> str:
             if idx < len(executions_cases):
                 case_desc = executions_cases[idx].get("description", case_desc)
                 case_args = json.dumps(
-                    executions_cases[idx].get("arguments", {}),
-                    ensure_ascii=False,
+                    executions_cases[idx].get("arguments", {}), ensure_ascii=False
                 )
 
             passed = _passed(res)
             state = res.get("status", "exception")
-            if passed:
-                report_lines.append(
-                    f"### 🟢 用例 {idx + 1}: [{res['tool']}] - {case_desc}"
-                )
-                report_lines.append(f"- **测试入参**: `{case_args}`")
-                if state == "exception":
-                    report_lines.append(
-                        "- **执行状态**: 期望报错，异常匹配 → `PASS` ✅"
-                    )
-                    report_lines.append("- **异常信息 (Exception Stack)**:")
-                    report_lines.append(
-                        f"  ```python\n  {res.get('error', '')}\n  ```\n"
-                    )
-                else:
-                    report_lines.append("- **执行状态**: `PASS` ✅（断言通过）")
-                    report_lines.append("- **返回值输出截断 (Stdout Snip)**:")
-                    report_lines.append(
-                        f"  ```text\n  {res.get('result', '')}\n  ```\n"
-                    )
+            if state == "exception":
+                evidence = H.code_block(res.get("error", ""))
             else:
-                report_lines.append(
-                    f"### 🔴 用例 {idx + 1}: [{res['tool']}] - {case_desc}"
-                )
-                report_lines.append(f"- **测试入参**: `{case_args}`")
-                report_lines.append(
-                    f"- **执行状态**: `FAIL` ❌（原因: {res.get('reason') or res.get('error') or state}）"
-                )
-                if state == "exception":
-                    report_lines.append("- **致命报错与堆栈信息 (Exception Stack)**:")
-                    report_lines.append(
-                        f"  ```python\n  {res.get('error', '')}\n  ```\n"
-                    )
-                else:
-                    report_lines.append("- **返回值输出截断 (Stdout Snip)**:")
-                    report_lines.append(
-                        f"  ```text\n  {res.get('result', '')}\n  ```\n"
-                    )
+                evidence = H.code_block(res.get("result", ""))
 
+            meta = [
+                ("工具", res.get("tool", "")),
+                ("入参", case_args),
+                ("状态", state),
+            ]
+            if not passed:
+                meta.append(
+                    ("原因", res.get("reason") or res.get("error") or state)
+                )
+
+            items.append(
+                {
+                    "title": f"用例 {idx + 1}：{case_desc}",
+                    "status": "pass" if passed else "fail",
+                    "meta": meta,
+                    "blocks": [evidence],
+                }
+            )
+        exec_body = H.cases(items)
     except Exception as e:
-        report_lines.append(f"⚠️ **解析 Execution 执行结果失败**: {e}")
+        exec_body = H.note(f"解析执行结果失败：{e}")
+    exec_head = H.stats(exec_stat, cols=3) if exec_stat else ""
+    blocks.append(
+        H.section("03", "用例并发真实执行校验（Execution & Robustness）", exec_head + exec_body)
+    )
 
-    final_report = "\n".join(report_lines)
-    with open(
-        os.path.join(iteration_dir, "test_report.md"), "w", encoding="utf-8"
-    ) as f:
-        f.write(final_report)
+    html = H.page(
+        title=f"{mcp_name} · MCP 测试合规报告",
+        subtitle="工具矩阵注册、语义激发路由与边界用例并发执行结果，均由宿主实跑采集，非 Agent 自报。",
+        meta=[
+            ("MCP Server", mcp_name),
+            ("迭代", f"Iteration {iteration_idx}"),
+            ("注册工具", str(len(schema_dump))),
+            ("生成时间", _now_iso()),
+        ],
+        blocks=blocks,
+        kicker="PURRCAT · MCP FACTORY",
+        footer_left="MCP Compliance Report",
+        footer_right=f"Iteration {iteration_idx:02d}",
+    )
+    with open(os.path.join(iteration_dir, "report.html"), "w", encoding="utf-8") as f:
+        f.write(html)
 
-    return final_report
+    return (
+        f"📊 MCP 测试完成：注册 {len(schema_dump)} 个工具，"
+        f"报告已生成（iteration-{iteration_idx}/report.html）。"
+    )

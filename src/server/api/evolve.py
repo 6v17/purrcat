@@ -15,6 +15,7 @@ from src.evolve import (
     skill_improve_init,
     skill_request_handle,
     run_skill_eval_background,
+    record_trace_meta,
     mcp_improve_init,
     mcp_upgrade_init,
     mcp_request_handle,
@@ -51,6 +52,9 @@ class InitReq(BaseModel):
     name: str
     is_upgrade: bool
     goal: str = ""  # 本次构建目标（写入 GOAL.md 并嵌入 GUIDE.md）
+    # trace2skill 入口：为 true 时把来源会话的 Token 快照写入沙盒 trace_meta.json
+    trace: bool = False
+    session_id: str = ""
 
 
 class FileUpdateReq(BaseModel):
@@ -220,6 +224,12 @@ def init_sandbox_api(req: InitReq):
 
         if not workplace_id:
             raise HTTPException(status_code=400, detail=msg)
+
+        # trace2skill：记录来源会话 Token 快照，供盲测报告图标化展示"省下多少 token"
+        # （快照失败不阻断建厂，报告侧会自然跳过 token 对比卡）
+        if req.trace and req.session_id and req.type == "skill":
+            record_trace_meta(workplace_id, req.session_id)
+
         return {"status": "success", "workplace_id": workplace_id, "message": msg}
     except HTTPException:
         raise
@@ -304,36 +314,18 @@ def list_iterations_api(workplace_id: str, type: str = "skill"):
 def get_eval_report_api(
     workplace_id: str, name: str, type: str = "skill", iteration: Optional[int] = None
 ):
+    """读取某轮评测的 HTML 报告（report.html）。报告即输出物，不再返回文件清单。"""
     w_path = os.path.join(get_root(type), workplace_id)
     if iteration is None:
         iters = list_iterations_api(workplace_id, type)
         iteration = max(iters) if iters else None
 
     if iteration is not None:
-        iter_dir = os.path.join(w_path, f"iteration-{iteration}")
-        report_md = ""
-        if type == "mcp":
-            report_path = os.path.join(iter_dir, "test_report.md")
-            if os.path.exists(report_path):
-                with open(report_path, "r", encoding="utf-8") as f:
-                    report_md = f.read()
-        elif type == "sensor":
-            report_path = os.path.join(iter_dir, "protocol_report.md")
-            if os.path.exists(report_path):
-                with open(report_path, "r", encoding="utf-8") as f:
-                    report_md = f.read()
-        else:
-            # 同一迭代目录内合并展示：Trigger 报告在前，盲测报告在后（缺失则跳过）
-            parts = []
-            for report_name in ("trigger_report.md", "eval_report.md"):
-                report_path = os.path.join(iter_dir, report_name)
-                if os.path.exists(report_path):
-                    with open(report_path, "r", encoding="utf-8") as f:
-                        parts.append(f.read())
-            report_md = "\n\n---\n\n".join(parts)
-        if report_md:
-            return {"report_md": report_md}
-    return {"report_md": ""}
+        report_path = os.path.join(w_path, f"iteration-{iteration}", "report.html")
+        if os.path.exists(report_path):
+            with open(report_path, "r", encoding="utf-8") as f:
+                return {"report_html": f.read()}
+    return {"report_html": ""}
 
 
 @router.get("/test/benchmark")
