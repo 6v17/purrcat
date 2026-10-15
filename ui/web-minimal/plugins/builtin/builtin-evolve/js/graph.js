@@ -7,14 +7,6 @@
   var EV = window.EV;
 
   var PORT_W = 11;
-  var KEY_INSP = 'purrcat.evolve.graph.inspCollapsed';
-
-  function readFlag(key) {
-    try { return localStorage.getItem(key) === '1'; } catch (e) { return false; }
-  }
-  function writeFlag(key, val) {
-    try { localStorage.setItem(key, val ? '1' : '0'); } catch (e) { /* 忽略隐私模式等写入失败 */ }
-  }
 
   var state = {
     catalog: [],
@@ -28,11 +20,10 @@
     graphName: '',
     description: '',
     dirty: false,
-    inspCollapsed: false,                   // 右侧节点配置面板是否收起
     drawers: { files: true, nodes: true }   // 左侧两个抽屉的展开状态
   };
 
-  var sideBodyEl, canvasEl, worldEl, svgEl, inspEl, toolbarEl, hintEl;
+  var sideBodyEl, canvasEl, worldEl, svgEl, toolbarEl, hintEl;
   var drag = null;      // {kind:'node'|'pan'|'link', ...}
   var linkPreview = null;
 
@@ -532,7 +523,6 @@
       inp.remove();
       nameEl.textContent = node.name;
       nameEl.style.display = '';
-      renderInspector();
       renderToolbar();
     }
     inp.onblur = function () { commit(true); };
@@ -560,6 +550,7 @@
   function inlineField(node, f) {
     var wrap = EV.el('div', 'g-cfgf');
     wrap.appendChild(EV.el('span', 'g-cfgl', f.label || f.name));
+    var expBtn = null;
     var ctrl;
 
     if (f.type === 'select') {
@@ -581,7 +572,6 @@
         if (ctrl.value === '') delete node.config[f.name];
         else node.config[f.name] = ctrl.value;
         state.dirty = true;
-        setCfgValue(inspEl, f.name, ctrl.value);
         refreshConfigDeps(node);
       };
     } else {
@@ -595,14 +585,50 @@
         node.config[f.name] = ctrl.value;
         state.dirty = true;
         autoGrow(ctrl);
-        setCfgValue(inspEl, f.name, ctrl.value);
         // 动态端口（如模板渲染器按 {{变量}} 生成输入端口）随输入实时重算
         debouncedConfigDeps(node);
       };
       ctrl.onchange = function () { refreshConfigDeps(node); };
+      // 长内容在卡片上不易读，悬浮出现放大按钮，改到大窗口编辑
+      expBtn = EV.el('button', 'g-cfgexp');
+      expBtn.type = 'button';
+      expBtn.innerHTML = EV.icon('expand', 13);
+      expBtn.title = '在放大窗口中编辑';
+      expBtn.onpointerdown = function (e) { e.stopPropagation(); };
+      expBtn.onclick = function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        openBigEditor(node, f, wrap);
+      };
     }
     wrap.appendChild(ctrl);
+    if (expBtn) wrap.appendChild(expBtn);
     return wrap;
+  }
+
+  // 放大编辑：大文本弹窗里改配置（卡片输入框只做速览）
+  function openBigEditor(node, f, scopeEl) {
+    var ta = EV.el('textarea', 'g-bigta mono');
+    ta.spellcheck = false;
+    var curv = node.config[f.name];
+    ta.value = curv === undefined || curv === null ? '' : (typeof curv === 'string' ? curv : JSON.stringify(curv, null, 2));
+    ta.oninput = function () {
+      node.config[f.name] = ta.value;
+      state.dirty = true;
+      setCfgValue(scopeEl, f.name, ta.value);   // 回填卡片上的同名控件（未在编辑时）
+      // 弹窗内持续输入时不整画布重绘，避免丢失焦点
+      debouncedConfigDeps(node);
+    };
+    EV.modal({
+      title: (f.label || f.name) + ' · ' + node.name,
+      node: ta,
+      width: '720px',
+      onClose: function () {
+        var c = scopeEl.querySelector('[data-cfg="' + cssEsc(f.name) + '"]');
+        if (c && c.tagName === 'TEXTAREA') autoGrow(c);
+        refreshConfigDeps(node);
+      }
+    });
   }
 
   function autoGrow(ta) {
@@ -610,7 +636,7 @@
     ta.style.height = Math.max(26, ta.scrollHeight) + 'px';
   }
 
-  // 把值同步到另一个编辑面（卡片 ↔ 右侧面板），不打断正在输入的控件
+  // 把值同步到另一个编辑面（卡片 ↔ 放大弹窗），不打断正在输入的控件
   function setCfgValue(scopeEl, name, value) {
     if (!scopeEl) return;
     var c = scopeEl.querySelector('[data-cfg="' + cssEsc(name) + '"]');
@@ -669,7 +695,6 @@
     Array.prototype.slice.call(svgEl.querySelectorAll('.g-edge-group')).forEach(function (g) {
       g.querySelector('.g-edge').classList.toggle('on', g.dataset.id === state.selectedEdgeId);
     });
-    renderInspector();
   }
 
   /* ---------------- 连线绘制 ---------------- */
@@ -871,189 +896,7 @@
     });
   }
 
-  /* ---------------- 检查器（节点配置） ---------------- */
-  function renderInspector() {
-    inspEl.innerHTML = '';
-    inspEl.classList.toggle('ev-collapsed', state.inspCollapsed);
-    var node = state.selectedId ? nodeById(state.selectedId) : null;
-    var def = node ? defOf(node.type) : null;
-
-    var head = EV.el('div', 'side-head');
-    head.appendChild(EV.el('span', 'nm', node ? node.name : '节点配置'));
-    head.appendChild(EV.el('span', 'spacer'));
-    if (node) {
-      var del = EV.el('button', 'ibtn danger');
-      del.innerHTML = EV.icon('trash', 13);
-      del.title = '删除节点';
-      del.onclick = function () {
-        state.nodes = state.nodes.filter(function (n) { return n.id !== node.id; });
-        state.edges = state.edges.filter(function (e) { return e.source !== node.id && e.target !== node.id; });
-        state.selectedId = null;
-        state.dirty = true;
-        renderAll();
-      };
-      head.appendChild(del);
-    }
-    // 配置面板已并入左栏下半区；仍支持收起（编辑已可直接在节点卡片上完成），收起状态持久化
-    var toggleBtn = EV.attachSideToggle(inspEl, head, '配置面板', function (collapsed) {
-      state.inspCollapsed = collapsed;
-      writeFlag(KEY_INSP, collapsed);
-    });
-    if (state.inspCollapsed) toggleBtn.title = '展开配置面板';
-    inspEl.appendChild(head);
-
-    var body = EV.el('div', 'side-body');
-    if (!node) {
-      body.appendChild(EV.el('div', 'hint', '选中画布上的节点后，在此编辑其配置。\n\n也可以直接在节点卡片上编辑；滚轮缩放 · 拖拽空白平移 · 拖动右侧端口连线 · 点击连线中点 ✕ 删除连线。'));
-      inspEl.appendChild(body);
-      return;
-    }
-    body.appendChild(EV.el('div', 'item-sub', node.type));
-    if (def && def.description) body.appendChild(EV.el('div', 'desc', def.description));
-
-    var schema = (def && def.config) || [];
-    if (!schema.length) {
-      body.appendChild(EV.el('div', 'hint', '该节点没有可配置项。'));
-    }
-    schema.forEach(function (f) {
-      body.appendChild(renderConfigField(node, f));
-    });
-    inspEl.appendChild(body);
-  }
-
-  function renderConfigField(node, f) {
-    var wrap = EV.el('div', 'field');
-    wrap.appendChild(EV.el('label', null, f.label || f.name));
-
-    if (f.type === 'list') {
-      var listWrap = EV.el('div');
-      var items = Array.isArray(node.config[f.name]) ? node.config[f.name] : [];
-      var itemSchema = f.item_schema || [];
-
-      function commit() {
-        node.config[f.name] = items;
-        state.dirty = true;
-        refreshSummary(node);
-      }
-
-      items.forEach(function (item, idx) {
-        var card = EV.el('div', 'card');
-        card.style.padding = '8px 10px';
-        var ch = EV.el('div', 'card-head');
-        ch.style.marginBottom = '4px';
-        ch.appendChild(EV.el('span', 'card-title', '#' + (idx + 1)));
-        var fl = EV.el('span');
-        fl.style.flex = '1';
-        ch.appendChild(fl);
-        var rm = EV.el('button', 'ibtn danger');
-        rm.innerHTML = EV.icon('trash', 13);
-        rm.onclick = function () { items.splice(idx, 1); commit(); renderInspector(); };
-        ch.appendChild(rm);
-        card.appendChild(ch);
-
-        if (itemSchema.length) {
-          itemSchema.forEach(function (sub) {
-            var row = EV.el('div', 'row');
-            row.style.marginBottom = '5px';
-            var lb = EV.el('span');
-            lb.style.fontSize = '11px';
-            lb.style.color = 'var(--dim)';
-            lb.style.flex = '0 0 38%';
-            lb.textContent = sub.label || sub.name;
-            var inp = EV.el('input', 'input');
-            inp.style.flex = '1';
-            var cur = item && typeof item === 'object' ? item[sub.name] : '';
-            inp.value = cur === undefined || cur === null ? '' : String(cur);
-            inp.placeholder = sub.label || sub.name;
-            inp.onchange = function () {
-              if (!item || typeof item !== 'object') item = items[idx] = {};
-              var v = inp.value;
-              if (sub.type === 'number') v = v === '' ? '' : Number(v);
-              if (v === '') delete item[sub.name]; else item[sub.name] = v;
-              commit();
-            };
-            row.appendChild(lb);
-            row.appendChild(inp);
-            card.appendChild(row);
-          });
-        } else {
-          var ta = EV.el('textarea', 'textarea mono');
-          ta.rows = 3;
-          ta.value = typeof item === 'string' ? item : JSON.stringify(item, null, 2);
-          ta.onchange = function () {
-            var raw = ta.value;
-            try {
-              var parsed = JSON.parse(raw);
-              items[idx] = parsed;
-            } catch (e) { items[idx] = raw; }
-            commit();
-          };
-          card.appendChild(ta);
-        }
-        listWrap.appendChild(card);
-      });
-
-      var add = EV.el('button', 'btn sm');
-      add.innerHTML = EV.icon('plus', 13);
-      add.appendChild(EV.el('span', null, '添加'));
-      // 走与卡片「+」相同的表单弹层：先填变量名再入列，避免产生无名的空端口项
-      add.onclick = function () { addListItem(node, f); };
-      listWrap.appendChild(add);
-      wrap.appendChild(listWrap);
-      if (f.description) wrap.appendChild(EV.el('div', 'desc', f.description));
-      return wrap;
-    }
-
-    if (f.type === 'select') {
-      var sel = EV.el('select', 'select');
-      sel.dataset.cfg = f.name;
-      var empty = EV.el('option', null, '（未设置）');
-      empty.value = '';
-      sel.appendChild(empty);
-      (f.options || []).forEach(function (o) {
-        var val = (o && typeof o === 'object') ? (o.value !== undefined ? o.value : o) : o;
-        var lab = (o && typeof o === 'object' && o.label) ? o.label : val;
-        var op = EV.el('option', null, String(lab));
-        op.value = String(val);
-        sel.appendChild(op);
-      });
-      var cv = node.config[f.name];
-      sel.value = cv === undefined || cv === null ? '' : String(cv);
-      sel.onchange = function () {
-        if (sel.value === '') delete node.config[f.name];
-        else node.config[f.name] = sel.value;
-        state.dirty = true;
-        refreshSummary(node);
-      };
-      wrap.appendChild(sel);
-      if (f.description) wrap.appendChild(EV.el('div', 'desc', f.description));
-      return wrap;
-    }
-
-    var ta2 = EV.el('textarea', 'textarea mono');
-    ta2.rows = 4;
-    ta2.dataset.cfg = f.name;
-    var curv = node.config[f.name];
-    ta2.value = curv === undefined || curv === null ? '' : (typeof curv === 'string' ? curv : JSON.stringify(curv, null, 2));
-    ta2.onchange = function () {
-      node.config[f.name] = ta2.value;
-      state.dirty = true;
-      refreshSummary(node);
-      drawEdges();
-    };
-    // 实时联动：边输入边重算动态端口（如模板渲染器按 {{变量名}} 生成输入端口）。
-    // refreshSummary 内部只重绘端口 DOM、不重建检查器，故输入焦点不会丢失。
-    ta2.oninput = EV.debounce(function () {
-      node.config[f.name] = ta2.value;
-      state.dirty = true;
-      refreshSummary(node);
-    }, 300);
-    wrap.appendChild(ta2);
-    if (f.description) wrap.appendChild(EV.el('div', 'desc', f.description));
-    return wrap;
-  }
-
-  // 右侧面板改动配置后：同步卡片上的同名控件（未在编辑时），再重绘端口/下游
+  // 配置数据变化后：把 node.config 回填到卡片控件（未在编辑时），再重绘端口/下游
   function refreshSummary(node) {
     var el = worldEl.querySelector('.g-node[data-id="' + cssEsc(node.id) + '"]');
     ((defOf(node.type) || {}).config || []).forEach(function (f) {
@@ -1198,7 +1041,6 @@
             if (exists) { EV.toast('已存在同名端口：' + portName, true); return; }
             node.config[field.name].push(item);
             state.dirty = true;
-            renderInspector();
             refreshSummary(node);
             h.close();
           }
@@ -1457,14 +1299,21 @@
       + '.g-node-h{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid rgba(15,17,21,.08);'
       + 'font-size:12px;font-weight:600;cursor:grab;overflow:hidden}'
       + '.g-node-dot{width:9px;height:9px;border-radius:3px;flex:none}'
-      // 卡片内联配置区（直接编辑，无需右侧面板）
+      // 卡片内联配置区（直接编辑；长内容用右侧放大按钮进大窗口改）
       + '.g-cfg{display:flex;flex-direction:column;gap:6px;padding:7px 10px 3px}'
-      + '.g-cfgf{display:flex;flex-direction:column;gap:3px}'
+      + '.g-cfgf{display:flex;flex-direction:column;gap:3px;position:relative}'
       + '.g-cfgl{font-size:9.5px;font-weight:700;letter-spacing:.05em;color:#8b96a3;text-transform:uppercase}'
       + '.g-cfgin{width:100%;font-family:inherit;font-size:11.5px;color:#16191d;background:#f7f8fa;'
       + 'border:1px solid rgba(15,17,21,.10);border-radius:6px;padding:5px 7px;outline:none;resize:none;line-height:1.55}'
       + '.g-cfgin:focus{border-color:#16191d;background:#fff}'
       + '.g-cfgin.mono{font-family:ui-monospace,Consolas,monospace;font-size:11px;white-space:pre-wrap;word-break:break-word;overflow:hidden}'
+      + '.g-cfgexp{display:none;position:absolute;top:0;right:0;width:18px;height:16px;align-items:center;'
+      + 'justify-content:center;border:none;border-radius:5px;background:#eef1f4;color:#5c6672;cursor:pointer}'
+      + '.g-cfgf:hover .g-cfgexp{display:inline-flex}'
+      + '.g-cfgexp:hover{background:#16191d;color:#fff}'
+      // 放大编辑弹窗的大文本框
+      + '.g-bigta{width:100%;height:60vh;box-sizing:border-box;font-size:12px;line-height:1.7;padding:10px 12px;'
+      + 'border:1px solid rgba(15,17,21,.14);border-radius:8px;background:#fff;color:#16191d;resize:vertical}'
       + '.g-cfg textarea,.g-cfg select,.g-node-rename{user-select:text}'
       + '.g-node-rename{flex:1;min-width:0;font:inherit;font-size:12px;font-weight:600;color:#16191d;'
       + 'background:#f7f8fa;border:1px solid rgba(15,17,21,.16);border-radius:6px;padding:2px 6px;outline:none}'
@@ -1485,15 +1334,7 @@
       + '.g-lblock.r .g-port{justify-content:flex-end}'
       + '.g-lrow .nm{font-style:italic}'
       + '.g-ladd{align-self:flex-start;margin-left:6px}'
-      + '.g-lblock.r .g-ladd{align-self:flex-end;margin-left:0;margin-right:6px}'
-      // 配置面板并入左栏：左栏加宽以容纳字段，面板作为下半区可收起
-      + '.side.g-side{width:300px}'
-      + '.g-insp{flex:none;max-height:52%;border-top:1px solid rgba(15,17,21,.08);display:flex;flex-direction:column;min-height:0}'
-      + '.g-insp.ev-collapsed > .side-head{padding:8px 0 6px;justify-content:center}'
-      + '.g-insp.ev-collapsed > .side-head > *:not(.side-toggle){display:none}'
-      + '.g-insp.ev-collapsed > .side-body{display:none}'
-      // 左栏整体收起时配置面板一并隐藏
-      + '.side.g-side.ev-collapsed .g-insp{display:none}';
+      + '.g-lblock.r .g-ladd{align-self:flex-end;margin-left:0;margin-right:6px}';
     var st = EV.el('style');
     st.textContent = css;
     document.head.appendChild(st);
@@ -1502,9 +1343,8 @@
   EV.defineTab('graph', 'Graph', {
     mount: function (root) {
       injectStyle();
-      state.inspCollapsed = readFlag(KEY_INSP);   // 恢复上次的配置面板收起状态
 
-      var side = EV.el('div', 'side g-side');
+      var side = EV.el('div', 'side');
       var sideHead = EV.el('div', 'side-head');
       sideHead.appendChild(EV.el('span', null, '图谱'));
       sideHead.appendChild(EV.el('span', 'spacer'));
@@ -1512,10 +1352,6 @@
       side.appendChild(sideHead);
       sideBodyEl = EV.el('div', 'side-body');
       side.appendChild(sideBodyEl);
-
-      // 节点配置并入左栏下半区，不再单独占一列
-      inspEl = EV.el('div', 'g-insp');
-      side.appendChild(inspEl);
       root.appendChild(side);
 
       var main = EV.el('div', 'main');
@@ -1536,7 +1372,6 @@
 
       bindCanvas();
       renderToolbar();
-      renderInspector();
       applyView();
       renderSide();
 
