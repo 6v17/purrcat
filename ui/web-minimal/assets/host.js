@@ -264,6 +264,10 @@
     snm.className = 'rail-name';
     snm.textContent = '设置';
     sb.appendChild(snm);
+    // 与区域/插件图标一致：未打开设置时按「关闭」态变淡，打开时高亮
+    const sbOpen = HOST.document.body.classList.contains('settings-open');
+    sb.classList.toggle('on', sbOpen);
+    sb.classList.toggle('off', !sbOpen);
     sb.addEventListener('click', () => setSettingsOpen(!HOST.document.body.classList.contains('settings-open')));
     iconsEl.appendChild(sb);
     railButtons['__settings__'] = sb;
@@ -471,7 +475,10 @@
     HOST.document.body.classList.toggle('settings-open', !!open);
     // 设置按钮高亮跟随面板开合
     const sb = HOST.document.getElementById('railSettings');
-    if (sb) sb.classList.toggle('on', !!open);
+    if (sb) {
+      sb.classList.toggle('on', !!open);
+      sb.classList.toggle('off', !open);
+    }
     if (!open) closeSettingsMenus();   // 菜单挂在 body 上，面板关掉后不能留在界面上
     if (open) renderSettings();
     syncNativeCover();
