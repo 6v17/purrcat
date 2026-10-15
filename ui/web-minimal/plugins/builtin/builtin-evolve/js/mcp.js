@@ -16,10 +16,12 @@
     activeIteration: null,
     reportHtml: '',
     diffContent: '',
-    diffLoading: false
+    diffLoading: false,
+    running: false
   };
 
   var sideBodyEl, subtabsEl, toolbarEl, bodyEl;
+  var pollTimer = null;
 
   /* ---------------- 数据 ---------------- */
   async function loadWorkplaces() {
@@ -85,17 +87,57 @@
     renderBody();
   }
 
-  async function runTest() {
-    if (!state.activeWp) return;
-    try {
-      await EV.api.post('/api/evolve/test/run', {
-        type: 'mcp', workplace_id: state.activeWp.workplace_id, name: state.activeWp.name
-      });
-      EV.toast('已在宿主机触发语义竞争与执行测试，稍后刷新查看报告');
-      setTimeout(loadIterations, 1500);
-    } catch (e) {
+  function runTest() {
+    if (!state.activeWp || state.running) return;
+    var before = state.iterations.length;
+    state.running = true;
+    renderToolbar();
+    EV.api.post('/api/evolve/test/run', {
+      type: 'mcp', workplace_id: state.activeWp.workplace_id, name: state.activeWp.name
+    }).then(function () {
+      EV.toast('已在宿主机触发语义竞争与执行测试，完成后自动跳转到对应迭代');
+      pollNewIteration(before);
+    }).catch(function (e) {
+      state.running = false;
+      renderToolbar();
       EV.toast('触发测试失败：' + e.message, true);
-    }
+    });
+  }
+
+  function stopPoll() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  // 测试耗时较长（真实并发执行用例），故轮询等待新迭代目录出现并自动切过去
+  function pollNewIteration(before) {
+    stopPoll();
+    var wp = state.activeWp;
+    if (!wp) { state.running = false; renderToolbar(); return; }
+    var tries = 0;
+    pollTimer = setInterval(function () {
+      if (!state.activeWp || state.activeWp.workplace_id !== wp.workplace_id) {
+        stopPoll(); state.running = false; renderToolbar(); return;
+      }
+      tries += 1;
+      EV.api.get('/api/evolve/test/iterations' + EV.qs({
+        workplace_id: wp.workplace_id, type: 'mcp'
+      })).then(function (iters) {
+        iters = iters || [];
+        if (iters.length > before) {
+          stopPoll();
+          state.running = false;
+          EV.toast('测试完成，已载入 Iteration ' + iters[iters.length - 1]);
+          loadIterations();
+        } else if (tries >= 60) {
+          stopPoll();
+          state.running = false;
+          EV.toast('测试仍在后台运行，可稍后点刷新查看', true);
+          loadIterations();
+        }
+      }).catch(function () {
+        if (tries >= 60) { stopPoll(); state.running = false; renderToolbar(); }
+      });
+    }, 5000);
   }
 
   async function loadDiff() {
@@ -190,6 +232,7 @@
         state.tools = null; state.toolsError = '';
         state.iterations = []; state.activeIteration = null; state.reportHtml = '';
         state.diffContent = '';
+        state.running = false;
         renderSide();
         renderMain();
         loadTools();
@@ -236,14 +279,15 @@
     } else if (state.step === 'report') {
       var runBtn = EV.el('button', 'btn primary');
       runBtn.innerHTML = EV.icon('play', 14);
-      runBtn.appendChild(EV.el('span', null, '运行测试'));
-      runBtn.disabled = !state.activeWp;
+      runBtn.appendChild(EV.el('span', null, state.running ? '测试进行中…' : '运行测试'));
+      runBtn.disabled = !state.activeWp || state.running;
       runBtn.onclick = runTest;
       toolbarEl.appendChild(runBtn);
       var refresh = EV.el('button', 'ibtn');
       refresh.innerHTML = EV.icon('refresh', 14);
       refresh.title = '刷新存档列表';
       refresh.disabled = !state.activeWp;
+      refresh.classList.toggle('spin', state.running);
       refresh.onclick = loadIterations;
       toolbarEl.appendChild(refresh);
     } else {
