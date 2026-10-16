@@ -4,6 +4,72 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0]
+
+First stable release. This version reworks the front-end delivery model and the workflow engine, and slims down the tool set.
+
+**English**
+
+### Added
+
+- **UI plugin system (`ui-plugin`)**: a new plugin type that lets developers fully customize the style and behavior of front-end panel views. Ships with a hot-swappable subprocess plugin runtime, a dedicated plugin market with automatic dependency install, plugin root/dependency/origin metadata, and the `create_ui_plugin` KernelUpgrade capability with an authoring guide.
+- **Minimal UI with built-in plugins**: the app now runs on minimal UI mode and bundles the essential built-in plugins — session/history, sessions & pending approvals, task, memory graph, built-in browser, market, evolve factory, and background.
+- **Developer documentation**: a modular server API reference (`docs/api/*`) and plugin development guides (`docs/plugins`: graph / agentloop / sensor / ui-plugin), with CI validating that the docs stay in sync with the server routes.
+
+### Changed
+
+- **Front-end rewritten to minimal UI mode**: the entire original hand-drawn React front-end has been removed. The former UI is published to the official plugin repository as a hand-drawn-style UI plugin, so users who prefer it can install it back. Minimal UI adds a multi-tab panel container with slot/area layout, drag-to-resize width, per-plugin opacity/width, a built-in browser that takes over clicked web links, and panel plugins replicating the former pages (task, memory, market, evolve, sessions).
+- **Workflow engine (harness) rewritten**: nodes now exchange self-describing JSON envelopes (`type`/`data`/`mime`/`meta`) with `purrcat://` URIs for file payloads and engine-side type validation; graphs are stored as folders (`graph.json` + `asset/`) with automatic migration on startup. The agent loop node is now driven by the agentloop paradigm plugin and shares the main agent's memory system (memo cache sync). Nodes added: `command`, `file_reader`, `file_writer`, `string`, and a multi-format preview node. Glue nodes removed: `image_generator`, `text_file_reader`, `html_viewer`, `json_builder`, `if_else_router`, `switch_router`, `python_runner`.
+- **Evolution factory evaluation overhauled**: sensor protocol self-check (L0/L1), eval assertions and verdict scoring in the MCP factory, refreshed skill/sensor evaluators, and factory reports rendered as self-contained Swiss-style HTML with an iteration archive list.
+- **Tool set simplified**: removed the ComputerUse tool and its exclusive dependencies, and removed the install request types from the Request tool.
+- **Marketplace**: added the ui-plugin market, agentloop market endpoints and tab, installing skills from a GitHub link, deleting installed plugins, and a reinstall action.
+- **Infrastructure**: cross-layer API port coordination between the app layers; host-native settings; per-session token usage (including subagents) persisted and surfaced in the minimal UI ring.
+
+### Fixed
+
+- Token ring showing 0 on load — per-session usage is now read from persisted session metadata and restored on init/session switch.
+- Config editor failing in minimal mode; sidebar highlight error.
+- Subagent branch cancel/delete now match the internal id, wait for teardown, and key active tasks by unique id; `fix the file change accept error when the file is moved`.
+- Sensor SRE mismatch caused by a leaked venv environment; MCP subprocess venv env is now stripped before merge.
+- Node reset acting on a stale task due to a selection-closure race.
+- Background-agent config read error.
+- Plugin origin detection on cross-drive roots; stale plugin JS cache and panels overflowing past the viewport.
+- Boot-session race, context-ring visibility and link color in minimal UI.
+- Stale eval run directory cleaned before copy; bogus token-savings card skipped.
+- Skill upgrade target guarded and empty rollback commit tolerated.
+
+---
+
+**中文**
+
+### 新增
+
+- **UI 插件体系（`ui-plugin`）**：新增插件类型，开发者可自由定制前端面板的样式与功能。配套热插拔子进程插件运行时、带依赖自动安装的独立插件市场、插件根目录/依赖/来源元数据，以及 `create_ui_plugin` 的 KernelUpgrade 能力与编写指南。
+- **极简 UI 与内置插件**：应用现以极简 UI 模式运行，并内置一批必要插件——会话/历史、会话与待审批、任务、记忆图谱、内置浏览器、市场、进化工厂、背景。
+- **开发者文档**：模块化的服务端 API 参考（`docs/api/*`）与插件开发指南（`docs/plugins`：graph / agentloop / sensor / ui-plugin），并加入 CI 校验文档与服务端路由一致。
+
+### 变更
+
+- **前端改为极简 UI 模式**：删除了全部原有的手绘风格 React 前端。原前端以手绘风格 UI 插件的形式发布到官方插件仓库，偏好原风格的用户可重新安装。极简 UI 新增多标签页面板容器（slot/area 布局、拖拽调宽、每插件透明度/宽度）、接管网页链接的内置浏览器，以及复刻原页面的面板插件（任务、记忆、市场、进化、会话）。
+- **工作流引擎（harness）重写**：节点改为交换自描述的 JSON 信封（`type`/`data`/`mime`/`meta`），文件载荷使用 `purrcat://` URI 并在引擎侧做类型校验；图改为文件夹形式存储（`graph.json` + `asset/`），启动时自动迁移。智能体循环节点改由 agentloop 范式插件驱动，并与主 agent 共享记忆系统（memo 缓存同步）。新增节点：`command`、`file_reader`、`file_writer`、`string` 及多格式预览节点。移除胶水节点：`image_generator`、`text_file_reader`、`html_viewer`、`json_builder`、`if_else_router`、`switch_router`、`python_runner`。
+- **进化工厂评测体系优化**：新增 sensor 协议自检（L0/L1），MCP 工厂加入评测断言与判定评分，刷新 skill/sensor 评测器，工厂报告改为自包含的瑞士风格 HTML 并带迭代归档列表。
+- **工具简化**：删除 ComputerUse 工具及其专属依赖，删除 Request 工具的 install 请求类型。
+- **市场**：新增 ui-plugin 市场、agentloop 市场端点与标签页、从 GitHub 链接安装技能、卸载已装插件与"重装"操作。
+- **基础设施**：应用各层之间统一 API 端口协调；宿主原生设置；按会话持久化 token 用量（含子代理）并在极简 UI 圆环展示。
+
+### 修复
+
+- 加载时 token 圆环显示为 0——改为从持久化的会话元数据读取按会话用量，并在初始化/切换会话时恢复。
+- 极简模式下配置编辑器失效；侧边栏高亮报错。
+- 子代理分支取消/删除改为按内部 id 匹配、等待清理完成、按唯一 id 记录活动任务；修复文件移动后接受改动的报错。
+- venv 环境泄露导致的 sensor SRE 不匹配；MCP 子进程合并前会剥离泄露的 venv 环境。
+- 节点重置因选择闭包竞态而作用于过期任务。
+- 后台 agent 配置读取报错。
+- 跨盘符根目录下的插件来源识别；插件 JS 缓存过期与面板溢出视口。
+- 极简 UI 启动会话竞态、上下文圆环可见性与链接颜色。
+- 复制前清理过期的评测运行目录；跳过错误的 token 节省卡片。
+- 技能升级目标加保护，并容忍空的回滚提交。
+
 ## [1.0.0-beta.4]
 
 Distribution model change: the one-line source installer replaces pre-built desktop installers.

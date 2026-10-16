@@ -35,6 +35,193 @@ def _now_iso() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+# 评分载荷自身的字段：命中任一即认为已是裁判结果本体，不再剥壳
+_EVAL_KEYS = {"assertion_results", "summary", "pass", "reason", "grading_data"}
+
+
+def _unwrap_envelope(value):
+    """剥掉 {type,data} 端口信封（最多三层），取出真正的载荷"""
+    for _ in range(3):
+        if not isinstance(value, dict) or "data" not in value:
+            break
+        if _EVAL_KEYS & set(value.keys()):
+            break
+        value = value["data"]
+    return value
+
+
+def _json_objects_in(text: str):
+    """扫描文本中所有平衡的 {...} 片段（跳过字符串内部的括号）"""
+    for start, ch in enumerate(text):
+        if ch != "{":
+            continue
+        depth, in_str, escape = 0, False, False
+        for i in range(start, len(text)):
+            c = text[i]
+            if in_str:
+                if escape:
+                    escape = False
+                elif c == "\\":
+                    escape = True
+                elif c == '"':
+                    in_str = False
+                continue
+            if c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    yield text[start : i + 1]
+                    break
+
+
+def _try_load_dict(text: str) -> dict:
+    """尽力把文本解析成 dict：标准 → 宽松 → json_repair → 再剥一层字符串化 JSON"""
+    candidates = [text]
+    try:
+        from json_repair import repair_json
+
+        repaired = repair_json(text, return_objects=True)
+        if isinstance(repaired, str) and repaired.strip() and repaired != text:
+            candidates.append(repaired)
+    except Exception:
+        pass
+
+    for cand in candidates:
+        for loader in (json.loads, lambda s: json.loads(s, strict=False)):
+            try:
+                parsed = loader(cand)
+            except Exception:
+                continue
+            # 双重编码：把整个 JSON 当字符串输出过一层
+            if isinstance(parsed, str):
+                try:
+                    parsed = json.loads(parsed)
+                except Exception:
+                    continue
+            if isinstance(parsed, dict):
+                return parsed
+    return {}
+
+
+def _grade_eval_payload(outputs: dict) -> tuple:
+    """把裁判产出的 eval_result 解析成 (is_pass, reason, grading_data)。
+
+    解析不出来时必须给出带原文片段的理由，禁止静默判负。
+    """
+    eval_res, raw_output = _extract_eval_json(outputs.get("eval_result"))
+
+    if eval_res is None:
+        return (
+            False,
+            "裁判未产出可解析的结构化结果（输出既不是 JSON，"
+            f"也抠不出断言数组）：{raw_output[:300]}",
+            {"raw_output": raw_output[:4000]},
+        )
+
+    gd = eval_res.get("grading_data")
+    gd = gd if isinstance(gd, dict) else {}
+
+    assertion_results = eval_res.get("assertion_results")
+    if not (isinstance(assertion_results, list) and assertion_results):
+        assertion_results = gd.get("assertion_results")
+    assertion_results = assertion_results if isinstance(assertion_results, list) else []
+
+    stats = eval_res.get("summary")
+    if not isinstance(stats, dict) or not stats:
+        stats = gd.get("summary")
+    stats = stats if isinstance(stats, dict) else {}
+
+    if assertion_results:
+        # 断言级结果最可信：通过数直接按 passed 字段现算，不采信自报统计
+        passed = sum(
+            1
+            for r in assertion_results
+            if isinstance(r, dict) and r.get("passed") is True
+        )
+        total = len(assertion_results)
+        if not stats.get("total"):
+            stats = {
+                "passed": passed,
+                "failed": total - passed,
+                "total": total,
+                "pass_rate": round(passed / total, 2),
+            }
+        reason_lines = [f"裁判判定 {passed}/{total} 条断言通过"]
+        if isinstance(stats.get("pass_rate"), (int, float)):
+            reason_lines.append(f"（通过率 {stats['pass_rate'] * 100:.0f}%）")
+        failed_items = [
+            r for r in assertion_results if isinstance(r, dict) and not r.get("passed")
+        ]
+        if failed_items:
+            reason_lines.append("未通过的断言：")
+            reason_lines.extend(
+                f"- {r.get('text', '')}：{r.get('evidence', '无证据')}"
+                for r in failed_items
+            )
+        return (
+            passed == total,
+            "\n".join(reason_lines),
+            {"assertion_results": assertion_results, "summary": stats},
+        )
+
+    if eval_res.get("reason"):
+        # Python 计算节点风格：{pass, reason, grading_data}
+        return bool(eval_res.get("pass")), eval_res.get("reason"), gd
+
+    if stats.get("total"):
+        passed = int(stats.get("passed") or 0)
+        total = int(stats["total"])
+        return passed == total, f"裁判判定 {passed}/{total} 条断言通过", {"summary": stats}
+
+    return (
+        False,
+        f"裁判返回的 JSON 缺少断言数组与统计字段：{raw_output[:300]}",
+        {"raw_output": raw_output[:4000]},
+    )
+
+
+def _extract_eval_json(raw) -> tuple:
+    """把裁判产出解析成 (dict | None, 原始文本)。
+
+    None 表示完全不可解析，调用方必须把原始文本写进失败理由，禁止静默判负。
+    兼容：端口信封、JSON 字符串、```json 代码围栏、散文里夹带的 JSON 片段。
+    """
+    value = _unwrap_envelope(raw)
+    if isinstance(value, dict):
+        return value, ""
+    raw_text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    text = raw_text.strip()
+    if not text:
+        return None, raw_text
+
+    # 1) 整体就是 JSON
+    parsed = _try_load_dict(text)
+    if parsed:
+        return parsed, raw_text
+
+    # 2) ```json 代码围栏
+    for block in re.findall(r"```(?:json)?\s*([\s\S]*?)```", text, re.IGNORECASE):
+        parsed = _try_load_dict(block.strip())
+        if parsed:
+            return parsed, raw_text
+
+    # 3) 散文里夹带的 JSON 片段：命中断言/统计字段者优先，同级取最后一个
+    best = {}
+    for chunk in _json_objects_in(text):
+        parsed = _try_load_dict(chunk)
+        if not parsed:
+            continue
+        if "assertion_results" in parsed or "summary" in parsed or "pass" in parsed:
+            best = parsed
+    if best:
+        return best, raw_text
+
+    return None, raw_text
+
+
 def run_skill_eval_background(
     workplace_id: str,
     skill_name: str,
@@ -577,51 +764,10 @@ async def _run_single_eval_case(
 
         is_pass = False
         reason = "未知错误"
+        grading_data = {}
 
         if res.get("status") == "success":
-            outputs = res.get("outputs", {})
-            eval_res = outputs.get("eval_result", {})
-            # 解包信封：{"type": ..., "data": ...}；data 可能是裸 dict 或 JSON 字符串
-            if isinstance(eval_res, dict) and "data" in eval_res:
-                eval_res = eval_res.get("data")
-            if isinstance(eval_res, str):
-                try:
-                    eval_res = json.loads(eval_res)
-                except Exception:
-                    eval_res = {}
-
-            is_pass = eval_res.get("pass", False)
-            reason = eval_res.get("reason", "未提供理由")
-            grading_data = eval_res.get("grading_data", {})
-
-            # 兼容 skill_eval 图 v2.0：裁判经 task_done 输出
-            # {"assertion_results": [...], "summary": {"passed","failed","total","pass_rate"}}
-            # （或外层再包一层 {"status":..., "summary": {...}}）
-            summary = eval_res.get("summary")
-            assertion_results = eval_res.get("assertion_results", [])
-            if isinstance(summary, dict):
-                inner = summary.get("summary", summary)
-                if summary.get("assertion_results"):
-                    assertion_results = summary["assertion_results"]
-                passed, total = inner.get("passed"), inner.get("total")
-                if passed is not None and total:
-                    is_pass = passed == total
-                    grading_data = {
-                        "assertion_results": assertion_results,
-                        "summary": inner,
-                    }
-                    pass_rate = inner.get("pass_rate")
-                    reason_lines = [f"裁判判定 {passed}/{total} 条断言通过"]
-                    if isinstance(pass_rate, (int, float)):
-                        reason_lines.append(f"（通过率 {pass_rate * 100:.0f}%）")
-                    failed_items = [a for a in assertion_results if not a.get("passed")]
-                    if failed_items:
-                        reason_lines.append("未通过的断言：")
-                        reason_lines.extend(
-                            f"- {a.get('text', '')}：{a.get('evidence', '无证据')}"
-                            for a in failed_items
-                        )
-                    reason = "\n".join(reason_lines)
+            is_pass, reason, grading_data = _grade_eval_payload(res.get("outputs", {}))
 
             with open(
                 os.path.join(eval_run_dir, "grading.json"), "w", encoding="utf-8"
