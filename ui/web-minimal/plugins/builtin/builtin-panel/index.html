@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>内置容器</title>
+<style>
+  /* ============================================================
+     面板容器外壳（内置容器插件的自有结构与样式）
+     —— 这些规则不依赖宿主，可独立生效；宿主（web-minimal）启动时会把本段样式
+        注入宿主文档，并按下面 <body> 里的结构渲染容器（类名是宿主与本插件的约定）。
+     容器在屏幕上的「位置 / 宽度」由宿主 theme.css 负责，外观与内部结构全在本文件。
+     ============================================================ */
+  /* 容器本体外观：背景/圆角（透明底由宿主按容器设置注入 --wm-panel-bg） */
+  .wm-ppanel {
+    background: var(--wm-panel-bg, var(--wm-bl-100));
+    border: 1px solid var(--wm-border);
+    border-radius: 18px;
+    overflow: hidden;
+    display: none;
+    flex-direction: column;
+  }
+  .wm-ppanel.wm-mount { display: flex; }
+  /* 顶部标签条：左侧多标签、右侧 + 与 ✕ */
+  .wm-pp_head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    height: 38px;
+    background: var(--wm-panel-bg, var(--wm-bl-150));   /* 头部继承容器透明度变量，随容器设置一同透明 */
+  }
+  /* 多标签条（Chrome 风格）：横向排列、溢出可横向滚动，滚动条隐藏 */
+  .wm-pp_tabs {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .wm-pp_tabs::-webkit-scrollbar { display: none; }
+  .wm-pp_tab {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 168px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 4px 0 8px;
+    border-radius: 8px;
+    color: var(--wm-label-2nd);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .wm-pp_tab:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+  .wm-pp_tab.active { background: var(--wm-bg-active); color: var(--wm-label); }
+  .wm-pp_tabico { flex: none; display: flex; align-items: center; justify-content: center; width: 15px; height: 15px; }
+  .wm-pp_tabico svg { display: block; width: 14px; height: 14px; }
+  .wm-pp_tabname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wm-pp_tabx {
+    flex: none;
+    width: 16px; height: 16px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 4px; background: transparent; color: inherit;
+    font-size: 10px; line-height: 1; cursor: pointer; opacity: 0.6;
+  }
+  .wm-pp_tabx:hover { background: var(--wm-bg-hover); opacity: 1; }
+  /* + 新建标签页按钮 */
+  .wm-pp_add {
+    flex: none;
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: var(--wm-label-2nd);
+    cursor: pointer; border-radius: 7px;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .wm-pp_add svg { display: block; width: 16px; height: 16px; }
+  .wm-pp_add:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+  /* 每个标签的独立视图：绝对铺满内容区，仅激活标签显示（切换只改 display，不重载 iframe） */
+  .wm-pp_view { display: none; position: absolute; inset: 0; }
+  .wm-pp_view iframe { border: 0; width: 100%; height: 100%; display: block; }
+  /* ✕ 关闭整个容器 */
+  .wm-pp_drawer {
+    flex: none;
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: var(--wm-label-2nd);
+    font-size: 13px; line-height: 1; cursor: pointer; border-radius: 6px;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .wm-pp_drawer:hover { background: var(--wm-bg-hover); color: var(--wm-label); }
+  /* 内容区：各标签视图的定位基准 */
+  .wm-pp_body { flex: 1; min-height: 0; position: relative; }
+  .wm-pp_body iframe { border: 0; width: 100%; height: 100%; display: block; }
+  .wm-pp_empty {
+    height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--wm-label-dim);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+  <!-- 面板容器外壳：宿主按这个结构渲染（标签页、+ / ✕ 按钮由宿主挂行为） -->
+  <div class="wm-ppanel wm-mount">
+    <div class="wm-pp_head">
+      <div class="wm-pp_tabs"></div>
+      <button class="wm-pp_add" title="新建标签页"></button>
+      <button class="wm-pp_drawer" title="关闭面板">✕</button>
+    </div>
+    <div class="wm-pp_body">
+      <div class="wm-pp_empty">点击上方 + 新建标签页</div>
+    </div>
+  </div>
+</body>
+</html>

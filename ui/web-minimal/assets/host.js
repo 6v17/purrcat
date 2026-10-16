@@ -108,9 +108,9 @@
       HOST.document.querySelectorAll('.wm-ppanel[data-pslot="panel"]').forEach((el) => {
         el.style.display = hidden ? 'none' : 'flex';
       });
-      // 由插件入驻的容器（panel-container 区域）同样受「面板容器」总开关统辖
+      // 由第三方容器插件入驻时的容器锚点（内置容器另由 .wm-ppanel 统辖）同样受总开关统辖
       const pcHost = HOST.document.querySelector('[data-slot="panel-container"]');
-      if (pcHost && panelContainerPlugin()) pcHost.style.display = hidden ? 'none' : '';
+      if (pcHost && thirdPartyContainerPlugin()) pcHost.style.display = hidden ? 'none' : '';
       if (hidden) { HOST.document.body.classList.remove('has-panels'); if (panelBar) panelBar.style.display = 'none'; }
       else {
         HOST.document.body.classList.add('has-panels');
@@ -138,7 +138,7 @@
   // 应用持久化的隐藏状态（挂载后调用：fixed 锚定区 / float 实例 / panel 容器）
   function applyPersistedHidden() {
     Object.keys(railState.hidden).forEach((id) => {
-      if (id === '__panel__') return;
+      if (id === PANEL_CONTAINER_ID) return;   // 内置容器是 fixed 插件，由 refreshFixedSlot 重算
       const slot = slotOfPlugin(id);
       if (!slot || !railState.hidden[id]) return;
       // fixed 区域：关闭是按「插件」记录的，不能据此把整个区域隐藏掉（否则同区域插件连坐，
@@ -276,8 +276,11 @@
 
   // ---- 固定区域：白条按区域合并图标（同区域互斥，最多一个生效）----
   // 区域显示名复用设置面板的 AREA_LABEL（单一来源，见下方「UI 插件主面板」分组）
-  const BUILTIN_CONTAINER = { id: '__panel__', name: '内置容器', builtinContainer: true };
-  // 面板容器区域（含内置容器候选）在白条/菜单里的统一字形：窗口 + 顶部标签条
+  // 「内置容器」是真实的内置插件（plugins/builtin/builtin-panel）：与第三方容器插件
+  // （如涂鸦面板容器）同属 panel-container 区域、等位互斥，白条上可按区域独立开关。
+  // 它的外壳结构与样式由该插件自己的 index.html 提供，宿主只按其渲染（见 renderPanel）。
+  const PANEL_CONTAINER_ID = 'builtin-panel';
+  // 面板容器区域在白条/菜单里的统一字形：窗口 + 顶部标签条
   const PANEL_AREA_ICON = 'panel-top';
   function areaLabel(area) { return AREA_LABEL[area] || area; }
   // 需要按区域合并图标的固定区域（type=fixed）
@@ -287,43 +290,24 @@
       return list.length > 0 && (list[0].slotDef || {}).type === 'fixed';
     });
   }
-  // 区域候选：panel-container 额外含宿主内置容器（合成候选，非插件）；其余区域即该区域插件
+  // 区域候选：即声明该区域的插件（内置容器也是一个普通插件，不再有合成候选）
   function areaCandidates(area) {
-    const list = (slotMap[area] || []).slice();
-    if (area === 'panel-container') return [BUILTIN_CONTAINER].concat(list);
-    return list;
+    return (slotMap[area] || []).slice();
   }
-  // 区域当前生效的候选（全部关闭时返回 null）
+  // 区域当前生效的候选（全部关闭时返回 null）——即该区域当前挂载的那个插件
   function areaActive(area) {
-    if (area === 'panel-container') {
-      const plug = panelContainerPlugin();
-      if (plug) return plug;
-      return railHidden('__panel__') ? null : BUILTIN_CONTAINER;
-    }
     return pluginBySlot[area] || null;
   }
-  // 切换区域到某个候选：内置容器=让全部入驻插件让位并打开内置容器；插件=activateSlotPlugin（含互斥+持久化）
+  // 切换区域到某个候选：固定区域统一走 activateSlotPlugin（同区域互斥 + 持久化 + 即时重挂）
   function activateAreaCandidate(area, cand) {
-    if (cand && cand.builtinContainer) {
-      if (!railState.hidden) railState.hidden = {};
-      (slotMap[area] || []).forEach((p) => { railState.hidden[p.id] = true; });
-      if ((slotMap[area] || []).length) refreshFixedSlot(area);
-      setContainerHidden(false);
-      return;
-    }
     if (cand) activateSlotPlugin(cand);
   }
-  // 关闭整个区域：普通固定区域关掉当前生效插件即空出；panel-container 连内置容器一起关
+  // 关闭整个区域：区域内全部候选一起让位（内置容器与容器插件互斥，一起关才真正空出中栏）
   function deactivateArea(area) {
-    if (area === 'panel-container') {
-      if (!railState.hidden) railState.hidden = {};
-      (slotMap[area] || []).forEach((p) => { railState.hidden[p.id] = true; });
-      if ((slotMap[area] || []).length) refreshFixedSlot(area);
-      setContainerHidden(true);
-      return;
-    }
-    const cur = pluginBySlot[area];
-    if (cur) setPluginHidden(cur.id, true);
+    if (!railState.hidden) railState.hidden = {};
+    (slotMap[area] || []).forEach((p) => { railState.hidden[p.id] = true; });
+    refreshFixedSlot(area);
+    persistRail().catch(() => {});
   }
   // 重算区域图标的 on/off 与字形（内置容器与入驻插件互斥切换、开关变化后即时刷新）
   function refreshAreaRail(area) {
@@ -334,10 +318,10 @@
     btn.classList.add(active ? 'on' : 'off');
     const g = btn.querySelector('.rail-glyph');
     if (!g) return;
-    // 区域内置容器（含区域全关时的兜底）统一用面板容器字形，避免落到文本兜底
+    // 区域候选统一按插件图标渲染；区域空无插件时回落到面板容器字形，避免文本兜底
     const target = active || areaCandidates(area)[0] || null;
-    if (!target || target.builtinContainer) paintIcon(g, PANEL_AREA_ICON, '▤');
-    else paintPluginIcon(g, target);
+    if (target) paintPluginIcon(g, target);
+    else paintIcon(g, PANEL_AREA_ICON, '▤');
   }
   // 区域图标：区域生效=on；点击弹出候选菜单（仅一个候选时直接开/关）
   function makeAreaRailButton(area) {
@@ -381,8 +365,7 @@
       item.className = 'wm-pp_menu-item' + (isActive ? ' active' : '');
       const g = HOST.document.createElement('span');
       g.className = 'wm-pp_menu-ico';
-      if (c.builtinContainer) paintIcon(g, PANEL_AREA_ICON, '▤');
-      else paintPluginIcon(g, c);
+      paintPluginIcon(g, c);
       item.appendChild(g);
       const nm = HOST.document.createElement('span');
       nm.textContent = c.name || c.id;
@@ -879,7 +862,7 @@
     { area: 'sidebar', singleton: true },
     { area: 'session', singleton: true },
     { area: 'background', singleton: true },
-    { area: 'panel-container', host: renderPanelContainerSettings },
+    { area: 'panel-container', singleton: true, host: renderPanelContainerSettings },
     { area: 'panel' },
     { area: 'pet' },
     { area: 'popup' },
@@ -977,7 +960,7 @@
       return !!cur && cur.id === p.id;
     }
     if (type === 'panel') {
-      if (railState.hidden && railState.hidden['__panel__']) return false;
+      if (railHidden(PANEL_CONTAINER_ID)) return false;   // 中栏容器被关闭时，其内标签自然不生效
       return panelTabs.indexOf(p.id) >= 0;   // 多标签：处于已打开标签页即视为生效
     }
     return true;   // float：未隐藏即生效
@@ -1033,8 +1016,8 @@
       if (!railState.hidden) railState.hidden = {};
       (slotMap[slot] || []).forEach((x) => { if (x.id !== p.id) railState.hidden[x.id] = true; });
       delete railState.hidden[p.id];
-      // 中栏容器区域：内置容器与入驻插件互斥——插件入驻即让内置容器让位（容器仍占位，由插件提供）
-      if (slot === 'panel-container') railState.hidden['__panel__'] = true;
+      // 中栏容器区域：容器插件入驻即让内置容器让位（容器仍占位，由该插件提供）
+      if (slot === 'panel-container' && p.id !== PANEL_CONTAINER_ID) railState.hidden[PANEL_CONTAINER_ID] = true;
       activeBySlot[slot] = p.id;   // 记住该单例槽当前选中的插件
       refreshFixedSlot(slot);
       buildRail();
@@ -2216,6 +2199,28 @@
   let panelContainerCfg = { opacity: 0.9 }; // 宿主固有中栏容器配置（透明度）
   let panelSavedWidth = null;      // 用户显式保存的默认宽度（null=最大舒展，不落盘）
   let panelDesiredWidth = null;    // 运行时「期望宽度」：窗口缩小时显示被夹紧，但此值保留，放大后恢复
+  // 「内置容器」插件提供的外壳：宿主启动时读取一次 plugins/builtin/builtin-panel/index.html，
+  // 把其中的样式注入本文档、并把 <body> 里的外壳元素留作模板（容器结构与样式因此完全由
+  // 该插件提供）。宿主只按外壳渲染，不把插件挂成 iframe——以保留标签页、地址路由与宽度拖拽。
+  let panelShellTpl = null;        // 外壳模板元素（.wm-ppanel）
+  async function loadPanelShell() {
+    if (panelShellTpl) return;
+    try {
+      const res = await fetch('/api/webmin/plugin/' + encodeURIComponent(PANEL_CONTAINER_ID) + '/index.html');
+      if (!res.ok) return;
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+      const src = doc.querySelector('style');
+      if (src) {
+        const el = HOST.document.createElement('style');
+        el.id = 'wm-builtin-panel-style';
+        el.textContent = src.textContent;
+        const old = HOST.document.getElementById('wm-builtin-panel-style');
+        if (old) old.remove();
+        HOST.document.head.appendChild(el);
+      }
+      panelShellTpl = (doc.body && doc.body.firstElementChild) || null;
+    } catch (_) { /* 插件文件不可读（后端离线）：容器无外壳，renderPanel 会跳过 */ }
+  }
   function applyPanelContainerCfg() {
     const el = HOST.document.querySelector('.wm-ppanel[data-pslot="panel"]');
     if (!el) return;
@@ -2285,25 +2290,38 @@
     w = (limit < PANEL_MIN_W) ? Math.max(0, limit) : Math.min(w, limit);
     HOST.document.documentElement.style.setProperty('--wm-panel-w', Math.round(w) + 'px');
   }
+  // 中栏容器的总开关（容器右上角 ✕ / 打开标签页时自动重开）：只改开关键，
+  // 区域内的互斥与显隐一律交给 refreshFixedSlot 重算，避免出现「两个容器同时显示」
   function setContainerHidden(hidden) {
     if (!railState.hidden) railState.hidden = {};
-    if (hidden) railState.hidden['__panel__'] = true; else delete railState.hidden['__panel__'];
-    applySlotHidden('panel', hidden);
-    refreshAreaRail('panel-container');   // 区域图标随内置容器/入驻插件互斥切换即时刷新
+    const list = slotMap['panel-container'] || [];
+    if (hidden) {
+      list.forEach((p) => { railState.hidden[p.id] = true; });   // 关闭 = 整个区域让出中栏
+      closePanelMenus();
+    } else {
+      list.forEach((p) => { if (p.id !== PANEL_CONTAINER_ID) railState.hidden[p.id] = true; });
+      delete railState.hidden[PANEL_CONTAINER_ID];
+      activeBySlot['panel-container'] = PANEL_CONTAINER_ID;
+    }
+    refreshFixedSlot('panel-container');
+    refreshAreaRail('panel-container');
+    buildRail();
+    persistActive();
     persistRail().catch(() => {});
   }
   function hasPanelsDef() {
-    // panel-container 区域有插件入驻时，中栏容器同样存在（由该插件提供）
+    // panel-container 区域有插件入驻时（内置容器或容器插件），中栏容器同样存在
     if ((slotMap['panel-container'] || []).length) return true;
     return Object.keys(slotMap).some((sid) => (slotMap[sid][0].slotDef || {}).type === 'panel');
   }
-  // 当前入驻 panel-container 区域的插件（同区域互斥，最多一个生效）
-  function panelContainerPlugin() {
-    return (slotMap['panel-container'] || []).filter((p) => !railHidden(p.id))[0] || null;
+  // 当前由「第三方容器插件」提供中栏容器（同区域互斥，最多一个生效；内置容器除外）
+  function thirdPartyContainerPlugin() {
+    const cur = pluginBySlot['panel-container'];
+    return (cur && cur.id !== PANEL_CONTAINER_ID) ? cur : null;
   }
-  // 中栏容器是否占位：入驻插件生效，或内置容器开关打开。二者互斥，同时只有一个成立
+  // 中栏容器是否占位：第三方容器插件生效，或内置容器开关打开。二者互斥，同时只有一个成立
   function panelContainerVisible() {
-    return !!panelContainerPlugin() || !railHidden('__panel__');
+    return !!thirdPartyContainerPlugin() || !railHidden(PANEL_CONTAINER_ID);
   }
   function startPanelBarDrag(e) {
     e.preventDefault();
@@ -2381,32 +2399,26 @@
   }
   // 依据 tabs/activeId 同步：标签条、每个标签的视图（保留已挂载帧）、空态、广播帧集合
   function renderPanel(st) {
-    const el = st.el;
-    // 首次（或容器被重建后）搭壳：标签条 + 内容区；已挂载视图随之失效需清空
+    // 首次（或容器被重建后）按「内置容器」插件提供的外壳搭壳：标签条 + 内容区；
+    // 已挂载视图随之失效需清空
     if (!st.head || !st.head.isConnected) {
-      st.head = HOST.document.createElement('div');
-      st.head.className = 'wm-pp_head';
-      st.strip = HOST.document.createElement('div');
-      st.strip.className = 'wm-pp_tabs';
-      st.head.appendChild(st.strip);
+      if (!panelShellTpl) return;   // 插件外壳尚未就绪（后端未在线）：等下次渲染再搭壳
+      const el = panelShellTpl.cloneNode(true);
+      el.dataset.pslot = 'panel';
+      el.style.display = 'flex';
+      HOST.document.body.appendChild(el);
+      st.el = el;
+      st.head = el.querySelector('.wm-pp_head');
+      st.strip = el.querySelector('.wm-pp_tabs');
       // + 按钮：选择面板插件新开标签页
-      st.addBtn = HOST.document.createElement('button');
-      st.addBtn.className = 'wm-pp_add';
+      st.addBtn = el.querySelector('.wm-pp_add');
       paintIcon(st.addBtn, 'plus', '+');   // 与宿主其它图标同风格的线性 SVG 加号
-      st.addBtn.title = '新建标签页';
       st.addBtn.addEventListener('click', (ev) => { ev.stopPropagation(); openPanelAddMenu(st, st.addBtn); });
-      st.head.appendChild(st.addBtn);
       // ✕ 关闭按钮：关闭整个面板容器（统一走 setContainerHidden，同步状态并持久化）
-      st.closeBtn = HOST.document.createElement('button');
-      st.closeBtn.className = 'wm-pp_drawer';
-      st.closeBtn.textContent = '✕';
-      st.closeBtn.title = '关闭面板';
+      st.closeBtn = el.querySelector('.wm-pp_drawer');
       st.closeBtn.addEventListener('click', () => { setContainerHidden(true); closePanelMenus(); });
-      st.head.appendChild(st.closeBtn);
-      el.appendChild(st.head);
-      st.body = HOST.document.createElement('div');
-      st.body.className = 'wm-pp_body';
-      el.appendChild(st.body);
+      st.body = el.querySelector('.wm-pp_body');
+      st.emptyEl = el.querySelector('.wm-pp_empty');
       st.views = {};
       st.frames = {};
     }
@@ -2436,12 +2448,7 @@
       delete st.views[id];
       delete st.frames[id];
     });
-    // 空态占位（容器保留，等待 + 新建标签页）
-    if (!st.emptyEl) {
-      st.emptyEl = HOST.document.createElement('div');
-      st.emptyEl.className = 'wm-pp_empty';
-      st.emptyEl.textContent = '点击上方 + 新建标签页';
-    }
+    // 空态占位（由插件外壳提供，容器保留，等待 + 新建标签页）
     if (panelTabs.length) { if (st.emptyEl.parentNode) st.emptyEl.remove(); }
     else if (!st.emptyEl.parentNode) st.body.appendChild(st.emptyEl);
     frames['panel'] = panelTabs.map((id) => st.frames[id]).filter(Boolean);
@@ -2526,10 +2533,9 @@
   }
   // 挂载 type=panel 插件：无面板插件则不占位；有则建 .wm-ppanel 并点亮抽屉
   function mountPanels() {
-    // 若已有「未被关闭」的插件声明入驻 panel-container（与宿主内置容器等位、同区域互斥），
-    // 则由该插件提供中栏容器：宿主内置容器让位，不再创建 .wm-ppanel（标签列表保留，便于切回）。
-    const containerHost = (slotMap['panel-container'] || []).filter((p) => !railHidden(p.id))[0];
-    if (containerHost) {
+    // 若已有第三方容器插件（与内置容器等位、同区域互斥）提供中栏容器，
+    // 则由该插件渲染：内置容器让位，不再创建 .wm-ppanel（标签列表保留，便于切回）。
+    if (thirdPartyContainerPlugin()) {
       if (panelState && panelState.el && panelState.el.parentNode) { notifyUnmount(panelState.el); panelState.el.remove(); }
       panelState = null;
       closePanelMenus();
@@ -2573,14 +2579,7 @@
     }
     const saved = activeBySlot['panel'];
     st.activeId = (saved && saved !== '__none__' && panelTabs.indexOf(saved) >= 0) ? saved : (panelTabs[0] || '');
-    if (!st.el || !st.el.parentNode) {
-      st.el = HOST.document.createElement('div');
-      st.el.className = 'wm-ppanel wm-mount';
-      st.el.dataset.pslot = 'panel';
-      st.el.style.display = 'flex';
-      HOST.document.body.appendChild(st.el);
-    }
-    renderPanel(st);
+    renderPanel(st);   // 容器外壳由「内置容器」插件提供，按需在此搭壳
     // 仅更新内存态（标签列表保留在 activeBySlot 中，确保后续 persistActive 整节覆盖时不丢）；
     // 启动时不做多余落盘，实际变更（+/×/切换）各自已持久化
     activeBySlot['panel'] = st.activeId;
@@ -2613,7 +2612,7 @@
     const hit = browserPanel();
     // 中栏容器由插件入驻时宿主内置容器已让位（panelState 为空），此时把地址广播给
     // 该容器插件，由它转交给自己的内置浏览器子插件——与内置容器同样在应用内打开。
-    const hostCont = hit ? null : panelContainerPlugin();
+    const hostCont = hit ? null : thirdPartyContainerPlugin();
     // 非网页（mailto:/tel:/file: 等）或面板里没有可用内置浏览器 → 退回系统处理
     if (!/^https?:\/\//i.test(u) || (!hit && !hostCont) || !pc || !pc.browserNewTab) {
       if (pc && pc.openExternal && u) pc.openExternal(u);
@@ -2728,6 +2727,13 @@
       return;
     }
     pluginBySlot[slot] = chosen;
+    // 内置容器（builtin-panel）由宿主按插件提供的外壳原生渲染（.wm-ppanel），不挂 iframe
+    if (chosen.id === PANEL_CONTAINER_ID) {
+      const anchor = HOST.document.querySelector(`[data-slot="${slot}"]`);
+      if (anchor) anchor.innerHTML = '';
+      syncPanelContainer();
+      return;
+    }
     const anchor = HOST.document.querySelector(`[data-slot="${slot}"]`);
     if (anchor) {
       anchor.innerHTML = '';
@@ -2827,6 +2833,11 @@
       // 兼容旧三态持久化（0=收起 1=仅图标 2=图标+名称）：仅 2 → 1（图标+文字），其余 → 0（仅图标）
       railState.stage = (Number.isFinite(stage) && stage >= 2) ? 1 : 0;
       railState.hidden = (railSaved.hidden && typeof railSaved.hidden === 'object') ? railSaved.hidden : {};
+      // 旧键迁移：内置容器曾是宿主的合成候选（开关键 __panel__），现为真实内置插件 builtin-panel
+      if (Object.prototype.hasOwnProperty.call(railState.hidden, '__panel__')) {
+        if (railState.hidden['__panel__']) railState.hidden[PANEL_CONTAINER_ID] = true;
+        delete railState.hidden['__panel__'];
+      }
       railState.opacity = (typeof railSaved.opacity === 'number') ? railSaved.opacity : 1;
     }
     // 面板容器配置（宿主资产，存于 plugins['panel-container']）
@@ -2859,6 +2870,7 @@
   }
   async function reloadManifest() {
     await loadManifest();
+    await loadPanelShell();
     buildSlotIndex();
     mountAll();
     applyPersistedHidden();
@@ -2894,6 +2906,7 @@
       return;
     }
     applyManifestState(manifest);
+    await loadPanelShell();   // 取「内置容器」插件的外壳（样式注入 + 结构模板），必须在 mountAll 前
     applyRailOpacity();
     buildSlotIndex();
     mountAll();
