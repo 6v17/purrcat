@@ -7,6 +7,8 @@ from fastapi import APIRouter, HTTPException, Body
 # 👇 引入全局的 agent_manager
 from src.agent.manager import manager as agent_manager
 
+from src.api_port import read_runtime_port
+
 from src.utils.config import (
     APP_CONFIG_PATH,
     FILE_CONFIG_PATH,
@@ -173,12 +175,18 @@ def api_get_acp_status():
             matches = False
 
     port = get_global_settings().get("acp_port")
+    configured_port = port if isinstance(port, int) and 0 < port < 65536 else None
+    # 🌟 本次运行真实 bind 的端口（后端写在 runtime.json）：端口 fallback 后它与
+    # settings.acp_port（用户期望值）会不一致，面板按实际端口展示才不误导
+    actual_port = read_runtime_port()
     return {
         "relay_path": ACP_RELAY_PATH,
         "relay_deployed": deployed,
         "relay_source_found": source_found,
         "relay_matches_source": matches,
-        "port": port if isinstance(port, int) and 0 < port < 65536 else 8000,
+        "port": configured_port or 8000,
+        "actual_port": actual_port,
+        "port_mismatch": bool(configured_port and actual_port and configured_port != actual_port),
         "uv_found": shutil.which("uv") is not None,
     }
 

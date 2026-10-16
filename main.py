@@ -5,7 +5,12 @@ import sys
 import warnings
 import argparse
 
-from src.api_port import DEFAULT_API_PORT, resolve_api_port
+from src.api_port import (
+    DEFAULT_API_PORT,
+    clear_runtime_state,
+    resolve_api_port,
+    write_runtime_state,
+)
 
 
 def _preflight_explicit_api_port() -> None:
@@ -323,6 +328,18 @@ async def run_api(host: str = "0.0.0.0", port: int = DEFAULT_API_PORT):
     @app.on_event("shutdown")
     def _shutdown_plugin_runtimes():
         _plugin_runtime.stop_all()
+
+    # 🌟 实际端口落盘：外部消费者（ACP relay / 配置中心）读它来发现本次运行的真实端口。
+    # 端口 fallback（8000→8001）后 settings.json 的 acp_port 仍是旧的期望值，不落盘
+    # 就会出现「面板显示 8000、relay 连 8000、后端其实在 8001」的不一致。
+    # 写在 startup：uvicorn 此时已完成 bind，绑定失败的进程不会留下误导性的状态文件。
+    @app.on_event("startup")
+    def _publish_runtime_port():
+        write_runtime_state(port)
+
+    @app.on_event("shutdown")
+    def _clear_runtime_port():
+        clear_runtime_state()
 
     # 🌟 健康检查必须注册在静态挂载之前！
     # Starlette 按注册顺序匹配路由，静态文件挂载是贪婪前缀匹配，

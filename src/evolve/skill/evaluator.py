@@ -174,7 +174,11 @@ def _grade_eval_payload(outputs: dict) -> tuple:
     if stats.get("total"):
         passed = int(stats.get("passed") or 0)
         total = int(stats["total"])
-        return passed == total, f"裁判判定 {passed}/{total} 条断言通过", {"summary": stats}
+        return (
+            passed == total,
+            f"裁判判定 {passed}/{total} 条断言通过",
+            {"summary": stats},
+        )
 
     return (
         False,
@@ -192,7 +196,9 @@ def _extract_eval_json(raw) -> tuple:
     value = _unwrap_envelope(raw)
     if isinstance(value, dict):
         return value, ""
-    raw_text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    raw_text = (
+        value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    )
     text = raw_text.strip()
     if not text:
         return None, raw_text

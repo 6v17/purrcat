@@ -18,8 +18,10 @@ PurrCat ACP 转接（relay）：编辑器 stdio JSON-RPC ⇆ 后端 ACP 网关�
 
 后端发现（优先级）：
 1. 环境变量 PURRCAT_ACP_PORT / PURRCAT_ACP_TOKEN
-2. ~/.purrcat/settings.json 的 acp_port
-3. 默认 http://127.0.0.1:8000；token 固定读 ~/.purrcat/acp_token（后端自动生成）
+2. ~/.purrcat/runtime.json 的 api_port（后端启动时写入的本次运行真实端口，
+   端口自动 fallback 后只有它是准的）
+3. ~/.purrcat/settings.json 的 acp_port（用户期望端口，不是事实）
+4. 默认 http://127.0.0.1:8000；token 固定读 ~/.purrcat/acp_token（后端自动生成）
 
 编辑器接入（Zed settings.json）：
     "agent": {
@@ -50,6 +52,8 @@ _RPC_TIMEOUT = 15
 # session/new 在网关侧排队等 Agent idle（同 chat.py 语义），长轮次期间会阻塞，
 # 必须用长超时，否则 Agent 忙时 Zed 开新 chat 会误报连接错误
 _RPC_TIMEOUT_SLOW = 3600
+# 所有来源都无效时的兜底端口（与后端默认端口一致）
+DEFAULT_BACKEND_PORT = 8000
 
 
 # session/load 挂起兜底：SSE 未在此时限内给出 replay_end 就直接放行响应（秒）
@@ -65,23 +69,67 @@ def _log(msg: str) -> None:
     print(f"[acp-relay] {msg}", file=sys.stderr, flush=True)
 
 
+def _valid_port(value: object) -> int | None:
+    """把候选值规范成 1..65535 的端口；非整数/越界/布尔一律视为无效。
+
+    bool 是 int 子类，必须先排除（True 会被当成端口 1）；数字字符串接受，
+    是为了容忍手改的 json / 环境变量把端口写成 "8001"。
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if 0 < value < 65536 else None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdigit():
+            port = int(text)
+            return port if 0 < port < 65536 else None
+    return None
+
+
+def pick_backend_port(
+    env_port: object = None,
+    runtime_port: object = None,
+    settings_port: object = None,
+) -> int:
+    """端口发现优先级：环境变量（显式）> runtime.json > settings.acp_port > 默认。
+
+    只按来源顺序取第一个合法值，数字大小不参与比较；全部无效时回落到 8000。
+    """
+    for candidate in (env_port, runtime_port, settings_port):
+        port = _valid_port(candidate)
+        if port is not None:
+            return port
+    return DEFAULT_BACKEND_PORT
+
+
+def _read_runtime_port(home: Path) -> object:
+    """读后端启动时写入的 runtime.json 的 api_port；缺失/损坏回落 None。"""
+    try:
+        state = json.loads((home / "runtime.json").read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return state.get("api_port") if isinstance(state, dict) else None
+
+
 def discover() -> tuple[str, str]:
     """发现后端地址与鉴权 token。token 缺失属配置错误，直接退出给可读提示。"""
     home = Path.home() / ".purrcat"
 
-    port = None
-    env_port = os.environ.get("PURRCAT_ACP_PORT", "")
-    if env_port.isdigit():
-        port = int(env_port)
-    if port is None:
-        try:
-            settings = json.loads((home / "settings.json").read_text(encoding="utf-8"))
-            v = settings.get("acp_port")
-            if isinstance(v, int) and 0 < v < 65536:
-                port = v
-        except Exception:
-            pass
-    port = port or 8000
+    settings_port = None
+    try:
+        settings = json.loads((home / "settings.json").read_text(encoding="utf-8"))
+        settings_port = settings.get("acp_port") if isinstance(settings, dict) else None
+    except Exception:
+        pass
+
+    # runtime.json 优先于 settings：它记录的是本次运行真实 bind 的端口，
+    # settings.acp_port 只是用户期望值（端口自动 fallback 后两者会不一致）
+    port = pick_backend_port(
+        os.environ.get("PURRCAT_ACP_PORT", ""),
+        _read_runtime_port(home),
+        settings_port,
+    )
 
     token = os.environ.get("PURRCAT_ACP_TOKEN", "").strip()
     if not token:
@@ -95,6 +143,7 @@ def discover() -> tuple[str, str]:
             "请先启动一次 PurrCat 桌面端以自动生成。\n"
         )
         sys.exit(1)
+    _log(f"后端端口 {port}")
     return f"http://127.0.0.1:{port}", token
 
 

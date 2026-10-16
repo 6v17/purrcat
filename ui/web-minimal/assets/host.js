@@ -1441,7 +1441,8 @@
     fetch('/api/config/acp').then(function (r) { return r.json(); }).then(function (d) {
       const sub = HOST.document.createElement('div');
       sub.className = 'cfg-card-sub';
-      sub.textContent = 'relay 已部署:' + (d.relay_deployed ? '是' : '否') + ' · 与源一致:' + (d.relay_matches_source ? '是' : '否') + ' · uv:' + (d.uv_found ? '可用' : '缺失');
+      sub.textContent = 'relay 已部署:' + (d.relay_deployed ? '是' : '否') + ' · 与源一致:' + (d.relay_matches_source ? '是' : '否') + ' · uv:' + (d.uv_found ? '可用' : '缺失')
+        + (d.actual_port ? ' · 实际端口:' + d.actual_port + (d.port_mismatch ? '（与设置不一致，relay 生效的是实际端口）' : '') : '');
       h.left.appendChild(sub);
       const body = HOST.document.createElement('div');
       body.className = 'cfg-card-body';

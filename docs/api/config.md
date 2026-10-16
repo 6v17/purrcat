@@ -325,6 +325,10 @@ curl -X PUT 'http://127.0.0.1:8000/api/config/app' \
 
 读取 ACP 接入状态：relay 部署情况、端口与 `uv` 可用性。
 
+`port` 是 `settings.json` 里的用户期望端口；`actual_port` 是本次运行后端真实 bind 的端口
+（写在 `~/.purrcat/runtime.json`）。后端端口自动 fallback 时两者会不一致，此时 ACP relay
+按 `actual_port` 连接，`port_mismatch` 为 `true`。
+
 **请求**
 
 无参数。
@@ -338,9 +342,17 @@ curl -X PUT 'http://127.0.0.1:8000/api/config/app' \
   "relay_source_found": true,
   "relay_matches_source": true,
   "port": 8000,
+  "actual_port": 8001,
+  "port_mismatch": true,
   "uv_found": true
 }
 ```
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `port` | int | 用户期望端口（`settings.json` 的 `acp_port`，未设置时 8000） |
+| `actual_port` | int \| null | 本次运行实际端口；后端未在跑或状态文件非法时为 `null` |
+| `port_mismatch` | bool | 期望端口与实际端口不一致（`actual_port` 为 `null` 时为 `false`） |
 
 **示例**
 
