@@ -1,12 +1,14 @@
-<div align="center">
-
 # PurrCat
 
-[English](README.md) | 简体中文
+<div align="center">
 
-经济、高效、可定制、本地优先的个人 AI Agent 框架。
+**一个基于信息论理念设计的 Agent 底座**
 
-[文档](https://purrpod.github.io/) | [部署](https://purrpod.github.io/guide/deployment)
+让表达不再是一次有损压缩，让 Agent 按你的方式工作。
+
+**Build an Agent That Works Your Way.**
+
+[文档](https://purrpod.github.io/)
 
 </div>
 
@@ -16,91 +18,101 @@
 
 ## 快速开始
 
-> PurrCat 仍处于快速迭代期，**推荐从源码部署**，以便及时跟进更新进度，第一时间获得最新功能与修复。
+PurrCat 仍在快速迭代，推荐从源码安装，以便及时获取最新功能与修复。
 
-> Windows 用户也可直接从最新的 [Release](https://github.com/PurrPod/purrcat/releases) 下载安装包快速上手；macOS / Linux 安装包因人力原因暂未经测试，请从源码部署。
+### 一键安装
 
-### 一键安装（源码模式）
+**macOS / Linux**
 
 ```bash
-# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/PurrPod/purrcat/main/install.sh | bash
 ```
 
+**Windows（PowerShell）**
+
 ```powershell
-# Windows（PowerShell）
 irm https://raw.githubusercontent.com/PurrPod/purrcat/main/install.ps1 | iex
 ```
 
-脚本会自动装好缺失的前置依赖（git / uv / Node.js 18+ / Docker / 嵌入模型），克隆源码到 `~/purrcat`、装好全部依赖并注册全局 `purrcat` 命令。之后：
+安装脚本会检查并安装所需的前置依赖，克隆源码至 `~/purrcat`，安装项目依赖并注册全局 `purrcat` 命令。
+
+安装完成后：
 
 ```bash
-purrcat desktop start    # 启动 Electron 桌面端
-purrcat desktop update    # 拉取最新源码并刷新依赖
+purrcat desktop start # 启动 Electron 桌面端
+purrcat desktop update # 更新源码并刷新依赖
 ```
 
-> Windows 下 Docker Desktop 安装后需手动启动一次以接受协议。
+> **安装说明：** 目前仅提供源码安装方式，不提供预打包的桌面安装包。Windows 安装流程验证较充分；macOS / Linux 的测试覆盖相对有限。Windows 下安装 Docker Desktop 后，需要手动启动一次以完成初始化并接受相关协议。
 
-### API 端口选择
+### API 端口
 
-桌面 API 默认使用 `8000` 端口。运行 `npm run dev` 时会优先尝试该端口；如果不可用，会自动选择后续可用端口。需要固定端口时设置 `PURRCAT_API_PORT`，或直接给 `main.py` 传入 `--api-port`；显式指定的端口不可用时会给出明确错误，不会静默改用其他端口。
+桌面 API 默认使用 `8000` 端口。运行 `npm run dev` 时，如果该端口被占用，会自动尝试其他可用端口。
 
-## 架构
+如需固定端口，可设置 `PURRCAT_API_PORT` 环境变量，或向 `main.py` 传入 `--api-port`。显式指定的端口不可用时，会返回错误，而不会静默切换。
 
-### 01 混合记忆与知识图谱
+---
 
-- 短时工作记忆：常驻内存的 `memo` 变量保留最近 10 次交互的浓缩总结，跨会话不丢失。
-- 核心通用记忆：`MEMORY.md` 固化用户画像与工作经验，初始化时注入 System Prompt。
-- 长期结构化记忆（PurrMemo）：情景记忆引擎（SQLite + FTS5）与语义记忆引擎（ChromaDB + NetworkX），支持实体关系的动态强化/削弱，可导出 HTML 可视化图谱。
-- 混合检索：通过全局线程池并发执行 BM25 与向量检索，按 RRF 倒数排名融合。
-- 异步消化：新认知先存入 `pending`，由后台守护进程转化为三元组；动态衰减机制自动清理长期未强化的记忆。
+## 核心特性
 
-### 02 Harness DAG 工作流引擎
+### 00 · 信息驱动的 Agent 设计
 
-- 单人多脑并发执行，避免 Agent 间自然语言对话带来的 Token 冗余。
-- 特定任务绑定特定工具，支持在特定阶段注入提示。
-- 多态节点矩阵：直连 LLM Vision 的图片生成、条件路由（if/else、switch）、人工干预节点等。
-- 状态机安全回滚：可在任意节点注入人工指令，清除下游旧状态，实现断点重连。
-- 工作流通过单个 JSON 文件装载，支持运行时热更新。
+> **模型决定能力，信息决定方向。**
 
-### 03 安全工具链
+模型能力不断增强，但人与 Agent 之间、Agent 与 Agent 之间的信息鸿沟并不会因此自动消失。想要什么，仍然需要被充分表达、理解，并在执行过程中准确传递。
 
-- 沙盒 Bash：命令在独立 Docker 容器中执行，支持挂载目录访问外部。
-- FileSystem 套件：`read` / `edit` / `write` / `search` / `glob`，底层经 MarkItDown 将 PDF/DOCX/XLSX 转为 Markdown。
-- 边界管控：物理级黑白名单；Import 校验 30MB 上限与路径穿越，Export 自动触发 Git 快照。
-- 扩展工具：CallMCP、混合检索 Search、Fetch、Memo、Cron、Task、BrainStorm、KernelUpgrade，支持外部 MCP 服务。
+PurrCat 不只关注模型能做什么，也关注任务信息如何进入系统、如何在执行过程中流动，以及哪些信息值得被长期保留。我们希望通过更灵活的交互信道、可编排的信息流和混合记忆，让 Agent 更贴近你的真实意图。
 
-### 04 智能体中枢与会话管理
+- **便利沟通的UI插件架构**：将你的工作内容融合在UI插件里，构建独属于你的信道，不必每次都用文字指示，只需点击按钮即可高效沟通与补充信息。
+- **可编排的信息流**：既能将 Agent 的执行过程按你的工作方式组织为可配置的 DAG 工作流，又能用一个简单的yaml文件编排 Agent Loop，何时注入必要信息，由你决定。
+- **多层混合记忆**：分阶段注入短时工作记忆、`MEMORY.md` 与 PurrMemo 的情景记忆、语义记忆和认知图谱，帮助 Agent 在需要时找回相关信息。
+- **共享上下文的子代理实现**：SubAgent 使用独立的分支标识、模型实例与事件循环，同时共享同一份上下文基础，让子代理充分理解主 Agent 的需求，而不必把所有协作都建立在 Agent 之间的自然语言对话上，既保证高效，又实现上下文管理。
 
-- Git 式会话分支：new / branch / switch 自由切换，可随时安全切回主干。
-- 异常修复：自动检查 tool calls 匹配情况，拦截残缺工具消息并回滚到安全状态。
-- 上下文截断：Token 超限时在安全断点用 Memo 摘要替换较早历史。
-- 生命力与灵魂：`SOUL.md` 定义人格价值观；Heartbeat 机制驱动空闲时自主巡查与汇报。
-- 声明式执行范式（PARADIGM）：`PARADIGM.yaml` 以近自然语言规则定义触发器、生命周期钩子、工具使用检查与循环退出条件，改配置即可重写 Agent 主循环行为。
-- 独立视觉顾问：将图片处理从主会话剥离，提高信噪比。
+### 01 · 一切皆插件
 
-### 05 主动感知与事件网关
+> **除内核之外，让能力、流程与界面都可以扩展。**
 
-- 传感器以独立子进程运行，配合 PEP 723 内联依赖（uv 管理），单个传感器崩溃不影响主进程。
-- Stdio 管道 JSON-RPC 通信，不占用网络端口。
-- 内置传感器：System（心跳/轮询）、Feishu（WebSocket）、RSS、Audio（Whisper + pyttsx3）。
+- **从工具到执行范式的可扩展性**：工具、技能、传感器、Agent Loop、工作流和 UI 面板均可通过扩展机制接入或定制。通过一个 yaml 文件配置执行过程中的信息注入、工具使用检查与循环退出条件，让 Agent 的行为方式也能按需调整。
+- **可扩展的 UI**：以轻量宿主承载不同区域的 UI 插件，支持运行时挂载与热插拔，由你的工作内容快速搭建你的高效信道。例如内置浏览器支持选取 DOM 元素、框选区域和就地评论，让界面修改可以围绕具体元素进行，而不必反复用文字描述位置。
+- **开放的插件生态**：兼容 MCP 服务与 Agent Skills 规范的技能，并通过内置市场安装插件。支持 `skill`、`ui-plugin`、`mcp`、`agentloop`、`sensor` 和 `graph` 等扩展类型及其依赖解析。
 
-### 06 模型调度与并发
+### 02 · RSI 自进化体系
 
-- API Key 负载均衡：线程锁维护可用 Key 列表，优先分配最空闲密钥。
-- Semaphore 信号量排队，带 Jitter 的指数退避重试（最高 8 次），保障高并发可用性。
+> **不止使用能力，还能构建、评估与迭代能力。**
 
-### 07 KV Cache 与 Token 经济
+PurrCat 将能力生成与评估结合起来，让 Agent 的扩展过程不仅能够执行，也能够接受验证。
 
-- APIKeyManager 实现任务/会话与单一密钥强绑定，多会话切换下保持稳定的缓存命中率。
-- DAG 执行消除 Agent 间对话冗余；任务执行者提炼摘要交由后台消化，避免全量历史读取。
+- **Agent 自主构建插件**：进化工厂提供 Trace2Skill、MCP 工具构建、传感器构建等能力，并支持通过 `create_ui_plugin` 创建 UI 插件。
+- **生成后进行评估**：技能可以生成配套的 `SKILL.md` 与 `evals.json` 评测集，并通过内置评估器检查触发与执行质量。传感器和 MCP 工具也有各自的验证机制。不是无条件地修改自身，而是建立一条可检查、可评估、可迭代的能力改进流程。
+- **热重载与迭代归档**：支持插件热重载；进化工厂以独立 HTML 报告呈现评估结果，并保留迭代记录。对于支持回滚的升级，可以恢复到先前版本。
 
-### 08 配置驱动的扩展机制
+### 03 · 安全的自托管
 
-- 零代码接入 MCP：将标准 JSON 粘贴至 `mcp_config.json`，握手后工具树自动热更新。
-- 社区 Skill：将包含 `SKILL.md` 的技能目录放入 `~/.purrcat/skills`，即自动加载至检索树。
-- 前端可视化编排 DAG 节点，支持 JSON 一键导入导出。
-- 传感器在 UI 中一键开关，启动时缺失的传感器脚本自动从云端拉取。
+> **Agent 有自己的工作空间，你的主机仍然由你掌控。**
+
+PurrCat 将 Agent 的执行环境与宿主机隔离，让它能够持续工作，同时明确限制宿主机文件的访问边界。
+
+- **独立执行沙箱**：Agent 在专属 Docker 容器中执行命令、操作文件，并持久保存工作区与日志。
+- **受控的宿主机文件交互**：对文件导入进行大小与路径校验；文件导出可触发 Git 快照，便于审计和回溯；通过目录黑白名单限制访问范围。
+- **Heartbeat + Goal**：`GOAL.md` 提供长期目标。Agent 可在空闲时通过心跳周期自主执行巡查、信息收集与汇报等工作，心跳间隔支持热重载。
+
+### 04 · 更高效的上下文与工具管理
+
+> **减少不必要的工具信息，保持稳定的长会话缓存。**
+
+- **稳定的 KV Cache**：API Key 管理器将任务与会话绑定到单一密钥，减少密钥切换对长会话前缀缓存的影响。根据项目实测，在长会话下，缓存命中率稳定 99% 以上。
+- **按需检索工具与技能**：原生工具使用紧凑 Schema；工具与技能采用入库策略，将注意力问题转化为检索问题，MCP 工具和技能通过向量检索按需选取，避免每次请求都携带全部扩展定义，并且热重载工具不破坏缓存，安装大量工具不多耗 token。
+- **减少协作冗余**：不相关的工作流以结构化数据传递节点结果，配合记忆摘要与任务交接，减少不必要的自然语言转述和重复上下文。
+
+---
+
+## 设计目标
+
+PurrCat 希望提供一个可定制、可扩展、可持续演进的 Agent 底座。
+
+从信息如何进入 Agent，到任务如何执行、记忆如何组织、能力如何扩展，开发者都可以根据自己的工作方式进行编排，而不必被固定的 Agent Loop 或单一的交互模式限制。
+
+**让 Agent 不只更强，也更符合你的工作方式。**
 
 <br clear="right" />
 
@@ -108,11 +120,12 @@ purrcat desktop update    # 拉取最新源码并刷新依赖
 
 ## 致谢
 
-- [zhenghuanle](https://github.com/zhenghuanle) 测试了从零开始的安装流程。
-- [Gaeulczy](https://github.com/Gaeulczy) 测试了一键安装与运行脚本。
-- [JohnWJ-co](https://github.com/JohnWJ-co) 帮忙测试了 Mac 版本并排查错误原因。
-- 感谢中山大学开放鸿蒙技术俱乐部举办的智能体开发大赛提供的奖金赞助。
+- [zhenghuanle](https://github.com/zhenghuanle)：测试从零开始的安装流程。
+- [Gaeulczy](https://github.com/Gaeulczy)：测试一键安装与运行脚本。
+- [JohnWJ-co](https://github.com/JohnWJ-co)：测试 macOS 版本并协助排查问题。
+- 感谢中山大学开放鸿蒙技术俱乐部举办的智能体开发大赛提供奖金赞助。
 
 ## 许可证
 
-本项目基于 [MIT](LICENSE) 许可证开源，可自由使用、修改与分发，包括商业用途。
+PurrCat 基于 [MIT 许可证](LICENSE) 开源，可用于使用、修改与分发，包括商业用途。
+

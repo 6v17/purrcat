@@ -1,144 +1,130 @@
-<div align="center">
-
 # PurrCat
 
-English | [简体中文](README.zh-CN.md)
+<div align="center">
 
-An economical, efficient, customizable, local-first personal AI Agent framework.
+**An Agent foundation designed around information theory**
 
-[Documentation](https://purrpod.github.io/) | [Deployment](https://purrpod.github.io/guide/deployment)
+Let expression no longer be a lossy compression — let the Agent work your way.
+
+**Build an Agent That Works Your Way.**
+
+[Documentation](https://purrpod.github.io/)
 
 </div>
 
-***
+---
 
 <img src="purrcat-logo.png" width="220" height="220" alt="PurrCat" align="right" />
 
 ## Quickstart
 
-> PurrCat is under rapid development. **Deploying from source is recommended** so you can follow updates closely and get the latest features & fixes as soon as they land.
+PurrCat is still iterating quickly. Installing from source is recommended so you can pick up the latest features and fixes as they land.
 
-> Windows users can also grab the installer from the latest [Release](https://github.com/PurrPod/purrcat/releases) for a quick start. macOS/Linux installers are not yet tested due to limited manpower, so please build from source on those platforms.
+### One-line install
 
-### One-line install (source mode)
+**macOS / Linux**
 
 ```bash
-# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/PurrPod/purrcat/main/install.sh | bash
 ```
 
+**Windows (PowerShell)**
+
 ```powershell
-# Windows (PowerShell)
 irm https://raw.githubusercontent.com/PurrPod/purrcat/main/install.ps1 | iex
 ```
 
-The script auto-installs missing prerequisites (git, uv, Node.js 18+, Docker, embedding model), clones the source to `~/purrcat`, sets up all dependencies, and registers a global `purrcat` command. Then:
+The install script checks for and installs the required prerequisites, clones the source to `~/purrcat`, installs the project dependencies, and registers a global `purrcat` command.
+
+After installation:
 
 ```bash
-purrcat desktop start    # Launch the Electron desktop app
-purrcat desktop update    # Pull latest source & refresh dependencies
+purrcat desktop start # Launch the Electron desktop app
+purrcat desktop update # Update the source and refresh dependencies
 ```
 
-> On Windows, Docker Desktop requires one manual first launch to accept its agreement.
+> **Installation notes:** Only source installation is currently offered — there are no pre-packaged desktop installers. The Windows flow is well tested; macOS / Linux have more limited test coverage. On Windows, Docker Desktop must be launched manually once after installation to complete setup and accept its agreement.
 
-### API port selection
+### API port
 
-The desktop API uses port `8000` by default. `npm run dev` tries that port first and automatically selects the next available port when it is unavailable. Set `PURRCAT_API_PORT` (or pass `--api-port` to `main.py`) when a fixed port is required; an explicitly requested port fails with a clear error instead of silently changing.
+The desktop API uses port `8000` by default. When you run `npm run dev`, it automatically tries another available port if that one is occupied.
 
-## Architecture
+To pin a fixed port, set the `PURRCAT_API_PORT` environment variable or pass `--api-port` to `main.py`. If an explicitly specified port is unavailable, it returns an error instead of switching silently.
 
-### 01 Hybrid Memory and Knowledge Graph
+---
 
-- Short-term working memory: in-memory `memo` variables retain condensed summaries of the last 10 interactions across session switches.
+## Features
 
-- Core memory: `MEMORY.md` stores user profiles and work experience, injected into the system prompt at initialization.
+### 00 · Information-Driven Agent Design
 
-- Long-term structured memory (PurrMemo): episodic engine (SQLite + FTS5) and semantic engine (ChromaDB + NetworkX), with dynamic relation strengthening/weakening and HTML graph export.
+> **The model decides capability; information decides direction.**
 
-- Hybrid retrieval: RRF fusion of BM25 and vector search, executed concurrently through a global thread pool.
+Model capability keeps improving, but the information gap between you and the Agent — and between Agents — does not close on its own. What you want still has to be fully expressed, understood, and accurately carried through execution.
 
-- Asynchronous digestion: new cognitions are buffered in `pending` and converted to triples by a background daemon; a decay mechanism cleans up long-unused memories.
+PurrCat cares not only about what the model can do, but also about how task information enters the system, how it flows during execution, and which information is worth keeping for the long term. Through more flexible interaction channels, orchestrated information flow, and hybrid memory, we want the Agent to stay closer to your true intent.
 
-### 02 Harness DAG Workflow Engine
+- **UI plugin architecture for easier communication**: Fold your working context into UI plugins to build a channel that is uniquely yours — no need to spell everything out in text each time; a single click can communicate and fill in information efficiently.
+- **Orchestrated information flow**: Organize the Agent's execution the way you work, as a configurable DAG workflow, and orchestrate the Agent Loop with a simple yaml file — you decide when the necessary information gets injected.
+- **Multi-layer hybrid memory**: Inject short-term working memory, `MEMORY.md`, and PurrMemo's episodic memory, semantic memory, and knowledge graph in stages, helping the Agent retrieve the relevant information when it needs it.
+- **Sub-agents that share context**: SubAgents use their own branch id, model instance, and event loop while sharing the same contextual foundation, so a sub-agent fully understands the main Agent's needs without building all collaboration on natural-language conversation between Agents — efficient and context-managed at the same time.
 
-- Multi-agent concurrency under a single persona, avoiding natural-language inter-agent chatter and its token cost.
+### 01 · Everything Is a Plugin
 
-- Per-task tool binding and stage-specific prompt injection.
+> **Beyond the kernel — capabilities, flows, and interfaces are all extensible.**
 
-- Polymorphic node matrix: LLM-vision image generation, conditional routing (if/else, switch), human intervention, and more.
+- **Extensibility from tools to execution paradigms**: Tools, skills, sensors, Agent Loops, workflows, and UI panels can all be plugged in or customized through the extension mechanism. A single yaml file configures information injection, tool-use checks, and loop-exit conditions during execution, so the Agent's behavior can be adjusted on demand.
+- **Extensible UI**: A lightweight host carries UI plugins across different regions, supporting runtime mounting and hot-swapping, so your working context quickly builds your efficient channel. For example, the built-in browser supports picking DOM elements, drawing selection boxes, and commenting in place, so interface edits can focus on specific elements instead of repeatedly describing positions in words.
+- **Open plugin ecosystem**: Compatible with MCP servers and Agent Skills-format skills, installable through the built-in market. Supports extension types such as `skill`, `ui-plugin`, `mcp`, `agentloop`, `sensor`, and `graph`, along with their dependency resolution.
 
-- Safe rollback: inject commands at any node; downstream states are cleared for precise breakpoint recovery.
+### 02 · RSI Self-Evolution System
 
-- Workflows load from a single JSON file and hot-update at runtime.
+> **Not only using capabilities, but building, evaluating, and iterating them.**
 
-### 03 Secure Toolchain
+PurrCat combines capability generation with evaluation, so the Agent's own extensions can not only run but also be validated.
 
-- Sandboxed Bash: commands run in isolated Docker containers, with optional directory mounts for external access.
+- **The Agent builds plugins on its own**: The evolution factory provides Trace2Skill, MCP tool building, and sensor building, and supports creating UI plugins through `create_ui_plugin`.
+- **Evaluation after generation**: Skills can generate a companion `SKILL.md` and `evals.json` evaluation set, and pass the built-in evaluator's checks on triggering and execution quality. Sensors and MCP tools have their own validation mechanisms too. Rather than modifying itself unconditionally, this establishes a capability-improvement process that can be inspected, evaluated, and iterated.
+- **Hot reload and iteration archive**: Plugins support hot reload; the evolution factory presents evaluation results as standalone HTML reports and keeps an iteration record. For upgrades that support rollback, you can restore the previous version.
 
-- FileSystem suite: `read` / `edit` / `write` / `search` / `glob`, with PDF/DOCX/XLSX converted to Markdown via MarkItDown.
+### 03 · Secure Self-Hosting
 
-- Boundary control: physical black/white lists; imports are checked against a 30MB limit and path traversal, exports trigger Git snapshots.
+> **The Agent has its own workspace; your host machine is still yours to control.**
 
-- Extension tools: CallMCP, hybrid Search, Fetch, Memo, Cron, Task, BrainStorm, KernelUpgrade; external MCP servers supported.
+PurrCat isolates the Agent's execution environment from the host, letting it keep working while clearly limiting the boundary of host-file access.
 
-### 04 Agent Hub and Session Management
+- **Isolated execution sandbox**: The Agent runs commands and manipulates files in a dedicated Docker container, persistently keeping its workspace and logs.
+- **Controlled host-file interaction**: File imports are validated for size and path; file exports can trigger a Git snapshot for auditing and traceability; directory allow/deny lists limit the access scope.
+- **Heartbeat + Goal**: `GOAL.md` provides long-term goals. When idle, the Agent can autonomously perform patrols, information gathering, and reporting on a heartbeat cycle, and the heartbeat interval supports hot reload.
 
-- Git-style session branching: new, branch, and switch sessions; trial-and-error without losing the main trunk.
+### 04 · More Efficient Context and Tool Management
 
-- Automatic repair: malformed tool calls are intercepted and rolled back to a safe state.
+> **Reduce unnecessary tool information; keep a stable long-session cache.**
 
-- Context truncation: when token limits are exceeded, older history is replaced by memo summaries at safe cut points.
+- **Stable KV Cache**: The API key manager binds tasks and sessions to a single key, reducing the impact of key switching on the long-session prefix cache. By project measurement, the cache hit rate holds above 99% in long sessions.
+- **Retrieve tools and skills on demand**: Native tools use compact schemas; tools and skills adopt a store-then-retrieve strategy, turning an attention problem into a retrieval problem — MCP tools and skills are selected on demand via vector retrieval, so every request no longer carries all extension definitions, and hot-reloading tools does not break the cache while installing many tools does not burn extra tokens.
+- **Reduce collaboration overhead**: Independent workflows pass node results as structured data, and with memory summaries and task hand-off, they cut unnecessary natural-language restatement and repeated context.
 
-- Persona and vitality: `SOUL.md` defines values; a heartbeat-driven mechanism lets the agent patrol, clean up, and report during idle time.
+---
 
-- Declarative execution paradigm (PARADIGM): `PARADIGM.yaml` defines triggers, lifecycle hooks, tool-use checks, and loop exit conditions in near-natural-language rules — rewrite the Agent loop by editing config.
+## Design Goals
 
-- A dedicated vision consultant isolates image processing from the main session to improve signal-to-noise ratio.
+PurrCat aims to be a customizable, extensible, and sustainably evolving Agent foundation.
 
-### 05 Proactive Perception and Event Gateway
+From how information enters the Agent, to how tasks execute, how memory is organized, and how capabilities expand, developers can orchestrate all of it in the way they work — without being constrained by a fixed Agent Loop or a single interaction mode.
 
-- Sensors run as independent subprocesses with PEP 723 inline dependencies managed by uv; a single sensor crash does not affect the main process.
-
-- Stdio JSON-RPC communication over pipes; no network ports involved.
-
-- Built-in sensors: System (heartbeat/polling), Feishu (WebSocket), RSS, and Audio (Whisper + pyttsx3).
-
-### 06 Model Scheduling and Concurrency
-
-- API key load balancing: idle-first key allocation under a thread lock, preventing single-key rate limits.
-
-- Semaphore queuing and jittered exponential backoff (up to 8 retries) for high-concurrency availability.
-
-### 07 KV Cache and Token Economics
-
-- Stable KV cache hit rates across session switches, via strong key-to-session binding in the API key manager.
-
-- DAG execution removes inter-agent token redundancy; task executors produce summaries for background digestion instead of full-history reads.
-
-### 08 Configuration-Driven Extension
-
-- Zero-code MCP integration: paste standard JSON into `mcp_config.json`; the tool tree hot-updates after handshake.
-
-- Community skills: drop a skill folder (containing `SKILL.md`) into `~/.purrcat/skills` and it joins the retrieval tree.
-
-- Visual DAG editing in the UI, with one-click JSON import/export.
-
-- Sensors toggle on/off in the UI; missing sensor scripts are fetched automatically at startup.
+**Let the Agent be not just stronger, but more aligned with how you work.**
 
 <br clear="right" />
 
-***
+---
 
 ## Acknowledgments
 
-- [zhenghuanle](https://github.com/zhenghuanle) tested the installation flow from scratch.
-
-- [Gaeulczy](https://github.com/Gaeulczy) tested the one-click setup and run scripts.
-
-- [JohnWJ-co](https://github.com/JohnWJ-co) helped test the Mac build and troubleshoot error causes.
-
+- [zhenghuanle](https://github.com/zhenghuanle): tested the installation flow from scratch.
+- [Gaeulczy](https://github.com/Gaeulczy): tested the one-click install and run scripts.
+- [JohnWJ-co](https://github.com/JohnWJ-co): tested the macOS build and helped troubleshoot issues.
 - Sponsored by the Smart Agent Development Competition hosted by the Sun Yat-sen University OpenHarmony Technology Club.
 
 ## License
 
-Released under the [MIT](LICENSE) license. You are free to use, modify, and distribute this project, including for commercial purposes.
+PurrCat is open-sourced under the [MIT License](LICENSE), free to use, modify, and distribute, including for commercial purposes.
