@@ -186,7 +186,9 @@ def api_get_acp_status():
         "relay_matches_source": matches,
         "port": configured_port or 8000,
         "actual_port": actual_port,
-        "port_mismatch": bool(configured_port and actual_port and configured_port != actual_port),
+        "port_mismatch": bool(
+            configured_port and actual_port and configured_port != actual_port
+        ),
         "uv_found": shutil.which("uv") is not None,
     }
 

@@ -13,7 +13,7 @@ First stable release. This version reworks the front-end delivery model and the 
 ### Added
 
 - **UI plugin system (`ui-plugin`)**: a new plugin type that lets developers fully customize the style and behavior of front-end panel views. Ships with a hot-swappable subprocess plugin runtime, a dedicated plugin market with automatic dependency install, plugin root/dependency/origin metadata, and the `create_ui_plugin` KernelUpgrade capability with an authoring guide.
-- **Minimal UI with built-in plugins**: the app now runs on minimal UI mode and bundles the essential built-in plugins — session/history, sessions & pending approvals, task, memory graph, built-in browser, market, evolve factory, and background.
+- **Minimal UI with built-in plugins**: the app now runs on minimal UI mode and bundles the essential built-in plugins — session/history, sessions & pending approvals, task, memory graph, built-in browser, market, evolve factory, and background. User can build a efficient channel that is uniquely themselves.
 - **Developer documentation**: a modular server API reference (`docs/api/*`) and plugin development guides (`docs/plugins`: graph / agentloop / sensor / ui-plugin), with CI validating that the docs stay in sync with the server routes.
 
 ### Changed
@@ -45,7 +45,7 @@ First stable release. This version reworks the front-end delivery model and the 
 ### 新增
 
 - **UI 插件体系（`ui-plugin`）**：新增插件类型，开发者可自由定制前端面板的样式与功能。配套热插拔子进程插件运行时、带依赖自动安装的独立插件市场、插件根目录/依赖/来源元数据，以及 `create_ui_plugin` 的 KernelUpgrade 能力与编写指南。
-- **极简 UI 与内置插件**：应用现以极简 UI 模式运行，并内置一批必要插件——会话/历史、会话与待审批、任务、记忆图谱、内置浏览器、市场、进化工厂、背景。
+- **极简 UI 与内置插件**：应用现以极简 UI 模式运行，并内置一批必要插件——会话/历史、会话与待审批、任务、记忆图谱、内置浏览器、市场、进化工厂、背景。用户可根据需要搭建专属于自己的沟通信道。
 - **开发者文档**：模块化的服务端 API 参考（`docs/api/*`）与插件开发指南（`docs/plugins`：graph / agentloop / sensor / ui-plugin），并加入 CI 校验文档与服务端路由一致。
 
 ### 变更
