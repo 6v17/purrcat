@@ -1,18 +1,18 @@
-# PurrCat
-
 <div align="center">
 
-**一个基于信息论理念设计的 Agent 底座**
+# PurrCat
+
+一个基于信息论理念设计的 Agent 底座
 
 让表达不再是一次有损压缩，让 Agent 按你的方式工作。
 
-**Build an Agent That Works Your Way.**
+**Build an Agent That Works Your Way**
 
 [文档](https://purrpod.github.io/)
 
 </div>
 
----
+***
 
 <img src="purrcat-logo.png" width="220" height="220" alt="PurrCat" align="right" />
 
