@@ -2609,6 +2609,15 @@
   }
   function openUrlInBrowserPanel(url) {
     const u = String(url || '').trim();
+    // purrcat:// 是本应用自造的虚拟协议，只有后端 envelope.parse_uri 能解析成真实文件；
+    // 原样交给 Chromium/系统会被委托给操作系统外壳，Windows 便弹「找不到能打开此链接的应用」。
+    // 按既有约定（完整模式 TaskPage / builtin-task）翻译成后端产物端点，再进内置浏览器打开。
+    if (/^purrcat:\/\//i.test(u)) {
+      const tid = (/^purrcat:\/\/task\/([^/]+)\/node\//i.exec(u) || [])[1];
+      const art = '/api/tasks/' + encodeURIComponent(tid || '_unknown') +
+        '/artifact?uri=' + encodeURIComponent(u);
+      return openUrlInBrowserPanel(new URL(art, location.origin).href);
+    }
     const pc = HOST.purrcat;
     const hit = browserPanel();
     // 中栏容器由插件入驻时宿主内置容器已让位（panelState 为空），此时把地址广播给

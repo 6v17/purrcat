@@ -312,6 +312,14 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // 主窗口内直接点击 <a href="purrcat://…">（无 target）会触发渲染器导航：不拦就会把未知 scheme
+  // 委托给操作系统外壳，弹出「找不到应用」。拦下后转交前端统一链接路由。
+  mainWindow.webContents.on('will-navigate', (e, navUrl) => {
+    if (isWebScheme(navUrl)) return;
+    e.preventDefault();
+    routeNonWebUrl(navUrl);
+  });
+
   // 🌟 主窗口关闭 = 用户想退出应用：连带销毁所有附属窗口（IDE / 浏览器独立窗口）。
   // 否则 window-all-closed 不触发，应用连同后端进程残留成僵尸，
   // 用户下次"重启程序"实际变成第二实例，前端连到持有过期环境变量的旧后端。
@@ -390,11 +398,32 @@ function isSelfUrl(url) {
   } catch { return false; }
 }
 
+// 允许 webContents 加载的 scheme 白名单。其余（purrcat:/mailto:/tel: 等）一律不得 loadURL：
+// Chromium 遇到不认识的 scheme 会把它委托给操作系统外壳，Windows 便弹出
+// 「找不到能打开此链接的应用」。非 web scheme 统一拦下并转交前端链接路由处理。
+const WEB_SCHEMES = new Set(['http:', 'https:', 'file:', 'data:', 'about:', 'blob:']);
+function isWebScheme(url) {
+  if (!url || typeof url !== 'string') return false;
+  try { return WEB_SCHEMES.has(new URL(url).protocol); } catch { return false; }
+}
+
+// 把非 web scheme 的导航/新开标签交给前端统一路由（由它翻译 purrcat:// 等内部协议）
+function routeNonWebUrl(url) {
+  if (!url || url === 'about:blank') return;
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('purrcat:open-url', url);
+}
+
 ipcMain.handle('browser:new-tab', (_e, url) => {
   const targetWin = getTargetWin();
   if (!targetWin) return null;
   if (isSelfUrl(url)) {
     pushTabEvent({ type: 'blocked', url, reason: '不能在内置浏览器中打开应用自身的地址' });
+    return null;
+  }
+  // 非 web scheme（如 purrcat://）：绝不 loadURL，转交前端路由翻译成可访问的后端地址
+  if (!isWebScheme(url)) {
+    pushTabEvent({ type: 'blocked', url, reason: '已交由应用内链接路由处理该协议' });
+    routeNonWebUrl(url);
     return null;
   }
   const tabId = 'tab_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
@@ -418,6 +447,14 @@ ipcMain.handle('browser:new-tab', (_e, url) => {
     const t = tabs.get(tabId);
     if (t) t.url = navUrl;
     pushTabEvent({ type: 'navigate', tabId, url: navUrl });
+  });
+  // 页面内点击 purrcat:// 等非 web scheme 链接会让本视图直接导航 → Chromium 委托 OS 弹窗。
+  // 拦下并转交前端路由（翻译成后端地址后重新在内置浏览器打开）。
+  view.webContents.on('will-navigate', (e3, navUrl) => {
+    if (isWebScheme(navUrl)) return;
+    e3.preventDefault();
+    pushTabEvent({ type: 'blocked', url: navUrl, reason: '已交由应用内链接路由处理该协议' });
+    routeNonWebUrl(navUrl);
   });
   // 🌟 dom-ready 后再聚焦一次：new-tab 时 showView 的 focus() 可能早于渲染进程就绪而失效
   view.webContents.once('dom-ready', () => {
@@ -480,6 +517,12 @@ ipcMain.handle('browser:navigate', (_e, { tabId, url }) => {
   if (!t || !url) return;
   if (isSelfUrl(url)) {
     pushTabEvent({ type: 'blocked', url, reason: '不能在内置浏览器中打开应用自身的地址' });
+    return;
+  }
+  // 非 web scheme（如 purrcat://）：不 loadURL，转交前端路由处理
+  if (!isWebScheme(url)) {
+    pushTabEvent({ type: 'blocked', url, reason: '已交由应用内链接路由处理该协议' });
+    routeNonWebUrl(url);
     return;
   }
   t.url = url;
