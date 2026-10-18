@@ -20,7 +20,9 @@
     graphName: '',
     description: '',
     dirty: false,
-    drawers: { files: true, nodes: true }   // 左侧两个抽屉的展开状态
+    workplaces: [],                         // 沙盒内（Graph 工厂加工中的产物）
+    sandboxCtx: null,                       // 当前编辑的是沙盒产物时为 {workplace_id, name, raw}；否则 null
+    drawers: { sandbox: true, files: true, nodes: true }   // 左侧分类抽屉的展开状态
   };
 
   var sideBodyEl, canvasEl, worldEl, svgEl, toolbarEl, hintEl;
@@ -168,12 +170,42 @@
     renderSide();
   }
 
+  // 沙盒内：列出 Graph 工厂加工中的产物（点击只读预览）
+  async function loadWorkplaces() {
+    state.workplaces = await EV.sandboxList('graph');
+    renderSide();
+  }
+
+  // 打开沙盒内 Graph 产物：直接载入可视化画布（可编辑，保存回写沙盒 graph.json）
+  async function openSandboxGraph(wp) {
+    try {
+      if (!state.catalog.length) await loadCatalog();
+      var d = await EV.api.get('/api/evolve/file' + EV.qs({
+        workplace_id: wp.workplace_id, name: wp.name, type: 'graph', filename: 'graph.json'
+      }));
+      var data = JSON.parse((d && d.content) || '{}');
+      loadGraphData(data);
+      state.graphName = wp.name;
+      state.description = data.description || '';
+      state.sandboxCtx = { workplace_id: wp.workplace_id, name: wp.name, raw: data };
+      state.dirty = false;
+      state.selectedId = null;
+      state.selectedEdgeId = null;
+      renderAll();
+      fitView();
+      EV.toast('已载入沙盒产物 ' + wp.name);
+    } catch (e) {
+      EV.toast('载入沙盒产物失败：' + e.message, true);
+    }
+  }
+
   async function openGraph(name) {
     try {
       var data = await EV.api.get('/api/graphs/' + encodeURIComponent(name));
       loadGraphData(data);
       state.graphName = name;
       state.description = data.description || '';
+      state.sandboxCtx = null;
       state.dirty = false;
       state.selectedId = null;
       state.selectedEdgeId = null;
@@ -223,7 +255,7 @@
     });
   }
 
-  function exportGraph(name) {
+  function exportGraph(name, keepIds) {
     var taskInput = null;
     state.nodes.forEach(function (n) { if (n.type === 'task_input') taskInput = n; });
     var globalSchema = {};
@@ -240,7 +272,7 @@
       });
     }
     var idMap = {};
-    state.nodes.forEach(function (n) { idMap[n.id] = n.type + '_' + rand6(); });
+    state.nodes.forEach(function (n) { idMap[n.id] = keepIds ? n.id : n.type + '_' + rand6(); });
     var out = {
       version: '2.0',
       name: name,
@@ -364,11 +396,19 @@
     newBtn.onclick = function () {
       state.nodes = []; state.edges = []; state.selectedId = null; state.selectedEdgeId = null;
       state.graphName = ''; state.description = ''; state.extras = null; state.dirty = false;
+      state.sandboxCtx = null;
       renderAll(); fitView();
     };
     sideBodyEl.appendChild(newBtn);
 
-    // 抽屉 1：打开已有图谱
+    // 抽屉 1：沙盒内（Graph 工厂加工中的产物）
+    sideBodyEl.appendChild(EV.drawer(
+      '沙盒内', state.workplaces.length, state.drawers.sandbox,
+      function (open) { state.drawers.sandbox = open; },
+      function (body) { renderSandboxList(body); }
+    ));
+
+    // 抽屉 2：打开已有图谱
     sideBodyEl.appendChild(EV.drawer(
       '打开已有图谱', state.files.length, state.drawers.files,
       function (open) { state.drawers.files = open; },
@@ -389,7 +429,7 @@
       }
     ));
 
-    // 抽屉 2：添加节点
+    // 抽屉 3：添加节点
     sideBodyEl.appendChild(EV.drawer(
       '添加节点', state.catalog.length, state.drawers.nodes,
       function (open) { state.drawers.nodes = open; },
@@ -421,6 +461,26 @@
         });
       }
     ));
+  }
+
+  // 沙盒内：列出 Graph 工厂加工中的产物（点击直接载入可视化画布编辑）
+  function renderSandboxList(body) {
+    if (!state.workplaces.length) {
+      body.appendChild(EV.el('div', 'hint', '沙盒内暂无正在加工的 Graph 产物。'));
+      return;
+    }
+    state.workplaces.forEach(function (wp) {
+      var on = state.sandboxCtx && state.sandboxCtx.workplace_id === wp.workplace_id;
+      var item = EV.el('div', 'item' + (on ? ' on' : ''));
+      var nm = EV.el('div', 'item-name');
+      nm.innerHTML = EV.icon('graph', 14);
+      nm.appendChild(EV.el('span', 'nm', wp.name));
+      item.appendChild(nm);
+      item.appendChild(EV.el('div', 'item-sub', '沙盒 ' + wp.workplace_id));
+      item.title = '在画布中打开沙盒产物，编辑后保存回写 graph.json';
+      item.onclick = function () { openSandboxGraph(wp); };
+      body.appendChild(item);
+    });
   }
 
   function addNode(type, at) {
@@ -1180,6 +1240,11 @@
     toolbarEl.innerHTML = '';
     var nm = EV.el('span', 'note', state.graphName ? state.graphName + (state.dirty ? ' *' : '') : '（未命名画布）');
     toolbarEl.appendChild(nm);
+    if (state.sandboxCtx) {
+      var chip = EV.el('span', 'chip', '沙盒编辑 · ' + state.sandboxCtx.workplace_id);
+      chip.title = '当前编辑的是沙盒内产物，保存将回写沙盒 graph.json';
+      toolbarEl.appendChild(chip);
+    }
     toolbarEl.appendChild(EV.el('span', 'spacer'));
 
     function tbtn(icon, title, fn, cls) {
@@ -1235,7 +1300,7 @@
 
     var save = EV.el('button', 'btn primary');
     save.innerHTML = EV.icon('upload', 14);
-    save.appendChild(EV.el('span', null, '保存'));
+    save.appendChild(EV.el('span', null, state.sandboxCtx ? '保存到沙盒' : '保存'));
     save.onclick = saveGraph;
     toolbarEl.appendChild(save);
   }
@@ -1264,6 +1329,26 @@
       });
       if (!go) return;
     }
+
+    // 沙盒模式：保持名称与文件夹一致，直接把编辑结果回写沙盒 graph.json
+    if (state.sandboxCtx) {
+      var ctx = state.sandboxCtx;
+      try {
+        var g = exportGraph(ctx.name, true);
+        if (ctx.raw) g = Object.assign({}, ctx.raw, g);   // 保留 description-zh / core 等未在画布中编辑的字段
+        await EV.api.put('/api/evolve/file' + EV.qs({
+          workplace_id: ctx.workplace_id, name: ctx.name, type: 'graph', filename: 'graph.json'
+        }), { content: JSON.stringify(g, null, 2) });
+        state.graphName = ctx.name;
+        state.dirty = false;
+        renderAll();
+        EV.toast('已保存到沙盒：' + ctx.name);
+      } catch (e) {
+        EV.toast('保存到沙盒失败：' + e.message, true);
+      }
+      return;
+    }
+
     var name = await EV.prompt({
       title: '保存工作流',
       label: '图谱名称',
@@ -1399,10 +1484,12 @@
       renderSide();
 
       loadCatalog().then(loadFileList);
+      loadWorkplaces();
     },
     onShow: function () {
       renderToolbar();
       drawEdges();
+      loadWorkplaces();
     }
   });
 })();

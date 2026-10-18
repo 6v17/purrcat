@@ -95,7 +95,9 @@
     hooks: emptyHooks(),
     extraHooks: {},
     baseline: '',
-    dirty: false
+    dirty: false,
+    workplaces: [],                                // 沙盒内（AgentLoop 工厂加工中的产物）
+    drawers: { sandbox: true, library: true }      // 左侧分类抽屉的展开状态
   };
 
   // 「特殊引用说明」：与后端 hook_handler.py 的 PATH_ALIASES / @SYS / @USERQUERY 保持一致。
@@ -308,10 +310,49 @@
     }
   }
 
-  /* ---------------- 渲染：左列表（Paradigm 文件直列） ---------------- */
+  /* ---------------- 渲染：左列表（分类：沙盒内 / 正式库） ---------------- */
   function renderSide() {
     sideBodyEl.innerHTML = '';
-    renderFileList(sideBodyEl);
+
+    // 分类一：沙盒内（AgentLoop 工厂加工中的产物）
+    sideBodyEl.appendChild(EV.drawer(
+      '沙盒内', state.workplaces.length, state.drawers.sandbox,
+      function (open) { state.drawers.sandbox = open; },
+      function (body) { renderSandboxList(body); }
+    ));
+
+    // 分类二：正式库（已发布范式）
+    sideBodyEl.appendChild(EV.drawer(
+      '正式库', state.files.length, state.drawers.library,
+      function (open) { state.drawers.library = open; },
+      function (body) { renderFileList(body); }
+    ));
+  }
+
+  // 沙盒内：列出 AgentLoop 工厂加工中的产物（点击只读预览）
+  async function loadWorkplaces() {
+    state.workplaces = await EV.sandboxList('agentloop');
+    renderSide();
+  }
+
+  function renderSandboxList(body) {
+    if (!state.workplaces.length) {
+      body.appendChild(EV.el('div', 'hint', '沙盒内暂无正在加工的 AgentLoop 产物。'));
+      return;
+    }
+    state.workplaces.forEach(function (wp) {
+      var item = EV.el('div', 'item');
+      var nm = EV.el('div', 'item-name');
+      nm.innerHTML = EV.icon('loop', 14);
+      nm.appendChild(EV.el('span', 'nm', wp.name));
+      item.appendChild(nm);
+      item.appendChild(EV.el('div', 'item-sub', '沙盒 ' + wp.workplace_id));
+      item.title = '查看沙盒内正在加工的产物';
+      item.onclick = function () {
+        EV.previewSandboxFile('agentloop', wp, wp.name + '.yaml', 'AgentLoop');
+      };
+      body.appendChild(item);
+    });
   }
 
   // 特殊引用说明：不再常驻左列表，改为工具栏按钮唤起的详情弹窗
@@ -1328,7 +1369,8 @@
 
       renderMain();
       loadFileList();
+      loadWorkplaces();
     },
-    onShow: function () { loadFileList(); }
+    onShow: function () { loadFileList(); loadWorkplaces(); }
   });
 })();

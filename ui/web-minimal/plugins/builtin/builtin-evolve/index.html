@@ -651,11 +651,79 @@
     });
   }
 
+  // ---------- 沙盒内（进化工厂加工中产物）----------
+  // 列出某工厂类型的沙盒产物（type: 'agentloop' | 'graph'）
+  async function sandboxList(type) {
+    try {
+      var list = await api.get('/api/evolve/list?type=' + encodeURIComponent(type));
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // 只读预览一个沙盒产物的文件。mainHint：agentloop 用 '<name>.yaml'，graph 用 'graph.json'
+  async function previewSandboxFile(type, wp, mainHint, kindLabel) {
+    var base = { workplace_id: wp.workplace_id, name: wp.name, type: type };
+    var files = [];
+    try {
+      var tree = await api.get('/api/evolve/file' + qs(base));
+      files = (tree && tree.attachments) || [];
+    } catch (e) { /* 文件树读取失败时下面给出提示 */ }
+
+    var wrap = el('div');
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.gap = '8px';
+
+    var head = el('div', 'row');
+    head.appendChild(el('span', 'chip mute', '沙盒 ' + wp.workplace_id));
+    head.appendChild(el('span', 'note', (kindLabel || type) + ' · 加工中'));
+    wrap.appendChild(head);
+
+    if (!files.length) {
+      wrap.appendChild(el('div', 'hint', '未能列出沙盒文件（可能已被清理）。'));
+      modal({ title: '沙盒产物 · ' + wp.name, width: '640px', node: wrap });
+      return;
+    }
+
+    var chips = el('div', 'row');
+    chips.style.flexWrap = 'wrap';
+    chips.style.gap = '6px';
+    var pre = el('pre', 'pre mono');
+    pre.style.margin = '0';
+
+    function paint(name) {
+      Array.prototype.forEach.call(chips.children, function (b) {
+        b.classList.toggle('primary', b.dataset.f === name);
+      });
+      pre.textContent = '加载中…';
+      api.get('/api/evolve/file' + qs(Object.assign({}, base, { filename: name })))
+        .then(function (d) { pre.textContent = (d && d.content) || '（空文件）'; })
+        .catch(function (e) { pre.textContent = '读取失败：' + e.message; });
+    }
+
+    var main = (mainHint && files.indexOf(mainHint) >= 0) ? mainHint : files[0];
+    files.forEach(function (f) {
+      var b = el('button', 'btn sm');
+      b.dataset.f = f;
+      b.textContent = f;
+      b.onclick = function () { paint(f); };
+      chips.appendChild(b);
+    });
+    wrap.appendChild(chips);
+    wrap.appendChild(pre);
+    paint(main);
+
+    modal({ title: '沙盒产物 · ' + wp.name, width: '640px', node: wrap });
+  }
+
   window.EV = {
     el: el, icon: icon, escape: escapeHtml, debounce: debounce, fmtTime: fmtTime,
     toast: toast, api: api, qs: qs, modal: modal, confirm: confirm, prompt: prompt,
     md: md, setActions: setActions, register: register, activate: activate,
     attachSideToggle: attachSideToggle, drawer: drawer,
+    sandboxList: sandboxList, previewSandboxFile: previewSandboxFile,
     on: function () {}
   };
   // 供标签模块在 mount 前声明标签元信息
