@@ -11,6 +11,12 @@ def generate_agentloop_guide(name: str, goal: str = "") -> str:
 AgentLoop（范式 / PARADIGM）用一份 YAML 声明**每一轮循环在哪些阶段注入什么内容、执行什么检查**，
 从而定制 Agent 的思考与行动流程。本指南覆盖结构规范、专有词汇表、校验与提交全流程，动手前请先通读。
 {goal_section}
+> ⚠️ **动手前先查证能力，严禁瞎编工具 / 技能**：凡是要写进 `skill_info.skills` 的**技能名**、或要经 `CallMCP` 调用的 **MCP 工具名**，
+> 都必须先确认它真实存在于宿主机。**写之前请先调用 `Search` 工具查证**：
+> `Search(route="skill", query="<技能名或用途>")`、`Search(route="mcp", query="<服务器名或工具名>")`，
+> 或用 `Search(route="local", query="<用途>")` 一次混合搜索技能库与 MCP 工具。
+> **搜不到就不要写**——宁可改用原生工具、或把该步骤交给 Agent 自行处理，也绝不捏造一个不存在的技能 / MCP 工具名。
+
 ## 1. 运行时模型
 
 * Agent 每轮循环依次触发若干**阶段（stage）**；每个阶段可挂若干 **hook**，按声明顺序执行。
@@ -106,6 +112,8 @@ hooks:                             # 阶段 → hook 列表（必填、非空）
 * **skill 与 MCP 都必须真实存在于宿主机**才能被检查或注入：`skill_info.skills`、`search(route='mcp')` 等注入动作，
   以及上面的 `CallMCP` 参数检查，都只有在宿主机确实装了这个 skill / 配了这个 MCP 时才成立；
   不存在时注入会走 `failed_prompt`，`CallMCP` 也会直接报「不在配置里」。
+  **因此写这些名字之前必须先用 `Search` 工具查证**（`route="skill"` / `route="mcp"` / `route="local"`），
+  确认存在再写；搜不到就不写，不要凭印象编造技能名或 MCP 工具名。
 
 * `parameter_check` 的匹配语义：拿**本轮实际调用 `name` 工具时的入参**逐项比对；一项内多个键需**同时**命中（值精确相等），
   多项之间为**或**——任一项命中即视为「用了且满足条件」。

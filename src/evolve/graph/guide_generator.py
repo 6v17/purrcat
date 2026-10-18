@@ -63,7 +63,7 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 | `type` | 节点类型（见第 4 节白名单）|
 | `name` | 节点显示名 |
 | `position` | `[x, y]` 画布坐标 |
-| `config` | 该节点类型的配置对象 |
+| `config` | 该节点类型的配置对象；**只有少数节点需要填**，见第 4.1 节 |
 
 * 端口分 **static**（固定）与 **dynamic**（由 `config` 动态生成，如 `task_input.global_vars` 生成输出端口、
   `template_renderer.template` 里的 `{{{{变量}}}}` 生成输入端口）。
@@ -71,26 +71,51 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 
 ## 4. 节点类型白名单（专有词汇表）
 
-| `type` | 名称 | 主要端口（输入 → 输出）|
-| --- | --- | --- |
-| `task_input` | 全局输入 | — → `dynamic_outputs`（按 global_vars 生成）|
-| `task_output` | 全局输出 | `dynamic_inputs` → — |
-| `string` | 自定义输入 | `trigger` → `text`/`number`/`boolean`/`json` |
-| `template_renderer` | 模板渲染器 | `template`/`dynamic_vars`/`trigger` → `rendered_text` |
-| `message_card_builder` | 消息卡片构建器 | `content`/`role`/`trigger` → `message_list` |
-| `appender` | 列表追加 | `base_list`/`append_list` → `merged_list` |
-| `json_builder` | JSON 构建器 | `dynamic_inputs`/`trigger` → `json_string` |
-| `json_extractor` | JSON 提取器 | `data` → `dynamic_outputs` |
-| `env_loader` | 环境变量加载器 | — → `dynamic_outputs` |
-| `skill_info` | Skill 知识包 | `trigger` → `skill_kit_string` |
-| `mcp_info` | MCP 知识包 | `trigger` → `mcp_kit_string` |
-| `agent_loop` | 智能体循环 | `messages`/`agentloop` → `messages`/`summary` |
-| `human_intervention` | 人工干预 | `trigger`/`context_data`/`prompt` → `human_reply`/`context_data` |
-| `command` | 命令执行 | `command`/`os`/`trigger` → `stdout`/`stderr`/`exit_code`/`skipped` |
-| `file_reader` | 文件读取/预览 | `trigger`/`source` → `content`/`file` |
-| `file_writer` | 文件落盘 | `trigger`/`content`/`filename` → `file` |
+| `type` | 名称 | 主要端口（输入 → 输出）| `config` 需填 |
+| --- | --- | --- | --- |
+| `task_input` | 全局输入 | — → `dynamic_outputs`（按 global_vars 生成）| `global_vars` |
+| `task_output` | 全局输出 | `dynamic_inputs` → — | `target_vars` |
+| `string` | 自定义输入 | `trigger` → `text`/`number`/`boolean`/`json` | `value` |
+| `template_renderer` | 模板渲染器 | `template`/`dynamic_vars`/`trigger` → `rendered_text` | `template` |
+| `message_card_builder` | 消息卡片构建器 | `content`/`role`/`trigger` → `message_list` | — |
+| `appender` | 列表追加 | `base_list`/`append_list` → `merged_list` | — |
+| `json_builder` | JSON 构建器 | `dynamic_inputs`/`trigger` → `json_string` | `kv_pairs` |
+| `json_extractor` | JSON 提取器 | `data` → `dynamic_outputs` | `extract_keys` |
+| `env_loader` | 环境变量加载器 | — → `dynamic_outputs` | `exposed_keys` |
+| `skill_info` | Skill 知识包 | `trigger` → `skill_kit_string` | `skills_list` |
+| `mcp_info` | MCP 知识包 | `trigger` → `mcp_kit_string` | `mcp_servers` |
+| `agent_loop` | 智能体循环 | `messages`/`agentloop` → `messages`/`summary` | 范式靠端口，`config` 可留空 |
+| `human_intervention` | 人工干预 | `trigger`/`context_data`/`prompt` → `human_reply`/`context_data` | — |
+| `command` | 命令执行 | `command`/`os`/`trigger` → `stdout`/`stderr`/`exit_code`/`skipped` | — |
+| `file_reader` | 文件读取/预览 | `trigger`/`source` → `content`/`file` | — |
+| `file_writer` | 文件落盘 | `trigger`/`content`/`filename` → `file` | — |
 
 > 已废弃类型（`preview`、`if_else_router`、`python_runner` 等）会被校验器判错，必须改用上表类型。
+
+### 4.1 `config` 只有少数节点需要填（重点）
+
+**上表 `config` 需填 列为 `—` 的 7 种节点完全不需要 `config`**（写成 `{{}}` 或干脆省略即可）：
+`message_card_builder`、`appender`、`human_intervention`、`command`、`file_reader`、`file_writer`，
+外加 `agent_loop`（它唯一的 `config.summary_file` 有默认值 `summary.txt`，可留空）。
+它们的行为**全靠输入端口**决定，不要凭空臆造 config 字段。
+
+其余 9 种节点的 `config` 字段如下（下表字段名是固定的，写错名字不会生效）：
+
+| 节点 | `config` 字段 | 类型 | 说明与示例 |
+| --- | --- | --- | --- |
+| `task_input` | `global_vars` | list | 声明全局输入变量，逐项 `{{name, required, description}}`，据此生成输出端口与任务表单。示例：`[{{"name":"prompt","required":true,"description":"用户任务描述"}}]` |
+| `task_output` | `target_vars` | list | 声明要输出的目标键，逐项 `{{name}}`，据此生成动态输入端口 |
+| `string` | `value` | textarea | 常量内容正文，节点按内容自动派生 `text`/`number`/`boolean`/`json` 输出端口 |
+| `template_renderer` | `template` | textarea | Jinja2 模板正文，正文里的 `{{{{变量}}}}` 会派生左侧输入端口；若另有连线接入 `template` 端口，**连线内容优先** |
+| `json_builder` | `kv_pairs` | list | 要构建的 JSON 键名，逐项 `{{name}}`；某键有连线时取连线值，无连线则取此处默认值 |
+| `json_extractor` | `extract_keys` | list | 要从输入 JSON 中提取的键名（支持嵌套），逐项 `{{name}}` |
+| `env_loader` | `exposed_keys` | list | 从本工作流 `env.json` 中暴露的键名，逐项 `{{name}}`；未声明者保持隐藏，避免数据流污染 |
+| `skill_info` | `skills_list` | list | 推荐给 Agent 的技能名，逐项 `{{name}}`；**必须先用 `Search(route="skill")` 查证其真实存在** |
+| `mcp_info` | `mcp_servers` | list | 推荐给 Agent 的 MCP 服务器名，逐项 `{{name}}`；**必须先用 `Search(route="mcp")` 查证其真实存在** |
+
+> **`agent_loop` 用哪个范式，不是靠 `config`**：由它的 `agentloop` **输入端口**决定（常见做法：用 `string` 节点写一个常量接进去）。该端口接受三种形态：
+> ① 完整的 AgentLoop YAML 文本；② **范式名**（如 `"video-editing"`，运行时经 `resolve_paradigm_path` 解析到 `~/.purrcat/paradigms/<名>.yaml`）；③ 范式文件的绝对路径。
+> 不连线则回退默认范式。传范式名是**合法且推荐**的用法。
 
 ## 5. 边（Edge）映射
 
@@ -106,6 +131,11 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 
 ## 6. 编排建议（最佳实践）
 
+* **引用技能 / MCP 前必须先用 `Search` 工具查证，严禁瞎编**：`skill_info.skills_list` 里只能写宿主机上**真实存在**的技能名，
+  `mcp_info.mcp_servers` 里只能写**真实配置过**的 MCP 服务器名。动笔前先调用 `Search` 工具确认：
+  `Search(route="skill", query="<技能名或用途>")`、`Search(route="mcp", query="<服务器名或工具名>")`，
+  或用 `Search(route="local", query="<用途>")` 一次混合搜索技能库与 MCP 工具。
+  **搜不到就不写**——宁可不给推荐、或改让 Agent 自行处理，也绝不捏造一个不存在的技能 / MCP 服务器名。
 * **尽量不用命令执行节点**：能交给 Agent 解决的就不要用 `command` 节点，直接把要做的事写进提示词交给 `agent_loop` 即可。
 * **不通用就别单独建 AgentLoop**：若这段 Agent 逻辑只是本图专用、没有复用价值，就不必单独做一个 `agentloop` 范式，直接把提示词写在 `string`（自定义输入）节点里，接到 `agent_loop` 的 `messages` 输入即可；只有通用、可被多处复用的逻辑才值得沉淀成独立范式。
 * **复杂任务拆多个 Agent**：一个 `agent_loop` 只承担单一职责，复杂任务应拆成多个 `agent_loop` 节点，让每个节点的提示词保持聚焦、不臃肿。
