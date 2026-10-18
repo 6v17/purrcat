@@ -254,6 +254,48 @@ def resolve_request(
                         feedback = (
                             f"合并失败：未找到 {target} 对应的 Sensor 工厂沙盒文件。"
                         )
+                # ---- AgentLoop 合并逻辑 ----
+                elif req_type == "agentloop_merge":
+                    import glob
+                    from src.evolve import agentloop_request_handle
+
+                    # agentloop 沙盒结构：agentloop_workplace/<uuid>/<name>.yaml（单文件）
+                    paths = glob.glob(
+                        os.path.join(
+                            AGENT_VM_DIR, "agentloop_workplace", "*", f"{target}.yaml"
+                        )
+                    )
+                    if paths:
+                        workplace_root = os.path.dirname(paths[0])
+                        sys_note = agentloop_request_handle(
+                            workplace_root, target, is_approved=True
+                        )
+                        feedback = f"{sys_note}\n(用户批注: {feedback})"
+                    else:
+                        feedback = (
+                            f"合并失败：未找到 {target} 对应的 AgentLoop 工厂沙盒文件。"
+                        )
+                # ---- Graph 合并逻辑 ----
+                elif req_type == "graph_merge":
+                    import glob
+                    from src.evolve import graph_request_handle
+
+                    # graph 沙盒结构：graph_workplace/<uuid>/<name>/graph.json（文件夹）
+                    paths = glob.glob(
+                        os.path.join(
+                            AGENT_VM_DIR, "graph_workplace", "*", target, "graph.json"
+                        )
+                    )
+                    if paths:
+                        workplace_root = os.path.dirname(os.path.dirname(paths[0]))
+                        sys_note = graph_request_handle(
+                            workplace_root, target, is_approved=True
+                        )
+                        feedback = f"{sys_note}\n(用户批注: {feedback})"
+                    else:
+                        feedback = (
+                            f"合并失败：未找到 {target} 对应的 Graph 工厂沙盒目录。"
+                        )
             except Exception as e:
                 approved = False
                 feedback = f"用户已同意，但执行失败: {str(e)}。{feedback}"
@@ -264,7 +306,13 @@ def resolve_request(
                 feedback = f"用户拒绝了测试申请，请根据以下原因调整沙盒代码或测试用例后再次申请：\n【拒绝理由】: {feedback}"
             elif req_type == "sensor_test":
                 feedback = f"用户拒绝了协议体检申请，请根据以下原因调整沙盒代码或 sensor_config.json 后再次申请：\n【拒绝理由】: {feedback}"
-            elif req_type in ["skill_merge", "mcp_merge", "sensor_merge"]:
+            elif req_type in [
+                "skill_merge",
+                "mcp_merge",
+                "sensor_merge",
+                "agentloop_merge",
+                "graph_merge",
+            ]:
                 # 让Agent收到拒绝的理由并继续改进
                 feedback = f"用户拒绝了代码合并请求，请在沙盒工厂中根据以下原因继续修复：\n【拒绝理由】: {feedback}"
 
@@ -278,6 +326,8 @@ def resolve_request(
                 "skill_merge",
                 "mcp_merge",
                 "sensor_merge",
+                "agentloop_merge",
+                "graph_merge",
             ]:
                 callback_msg += "\n系统已为你自动下发权限，请直接继续执行被挂起的任务。"
 

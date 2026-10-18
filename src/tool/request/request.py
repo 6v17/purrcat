@@ -73,6 +73,7 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
     - 权限拦截：读写宿主机文件
     - 技能盲测：沙盒开发完毕后申请 skill_test，获批后由系统自动运行
     - 传感器协议体检：沙盒开发完毕后申请 sensor_test，宿主免审直接跑 L0/L1
+    - 合并：skill_merge / mcp_merge / sensor_merge / agentloop_merge / graph_merge
 
     提交后会等待用户的 Yes/No 审批，期间可挂起或执行其他独立任务。
     """
@@ -85,6 +86,8 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
             "mcp_merge",  # 新增：MCP 代码合并
             "sensor_test",  # Sensor 协议体检：宿主免审复跑
             "sensor_merge",  # 新增：Sensor 代码合并
+            "agentloop_merge",  # 新增：AgentLoop（范式）合并
+            "graph_merge",  # 新增：Graph（任务图）合并
         ]
 
         if request_type not in valid_types:

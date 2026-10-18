@@ -12,6 +12,8 @@ from src.evolve import (
     run_mcp_eval_background,
     sensor_factory_init,
     ui_plugin_init,
+    agentloop_factory_init,
+    graph_factory_init,
 )
 
 
@@ -24,8 +26,14 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
     - action="test_mcp": 在后台运行 MCP 并发测试
     - action="create_sensor": 生成全新的 Sensor（外部感知器）骨架
     - action="upgrade_sensor": 拷贝现存的 Sensor 进行修改
+    - action="create_agentloop": 生成全新的 AgentLoop（主循环范式）骨架
+    - action="upgrade_agentloop": 拷贝现存的 AgentLoop 进行修改
+    - action="create_graph": 生成全新的 Graph（任务图/工作流）骨架
+    - action="upgrade_graph": 拷贝现存的 Graph 进行修改
     - action="create_ui_plugin": 在沙盒里生成极简模式 UI 插件框架（含开发指南）
     （注：Skill 盲测权力已收回，须通过 Request 工具的 skill_test 类型获得用户批准后由系统自动运行）
+    （注：AgentLoop / Graph 沙盒均内置 evals/validate.py 自测脚本，全绿后通过 Request 的
+     agentloop_merge / graph_merge 申请合并）
     """
     try:
         if action == "trace_to_skill":
@@ -94,6 +102,50 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
             return text_response(
                 f"✅ 现存 Sensor 已拷贝至进化沙盒，准备好进行升级！\n\n{sys_note}",
                 f"📦 {target} Sensor沙盒已就绪",
+            )
+
+        elif action == "create_agentloop":
+            sys_note, _ = agentloop_factory_init(
+                target, is_upgrade=False, goal=kwargs.get("goal", "")
+            )
+            if not sys_note.startswith("【AgentLoop 工厂分配成功】"):
+                return error_response(sys_note, "❌ AgentLoop 创建失败")
+            return text_response(
+                f"✅ 全新 AgentLoop 沙盒构建完成！\n\n{sys_note}",
+                f"🔄 {target} AgentLoop已创建",
+            )
+
+        elif action == "upgrade_agentloop":
+            sys_note, _ = agentloop_factory_init(
+                target, is_upgrade=True, goal=kwargs.get("goal", "")
+            )
+            if not sys_note.startswith("【AgentLoop 工厂分配成功】"):
+                return error_response(sys_note, "❌ AgentLoop 升级失败")
+            return text_response(
+                f"✅ 现存 AgentLoop 已拷贝至进化沙盒，准备好进行升级！\n\n{sys_note}",
+                f"📦 {target} AgentLoop沙盒已就绪",
+            )
+
+        elif action == "create_graph":
+            sys_note, _ = graph_factory_init(
+                target, is_upgrade=False, goal=kwargs.get("goal", "")
+            )
+            if not sys_note.startswith("【Graph 工厂分配成功】"):
+                return error_response(sys_note, "❌ Graph 创建失败")
+            return text_response(
+                f"✅ 全新 Graph 沙盒构建完成！\n\n{sys_note}",
+                f"🕸️ {target} Graph已创建",
+            )
+
+        elif action == "upgrade_graph":
+            sys_note, _ = graph_factory_init(
+                target, is_upgrade=True, goal=kwargs.get("goal", "")
+            )
+            if not sys_note.startswith("【Graph 工厂分配成功】"):
+                return error_response(sys_note, "❌ Graph 升级失败")
+            return text_response(
+                f"✅ 现存 Graph 已拷贝至进化沙盒，准备好进行升级！\n\n{sys_note}",
+                f"📦 {target} Graph沙盒已就绪",
             )
 
         elif action == "create_ui_plugin":
