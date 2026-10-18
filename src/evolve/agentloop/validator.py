@@ -53,6 +53,22 @@ ACTIONS = {
 # file_operation 的 action 取值白名单
 FILE_OPERATIONS = {"read", "exist_check", "write_in", "add_in", "delete"}
 
+# 宿主原生工具白名单：tool_use_check.name 只能是这些；
+# 外部拓展工具（MCP）不是原生工具，须经 CallMCP 的参数检查，不能直接写进 name。
+NATIVE_TOOLS = {
+    "FileSystem",
+    "Bash",
+    "BrainStorm",
+    "Cron",
+    "CallMCP",
+    "Memo",
+    "Request",
+    "Search",
+    "Fetch",
+    "Task",
+    "KernelUpgrade",
+}
+
 # 可被 @引用 的符号（injection.content 内）
 REF_ALIASES = {
     "@RULES",
@@ -111,26 +127,6 @@ def validate_agentloop_doc(doc, expected_name=None):
     retry = doc.get("loop_end_max_retry")
     if retry is not None and not isinstance(retry, int):
         _check(checks, "loop_end_max_retry 为整数", False, "warn", f"当前 {retry!r}")
-
-    # ---- trigger 格式 ----
-    trigger = doc.get("trigger")
-    if trigger is not None:
-        if not isinstance(trigger, list):
-            _check(checks, "trigger 为数组", False, "error", "trigger 必须是数组")
-        else:
-            for i, item in enumerate(trigger):
-                ok = (
-                    isinstance(item, dict)
-                    and isinstance(item.get("cron"), dict)
-                    and isinstance(item["cron"].get("time"), str)
-                )
-                _check(
-                    checks,
-                    f"trigger[{i}] 含 cron.time",
-                    ok,
-                    "error",
-                    "元素应形如 {cron: {time: 'HH:MM', injection: '...'}}",
-                )
 
     # ---- 关键词汇 + 功能校验（hooks）----
     hooks = doc.get("hooks")
@@ -197,6 +193,18 @@ def validate_agentloop_doc(doc, expected_name=None):
                         False,
                         "error",
                         f"{action} 缺少参数 `{req}`",
+                    )
+
+            if action == "tool_use_check":
+                tname = params.get("name")
+                if isinstance(tname, str) and tname not in NATIVE_TOOLS:
+                    _check(
+                        checks,
+                        "tool_use_check.name 属于原生工具白名单",
+                        False,
+                        "warn",
+                        f"{tname!r} 不是宿主原生工具；外部 MCP 工具请改用 name='CallMCP' 并检查其 tool_name 参数"
+                        f"（合法值：{sorted(NATIVE_TOOLS)}）",
                     )
 
             if action == "file_operation":

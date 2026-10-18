@@ -26,10 +26,6 @@ description: 一句话中文描述
 description-en: One-line English description.
 path: agent_vm                     # 执行环境标识（保持默认即可）
 loop_end_max_retry: 3              # on_loop_end 检查未通过时的最大重试轮数（可选）
-trigger:                           # 定时触发声明（可选）
-  - cron:
-      time: "08:08"
-      injection: "【Demo】闹钟响了"
 hooks:                             # 阶段 → hook 列表（必填、非空）
   on_build_system_prompt:
     - injection: {{ content: "@RULES" }}
@@ -37,11 +33,11 @@ hooks:                             # 阶段 → hook 列表（必填、非空）
     - skill_info: {{ skills: ["my-skill"], failed_prompt: "缺少技能，请先获取。" }}
   on_loop_end:
     - tool_use_check:
-        name: "finish_task"
-        parameter_check:               # 检查项列表：任一项匹配即算「用了该工具」
-          - status: "done"             # 一项内多个键需同时满足（精确相等）
-        successed_prompt: "任务完成。"
-        failed_prompt: "必须调用 finish_task 并标记 status 才能结束。"
+        name: "Memo"                   # 必须是宿主机原生工具名（见第 4 节工具清单）
+        parameter_check:               # 检查项列表：任一项匹配即算「用了且满足条件」
+          - action: "add"              # 一项内多个键需同时满足（精确相等）
+        successed_prompt: "记忆已更新。"
+        failed_prompt: "结束前请先用 Memo 记录本轮经验。"
 ```
 
 **顶层字段**
@@ -53,7 +49,6 @@ hooks:                             # 阶段 → hook 列表（必填、非空）
 | `description-en` | 建议 | 英文描述 |
 | `path` | 建议 | 执行环境，保持 `agent_vm` |
 | `loop_end_max_retry` | 否 | `on_loop_end` 检查未通过时的最大重试轮数 |
-| `trigger` | 否 | 定时触发声明，元素形如 `{{ cron: {{ time: "HH:MM", injection: "文本" }} }}` |
 | `hooks` | 是 | 阶段 → hook 列表的映射，非空 |
 
 ## 3. 阶段清单（专有词汇表 · 阶段）
@@ -82,7 +77,7 @@ hooks:                             # 阶段 → hook 列表（必填、非空）
 | `memo_injection` | — | 注入记忆，参数 `type`（`full`/`light`/自定义 key）、`count` |
 | `skill_info` | `skills` | 拼装指定技能的描述提示；缺失时给 `failed_prompt` |
 | `search` | `query` | 调 Search 检索并注入结果，`route` ∈ `skill`/`mcp`/`memory`/`local`/`web` |
-| `tool_use_check` | `name` | 检查本轮是否调用工具 `name`（可要求 `parameter_check`），据此放行或回打 |
+| `tool_use_check` | `name` | 检查本轮是否调用**原生工具** `name`（可要求 `parameter_check`），据此放行或回打；检查 MCP 工具须用 `CallMCP` 的参数检查（见下方「工具使用检查的语义」） |
 | `keyword_check` | `keyword` | 关键词命中检查，`type` 控制匹配的消息类型 |
 | `file_operation` | `action` | 文件检查/操作，`action` ∈ `read`/`exist_check`/`write_in`/`add_in`/`delete` |
 | `command_run` | `command` | 执行命令并按结果判定（`on_loop_epoch` 常用） |
@@ -90,8 +85,30 @@ hooks:                             # 阶段 → hook 列表（必填、非空）
 **通用可选参数**：`delay`（仅第 `delay` 个 epoch 执行）、`interval`（每 `interval` 个 epoch 执行一次）、
 `expect`（仅 `on_loop_end`：取 `false` 或 `"fail"` 时，表示该检查“未满足”才算通过，用以放行跳出循环）。
 
-**`tool_use_check` 的 `parameter_check`**：检查项数组，每项形如 `{{参数名: 期望值}}`。
-一项内多个键需**同时**命中（参数值精确相等），多项之间为**或**——任一项命中即视为使用了该工具。
+**工具使用检查的语义（重点）**
+
+* `name` 只能填**宿主机真实存在的原生工具**——工具集固定，只有下面这几个，模型正是用这些名字调用工具：
+
+  `FileSystem`、`Bash`、`BrainStorm`、`Cron`、`CallMCP`、`Memo`、`Request`、`Search`、`Fetch`、`Task`、`KernelUpgrade`。
+
+* **外部拓展工具（MCP）不是原生工具**，模型是通过原生工具 `CallMCP(server_name, tool_name, arguments)` 间接调用的。
+  所以**要检查「是否用了某个 MCP 工具」，必须检查 `CallMCP` 的入参**，而不是把 MCP 工具名直接写进 `name`（那样永远匹配不到）：
+
+  ```yaml
+  - tool_use_check:
+      name: "CallMCP"
+      parameter_check:
+        - tool_name: "chrome_navigate"   # 直接命中该 MCP 工具
+        # - server_name: "chrome"       # 需要时再限定服务器
+      failed_prompt: "结束前请先用 CallMCP 调用 chrome_navigate。"
+  ```
+
+* **skill 与 MCP 都必须真实存在于宿主机**才能被检查或注入：`skill_info.skills`、`search(route='mcp')` 等注入动作，
+  以及上面的 `CallMCP` 参数检查，都只有在宿主机确实装了这个 skill / 配了这个 MCP 时才成立；
+  不存在时注入会走 `failed_prompt`，`CallMCP` 也会直接报「不在配置里」。
+
+* `parameter_check` 的匹配语义：拿**本轮实际调用 `name` 工具时的入参**逐项比对；一项内多个键需**同时**命中（值精确相等），
+  多项之间为**或**——任一项命中即视为「用了且满足条件」。
 
 **`@引用` 符号**（`injection.content` 内可直接使用）：
 `@RULES`、`@INFO`、`@SOUL`、`@MEMORY`、`@SYS`、`@USERQUERY`、`@TASKSPACE`。
@@ -100,9 +117,9 @@ hooks:                             # 阶段 → hook 列表（必填、非空）
 
 沙盒根目录内置自测脚本 `evals/validate.py`，做三重校验：
 
-* **格式**：YAML 可解析；顶层为映射；`name` 与文件名一致；必填字段齐备；`trigger` 结构合法。
+* **格式**：YAML 可解析；顶层为映射；`name` 与文件名一致；必填字段齐备。
 * **关键词汇**：`hooks` 的每个阶段、每个动作都必须属于白名单；动作的必填参数齐备；
-  `file_operation.action` 取值合法；`@引用` 符号已登记。
+  `file_operation.action` 取值合法；`tool_use_check.name` 属于原生工具白名单（MCP 工具请走 `CallMCP`）；`@引用` 符号已登记。
 * **功能**：`loop_end_max_retry` 为整数；`file_operation` 具备可用的 `path`。
 
 ```bash
