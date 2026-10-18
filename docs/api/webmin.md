@@ -314,7 +314,7 @@ window.parent.postMessage(
 
 ### actionId 清单
 
-（payload 细节以 `ui/web-minimal/assets/host.js` 的 `dispatch` 为准）
+（完整 payload → data 契约见 [../plugins/ui-plugin.md](../plugins/ui-plugin.md)；实现以宿主 `ui/web-minimal/assets/host.js` 的 `dispatch` 为准）
 
 | 分类 | actionId |
 | --- | --- |
@@ -324,7 +324,7 @@ window.parent.postMessage(
 | 容器（float／modal 插件） | `slot.move`、`slot.close`、`slot.hide` |
 | 插件自身 | `plugin.delete`、`plugin.rpc`（`{plugin_id, handler, payload}`） |
 | 内置浏览器（仅 Electron 主窗口） | `browser.available`、`browser.newTab`、`browser.closeTab`、`browser.navigate`、`browser.reload`、`browser.goBack`、`browser.goForward`、`browser.bounds`、`browser.hide`、`browser.locate`、`browser.pickStart`、`browser.pickEnd`、`browser.pickElement`、`browser.openExternal`、`browser.openUrl` |
-| 其它 | `state.get`、`input.dropdown`（输入区下拉时告知宿主让位）、`session.setDraftParadigm`、`branch.select` |
+| 其它 | `state.get`、`session.setDraftParadigm`、`branch.select` |
 
 ### 约束
 

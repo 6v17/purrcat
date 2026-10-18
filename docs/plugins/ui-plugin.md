@@ -105,94 +105,110 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 | 配置下发 | `{ type: 'configApply', config }` | 宿主合并后的插件配置，配置变更时推送 |
 | 事件广播 | `{ type: 'event', event, data }` | 宿主主动广播，见 5.4 |
 
-### 5.3 `actionId` 清单
+> 应答信封固定为 `{ type: 'callActionResult', id, ok, data | error }`：
+> `ok: true` → 结果在 `data`（各 action 见 5.3）；`ok: false` → 失败原因在 `error`（字符串，务必据此做降级提示）；
+> 未列出的 `actionId` 不会报错，但 `data` 为 `null`。
+
+### 5.3 `actionId` 契约（payload → data）
 
 **会话 / 对话**
 
-| actionId | payload | 返回 |
+| actionId | payload | data（返回） |
 | --- | --- | --- |
-| `chat.send` | `{ message, sessionId? }` | 受理态 |
-| `chat.sendBatch` | `{ messages[], sessionId? }` | 受理态 |
-| `chat.interrupt` | `{ sessionId? }` | 受理态 |
-| `chat.traceToSkill` | `{ sessionId?, ... }` | 追踪结果 |
-| `sessions.list` | `—` | 会话数组 |
-| `sessions.new` | `{ ... }` | 新会话信息 |
-| `session.switch` | `{ sessionId }` | 切换结果 |
-| `session.rename` | `{ sessionId, title }` | 结果 |
-| `session.delete` | `{ sessionId }` | 结果 |
-| `session.branch` | `{ sessionId, ... }` | 分支信息 |
-| `session.setDraftParadigm` | `{ sessionId, paradigm }` | 结果 |
-| `branch.select` | `{ sessionId, branchId }` | 结果 |
-| `requests.list` | `—` | 待办请求数组 |
-| `requests.resolve` | `{ requestId, decision }` | 结果 |
+| `state.get` | 无 | 宿主群状态副本 `{activeSessionId, sessions, draft, draftParadigm, activeBranchId, ...}`（其中 `plugins` 为 `undefined`） |
+| `chat.send` | `{session_id?, message}` | 后端 `/api/chat` 的 JSON body（含 `processed_message`） |
+| `chat.sendBatch` | `{session_id?, events: [...]}` | 后端 `/api/chat/batch` 的 JSON body（含 `processed_events`） |
+| `chat.interrupt` | `{session_id?}` | 后端 `/api/chat/interrupt` 的 JSON body |
+| `chat.traceToSkill` | `{session_id?, name, goal, is_upgrade?}` | `{status:"ok"}`（`name` / `goal` 为空会抛错） |
+| `sessions.list` | 无 | 会话数组 |
+| `sessions.new` | 无 | `{status:"ok", draft:true}`；Agent 忙碌时 `{status:"busy"}`（不新建） |
+| `session.switch` | `{session_id}` | `{status:"ok"}`；忙碌且切到别的会话时 `{status:"busy"}` |
+| `session.rename` | `{session_id, alias}` | `{status:"ok", alias}` |
+| `session.delete` | `{session_id}` | `{status:"ok"}` |
+| `session.branch` | `{session_id?, alias?}` | 后端返回的会话对象（含 `id`）；忙碌时 `{status:"busy"}` |
+| `session.setDraftParadigm` | `{paradigm}` | `{status:"ok", paradigm}`；非草稿态 `{status:"noop"}` |
+| `branch.select` | `{branch_id?}`（默认 `main`） | `{status:"ok"}` |
+| `requests.list` | 无 | 待审批请求数组 |
+| `requests.resolve` | `{request_id, approved, feedback?, ignore?, duration?}` | 后端请求 JSON |
 
 **配置 / 设置**
 
-| actionId | payload |
-| --- | --- |
-| `config.get` | `{ plugin_id }` → 返回该插件配置值 |
-| `config.set` | `{ ... }` |
-| `settings.meta` | `—` |
-| `settings.open` / `settings.close` | `{ tab? }` |
-
-**文件 / 数据 / 对话框**
-
-| actionId | payload | 说明 |
+| actionId | payload | data（返回） |
 | --- | --- | --- |
-| `dialog.files` | `{ ... }` | 选择文件 |
-| `dialog.folder` | `{ ... }` | 选择文件夹 |
-| `dialog.resolveFiles` | `{ paths[] }` | 解析路径信息 |
-| `dialog.pickWallpaper` | `{ ... }` | 选壁纸 |
-| `ref.graphs` | `—` | 返回可选 Graph 列表 |
+| `config.get` | `{plugin_id}` | 该插件配置对象（无则 `{}`） |
+| `config.set` | `{plugin_id, config}` | 合并后的配置对象 |
+| `settings.meta` | 无 | `{plugins, config}` |
+| `settings.open` / `settings.close` | 无 | `{status:"ok"}` |
 
-**容器控制（面板 / 浮窗）**
+**文件 / 数据**
 
-| actionId | payload | 说明 |
+| actionId | payload | data（返回） |
 | --- | --- | --- |
-| `slot.move` | `{ area }` | 插件自身移入某区域 |
-| `slot.close` | `—` | 关闭自身 |
-| `slot.hide` | `{ hidden }` | 隐藏/显示自身（浮窗）|
+| `dialog.files` | 无 | **绝对路径字符串数组**；取消 → `[]`（Electron 外调用抛错） |
+| `dialog.folder` | 无 | 同上（文件夹的绝对路径数组） |
+| `dialog.resolveFiles` | `{files: [File]}`（`<input type=file>` 选好的 File） | `{paths: [...]}` |
+| `dialog.pickWallpaper` | 无 | 上传后的后端 JSON；取消 → `null` |
+| `ref.graphs` | 无 | 名称字符串数组 |
+
+**容器（float 插件用；宿主只操作调用方自己的实例）**
+
+| actionId | payload | data（返回） |
+| --- | --- | --- |
+| `slot.move` | `{dx?, dy?}` | `{status:"ok"}` |
+| `slot.close` | 无 | `{status:"ok"}`（隐藏调用方浮窗） |
+| `slot.hide` | 无 | `{status:"ok"}`（「关闭并记住」，白条可再启用） |
 
 **插件自身**
 
-| actionId | payload | 说明 |
+| actionId | payload | data（返回） |
 | --- | --- | --- |
-| `plugin.delete` | `—` | 卸载自身（内置插件不可删）|
-| `plugin.rpc` | `{ plugin_id, handler, payload }` | 调用插件自带 Node 后端（`backend.kind=npm`）|
+| `plugin.delete` | `{plugin_id}` | `{status:"ok"}` |
+| `plugin.rpc` | `{plugin_id, handler, payload?, timeout?}` | **handler 的 `result` 本身**（不是 `{result}` 包装） |
 
-**内置浏览器（宿主原生，供插件复用）**
+**内置浏览器（原生视图，仅 Electron 主窗口可用）**
 
-| actionId | 说明 |
-| --- | --- |
-| `browser.available` / `browser.bounds` / `browser.hide` | 探测可用性、查询/设置视口 |
-| `browser.newTab` / `browser.closeTab` / `browser.switchTab` | 标签页管理 |
-| `browser.navigate` / `browser.reload` / `browser.goBack` / `browser.goForward` | 导航 |
-| `browser.pickStart` / `browser.pickEnd` | 框选起止 |
-| `browser.locate` / `browser.pickElement` | 定位 / 拾取元素 |
-| `browser.openExternal` / `browser.openUrl` | 外部打开 |
+| actionId | payload | data（返回） |
+| --- | --- | --- |
+| `browser.available` | 无 | `{available: boolean}` |
+| `browser.newTab` | `{url}` | `{tabId}` |
+| `browser.closeTab` | `{tabId, nextTabId?}` | `{status:"ok"}` |
+| `browser.switchTab` | `{tabId}` | `{status:"ok"}` |
+| `browser.navigate` | `{tabId, url}` | `{status:"ok"}` |
+| `browser.reload` / `browser.goBack` / `browser.goForward` | `{tabId}` | `{status:"ok"}` |
+| `browser.bounds` | `{x, y, w, h}`（相对 iframe 的 CSS 像素） | `{status:"ok"}` |
+| `browser.hide` | 无 | `{status:"ok"}` |
+| `browser.pickStart` | `{tabId}` | `{imageDataUrl, width, height, viewportCssWidth, viewportCssHeight}` |
+| `browser.pickEnd` | `{tabId}` | `{status:"ok"}` |
+| `browser.locate` | `{tabId, x, y}` | 元素定位结果；不可用 → `null` |
+| `browser.pickElement` | `{tabId, x, y}` | 元素语义信息（`outerHTML` / `innerText` / `attributes` / `cssSelector` / `rect`）；不可用 → `null` |
+| `browser.openExternal` | `{url}` | `{status:"ok"}`（系统浏览器打开） |
+| `browser.openUrl` | `{url}` | 统一链接路由结果（http → 内置浏览器） |
 
-**其它**
-
-| actionId | 说明 |
-| --- | --- |
-| `state.get` | 读取宿主全局状态快照 |
-
-> 以宿主 `ui/web-minimal/assets/host.js` 的 `dispatch()` 为准；完整字段见 [../api/webmin.md](../api/webmin.md)。
+> 上表覆盖插件常用动作，可直接照用。完整 / 权威实现见宿主应用目录下的 `ui/web-minimal/assets/host.js` 的 `dispatch()`；
+> 宿主 HTTP 接口清单见 [../api/webmin.md](../api/webmin.md)。
+>
+> **文件与上传**：宿主 / 前端 / 后端同机运行，`dialog.files` 返回的是绝对路径，后端可直接 `fs` 读取（不必读成 base64 再走 `plugin.rpc`）；要交给 Agent（大模型）读时用 `POST /agent/upload`（落盘 `agent_vm/.buffer/upload`）。
 
 ### 5.4 事件（`type: 'event'`）
 
-| `event` | 时机 | `data` |
-| --- | --- | --- |
-| `host.unmount` | 宿主卸载插件 | — |
-| `host.nativeCover` | 宿主原生界面覆盖插件的显示区域 | `{ covered }` |
-| `layout.empty` | 布局空置（无会话等）| `{ empty }` |
-| `session.switched` | 当前会话切换 | `{ session_id }` |
-| `branch.switched` | 对话分支切换 | `{ branch_id }` |
-| `conversation.local` / `conversation.updated` | 本会话消息流发生变化 | `{ session_id, events? }` |
-| `requests.updated` | 待办请求状态变化 | `{ request_id }` |
-| `config.updated` | 插件配置被更新 | `{ plugin_id, config }` |
-| `browser.openUrl` | 请求在浏览器打开某链接 | `{ url }` |
-| `browser.tabEvent` | 内置浏览器标签页事件 | 标签页事件对象 |
+**事件按 slot 路由**：只发给声明了对应槽的插件（"范围"列为 `全体` 的才是广播给所有插件）。
+
+| `event` | 时机 | `data` | 范围 |
+| --- | --- | --- | --- |
+| `host.unmount` | 宿主卸载插件 | — | 全体 |
+| `host.nativeCover` | 宿主原生界面覆盖插件的显示区域 | `{ covered }` | 全体 |
+| `session.switched` | 当前会话切换 | `{ session_id }` | 全体 |
+| `branch.switched` | 对话分支切换 | `{ branch_id }` | 全体 |
+| `requests.updated` | 待办请求状态变化 | `{ request_id }` | 全体 |
+| `browser.tabEvent` | 内置浏览器标签页事件 | 标签页事件对象 | 全体 |
+| `layout.empty` | 布局空置（无会话等）| `{ empty }` | `session` |
+| `config.updated` | 插件配置被更新 | `{ plugin_id, config }` | `settings` |
+| `browser.openUrl` | 请求在浏览器打开某链接 | `{ url }` | 命中槽 |
+| `conversation.local` | 本会话消息流本地即时插入 | `{ session_id, events }` | `session` / `sidebar` |
+| `conversation.updated` | 本会话消息流发生变化 | `{ session_id }` | `session` / `sidebar` |
+
+> `panel` 槽的插件**收不到** `conversation.*`，而且它只带 `session_id`（无消息内容、无"完成"标记）：
+> 插件若要判定 Agent 任务完成，需自行轮询（产物 `mtime` / `state.get`）+ 超时兜底。
 
 ---
 
@@ -251,4 +267,42 @@ window.parent.postMessage({ type: 'callAction', id: 'req-1', actionId: 'config.g
 - **本地预览**：插件目录放到 `~/.purrcat/webmin-plugins/<id>/`，重启极简宿主（`/minimal` 页面 `Ctrl+R`）即可加载。
 - **调试**：插件在 iframe 内运行，用浏览器开发者工具选中对应 iframe 上下文看 Console；`callAction` 出错会落宿主控制台。
 - **资源引用**：`index.html` 内使用相对路径引用同目录资源。
-- **自带后端**：声明 `backend: { "kind": "npm" }` 并提供 `server/server.js`（Node，含依赖），插件侧用 `plugin.rpc` 调用。
+- **自带后端**：声明 `backend: { "kind": "npm" }` 并提供 `server/server.js`（Node；依赖放插件自己的 `package.json` / `node_modules`），插件侧用 `plugin.rpc` 调用。
+  宿主把它当独立子进程拉起；**进程退出后，下次 RPC 会自动重新拉起**。
+  - 宿主 → 插件（stdin，一行一条）：`{"id","handler","payload"}`。
+  - 插件 → 宿主（stdout，一行一条，必须回）：`{"id","ok":true,"result":...}` 或 `{"id","ok":false,"error":"..."}`。
+  - **启动后必须向 stdout 打一行 `{"event":"ready"}`**：宿主据此判定"后端已就绪"，15 秒内未收到会杀掉进程并报"后端未就绪"，前端 `plugin.rpc` 随之失败。
+  - 主动上报（宿主当前仅观测，`ready` 除外）：`{"event":"<name>","data":...}`。
+  - stdout 只许输出协议行，调试信息写插件目录内的日志文件，否则会污染协议。
+  - **调试**：后端 `stderr` 会被宿主捕获并在报错里回显；iframe 的 `console` 在宿主 Electron 窗口的开发者工具（`Ctrl+Shift+I`）里看。
+
+最小骨架（照此改即可，**别漏掉最后那行 ready**）：
+
+```js
+'use strict';
+const readline = require('readline');
+const handlers = {
+  ping: (payload) => ({ pong: (payload && payload.msg) || null }),
+};
+function send(obj) { process.stdout.write(JSON.stringify(obj) + '\n'); }
+readline.createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line) => {
+  const text = String(line || '').trim();
+  if (!text) return;
+  let req;
+  try { req = JSON.parse(text); }
+  catch (_) { send({ id: null, ok: false, error: '请求不是合法 JSON' }); return; }
+  const fn = handlers[req.handler];
+  if (!fn) { send({ id: req.id, ok: false, error: '未知 handler: ' + req.handler }); return; }
+  try { send({ id: req.id, ok: true, result: fn(req.payload || {}) }); }
+  catch (e) { send({ id: req.id, ok: false, error: String((e && e.message) || e) }); }
+});
+// ★ 必须：就绪握手，缺了它宿主会等 15 秒后判定"后端未就绪"
+send({ event: 'ready' });
+```
+
+---
+
+## 8. 开发注意
+
+- 宿主 CSS 变量**不跨 iframe 继承**，插件样式必须自带 fallback，如 `color: var(--wm-label, #16191d)`；token 全量见 `ui/web-minimal/assets/theme.css`。
+- 宿主跑在 Electron 里，`window.prompt` / `alert` / `confirm` 不可用（`prompt` 直接返回 `null`）；输入与二次确认请用插件自绘浮层。

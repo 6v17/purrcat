@@ -103,41 +103,173 @@ window.parent.postMessage({ type: 'callAction', id: id, actionId: 'state.get', p
 | `{ type: 'configApply', config }` | 用户在设置面板改了配置 → 实时下发全量 config |
 | `{ type: 'event', event, data }` | 宿主广播事件，见下表 |
 
-宿主广播的事件：
+宿主广播的事件（**按 slot 路由**：只发给声明了对应槽的插件，"范围"列即接收方）：
 
-| `event` | data | 含义 |
+| `event` | data | 范围 | 含义 |
+| --- | --- | --- | --- |
+| `host.unmount` | — | 全体 | iframe 即将卸载，做收尾 |
+| `host.nativeCover` | `{covered}` | 全体 | 原生视图（内置浏览器等）需让位 |
+| `session.switched` | `{session_id}` | 全体 | 用户切换了会话 |
+| `branch.switched` | `{branch_id}` | 全体 | 用户切换了会话分支 |
+| `requests.updated` | `{request_id}` | 全体 | 待审批请求发生变化 |
+| `browser.tabEvent` | `{...}` | 全体 | 内置浏览器 Tab 事件 |
+| `layout.empty` | `{empty}` | `session` | 当前区域是否为空（未挂载任何插件） |
+| `config.updated` | `{plugin_id, config}` | `settings` | 配置已变更（普通插件用 `configApply` 消息即可） |
+| `browser.openUrl` | `{url}` | 命中槽 | 请求在浏览器打开某链接 |
+| `conversation.local` | `{session_id, events}` | `session` / `sidebar` | 本会话消息流变化（本地即时插入） |
+| `conversation.updated` | `{session_id}` | `session` / `sidebar` | 会话消息流变化；**只有 `session_id`，没有消息内容或"完成"标记** |
+
+> ⚠ **`panel` 槽的插件收不到 `conversation.local` / `conversation.updated`**（它们只发给 `session` / `sidebar` 槽）。
+> 所以"Agent 处理完了没有"拿不到现成事件，必须按 §5.4 自行判定。
+
+### 5.1 调用与返回信封
+
+宿主对每次 `callAction` **固定**回：`{ type: "callActionResult", id, ok, data | error }`。
+
+* `ok: true` → 结果在 `data`（各 action 见下表）。
+* `ok: false` → 失败原因在 `error`（字符串）；**一律用 `error` 文案降级提示，别让界面卡住**。
+* 未列出的 actionId 不会报错，但 `data` 为 `null`。
+
+### 5.2 action 契约（payload → data）
+
+> 下表覆盖插件常用动作，可直接照用。完整 / 权威实现见宿主应用目录下的
+> `ui/web-minimal/assets/host.js` 的 `dispatch()`——该文件**不在你的 Bash 沙盒内**，
+> 需要时用文件读取工具打开。
+
+**会话 / 对话**
+
+| actionId | payload | data（返回值） |
 | --- | --- | --- |
-| `host.unmount` | — | iframe 即将卸载，做收尾 |
-| `host.nativeCover` | `{covered}` | 原生视图（内置浏览器等）需让位 |
-| `layout.empty` | `{empty}` | 当前区域是否为空（未挂载任何插件） |
-| `session.switched` | `{session_id}` | 用户切换了会话 |
-| `branch.switched` | `{...}` | 用户切换了会话分支 |
-| `config.updated` | `{...}` | 配置已变更 |
-| `browser.openUrl` | `{url}` | 请求在浏览器打开某链接 |
-| `conversation.local` / `conversation.updated` | `{...}` | 本会话消息流发生变化 |
+| `state.get` | 无 | 宿主群状态副本 `{activeSessionId, sessions, draft, draftParadigm, activeBranchId, ...}`（其中 `plugins` 为 `undefined`） |
+| `chat.send` | `{session_id?, message}` | 后端 `/api/chat` 的 JSON body（含 `processed_message`） |
+| `chat.sendBatch` | `{session_id?, events: [...]}` | 后端 `/api/chat/batch` 的 JSON body（含 `processed_events`） |
+| `chat.interrupt` | `{session_id?}` | 后端 `/api/chat/interrupt` 的 JSON body |
+| `chat.traceToSkill` | `{session_id?, name, goal, is_upgrade?}` | `{status:"ok"}`（`name` / `goal` 为空会抛错） |
+| `sessions.list` | 无 | 会话数组 |
+| `sessions.new` | 无 | `{status:"ok", draft:true}`；Agent 忙碌时 `{status:"busy"}`（不新建） |
+| `session.switch` | `{session_id}` | `{status:"ok"}`；忙碌且切到别的会话时 `{status:"busy"}` |
+| `session.rename` | `{session_id, alias}` | `{status:"ok", alias}` |
+| `session.delete` | `{session_id}` | `{status:"ok"}` |
+| `session.branch` | `{session_id?, alias?}` | 后端返回的会话对象（含 `id`）；忙碌时 `{status:"busy"}` |
+| `session.setDraftParadigm` | `{paradigm}` | `{status:"ok", paradigm}`；非草稿态 `{status:"noop"}` |
+| `branch.select` | `{branch_id?}`（默认 `main`） | `{status:"ok"}` |
+| `requests.list` | 无 | 待审批请求数组 |
+| `requests.resolve` | `{request_id, approved, feedback?, ignore?, duration?}` | 后端请求 JSON |
 
-可用的 actionId（payload 以宿主实现为准，见 `ui/web-minimal/assets/host.js` 的 dispatch）：
+**配置 / 设置**
 
-* 会话／对话：`state.get`、`chat.send`、`chat.sendBatch`、`chat.interrupt`、`chat.traceToSkill`、`sessions.list`、`sessions.new`、`session.switch`、`session.rename`、`session.delete`、`session.branch`、`session.setDraftParadigm`、`branch.select`、`requests.list`、`requests.resolve`
-* 配置：`config.get`（payload `{plugin_id}`）、`config.set`、`settings.meta`、`settings.open`、`settings.close`
-* 文件／数据：`dialog.files`、`dialog.folder`、`dialog.resolveFiles`、`dialog.pickWallpaper`、`ref.graphs`
-* 容器（float 插件用）：`slot.move`、`slot.close`、`slot.hide`
-* 插件自身：`plugin.delete`、`plugin.rpc`（payload `{plugin_id, handler, payload}`，调自己的后端子进程）
-* 内置浏览器（原生视图，仅 Electron 主窗口可用）：`browser.available`、`browser.newTab`、`browser.switchTab`、`browser.closeTab`、`browser.navigate`、`browser.reload`、`browser.goBack`、`browser.goForward`、`browser.bounds`、`browser.hide`、`browser.locate`、`browser.pickStart`、`browser.pickEnd`、`browser.pickElement`、`browser.openExternal`、`browser.openUrl`
+| actionId | payload | data（返回值） |
+| --- | --- | --- |
+| `config.get` | `{plugin_id}` | 该插件配置对象（无则 `{}`） |
+| `config.set` | `{plugin_id, config}` | 合并后的配置对象 |
+| `settings.meta` | 无 | `{plugins, config}` |
+| `settings.open` / `settings.close` | 无 | `{status:"ok"}` |
 
-调用可能失败（返回 `ok: false`）：一律用 `error` 文案降级提示，别让界面卡住。
+**文件 / 数据**
+
+| actionId | payload | data（返回值） |
+| --- | --- | --- |
+| `dialog.files` | 无 | **绝对路径字符串数组**；取消 → `[]`（Electron 外调用抛错） |
+| `dialog.folder` | 无 | 同上（文件夹的绝对路径数组） |
+| `dialog.resolveFiles` | `{files: [File]}`（`<input type=file>` 选好的 File） | `{paths: [...]}` |
+| `dialog.pickWallpaper` | 无 | 上传后的后端 JSON；取消 → `null` |
+| `ref.graphs` | 无 | 名称字符串数组 |
+
+**容器（float 插件用；宿主只操作调用方自己的实例）**
+
+| actionId | payload | data（返回值） |
+| --- | --- | --- |
+| `slot.move` | `{dx?, dy?}` | `{status:"ok"}` |
+| `slot.close` | 无 | `{status:"ok"}`（隐藏调用方浮窗） |
+| `slot.hide` | 无 | `{status:"ok"}`（「关闭并记住」，白条可再启用） |
+
+**插件自身**
+
+| actionId | payload | data（返回值） |
+| --- | --- | --- |
+| `plugin.delete` | `{plugin_id}` | `{status:"ok"}` |
+| `plugin.rpc` | `{plugin_id, handler, payload?, timeout?}` | **handler 的 `result` 本身**（不是 `{result}` 包装） |
+
+**内置浏览器（原生视图，仅 Electron 主窗口可用）**
+
+| actionId | payload | data（返回值） |
+| --- | --- | --- |
+| `browser.available` | 无 | `{available: boolean}` |
+| `browser.newTab` | `{url}` | `{tabId}` |
+| `browser.closeTab` | `{tabId, nextTabId?}` | `{status:"ok"}` |
+| `browser.switchTab` | `{tabId}` | `{status:"ok"}` |
+| `browser.navigate` | `{tabId, url}` | `{status:"ok"}` |
+| `browser.reload` / `browser.goBack` / `browser.goForward` | `{tabId}` | `{status:"ok"}` |
+| `browser.bounds` | `{x, y, w, h}`（相对 iframe 的 CSS 像素） | `{status:"ok"}` |
+| `browser.hide` | 无 | `{status:"ok"}` |
+| `browser.pickStart` | `{tabId}` | `{imageDataUrl, width, height, viewportCssWidth, viewportCssHeight}` |
+| `browser.pickEnd` | `{tabId}` | `{status:"ok"}` |
+| `browser.locate` | `{tabId, x, y}` | 元素定位结果；不可用 → `null` |
+| `browser.pickElement` | `{tabId, x, y}` | 元素语义信息（`outerHTML` / `innerText` / `attributes` / `cssSelector` / `rect`）；不可用 → `null` |
+| `browser.openExternal` | `{url}` | `{status:"ok"}`（系统浏览器打开） |
+| `browser.openUrl` | `{url}` | 统一链接路由结果（http → 内置浏览器） |
+
+### 5.3 文件与上传通道
+
+宿主、插件前端、插件后端**都在同一台机器**上（后端是本机 Node 子进程，无沙箱），文件不需要"上传"，直接走路径：
+
+* 拿路径：`dialog.files` / `dialog.folder` 返回的是**绝对路径数组**。
+* 读内容：把路径放进 `plugin.rpc` 的 payload，**后端直接用 `fs` 读**（`fs.readFileSync` 或流式）；别让前端读成 base64 再塞进 RPC。
+* 要**交给 Agent（大模型）读**：走宿主 HTTP 接口 `POST /agent/upload`（落盘到 `agent_vm/.buffer/upload`，Agent 在沙盒内可见），前端 `fetch` 即可。
+* `plugin.rpc` 是 stdio 单行 JSON，**没有明确体积上限，但也绝不适合传文件内容**——一律传路径。
+
+### 5.4 发消息后如何判定"完成"
+
+`chat.send` / `chat.sendBatch` 只表示**消息已受理**，宿主不会回"Agent 处理完了"（见上面事件表：`conversation.updated` 只发给 `session` / `sidebar` 槽，且只带 `session_id`）。
+"等 Agent 干完活"得自己判定，推荐：
+
+1. 记下发出时间 `t0`；
+2. 轮询**明确会变化的产物**：插件自己目录下文件的 `mtime`（Agent 写完即更新），或 `state.get` 里你关心的字段；
+3. 产物 `mtime > t0` 即视为完成；再配一个兜底超时（如 5 分钟）与"仍在处理"的 UI 反馈。
+
+> 别把"消息已发出"当成"任务已完成"。
 
 ## 6. 可选后端（server/server.js）
 
 在插件目录里放 `server/server.js`（Node；依赖放插件自己的 `package.json` / `node_modules`，与主程序完全隔离），
-宿主会把它当作独立子进程拉起，并提供热重启：
+宿主会把它当作独立子进程拉起；进程退出后，下次 RPC 会自动重新拉起：
 
+* **启动握手（必须）**：进程就绪后先往 stdout 打一行 `{"event": "ready"}`。
+  宿主据此判定"后端已就绪"；**15 秒内没收到就杀掉进程并报"插件后端未就绪"**，前端 `plugin.rpc` 随之失败。
 * 宿主 → 你（stdin，一行一条）：`{"id": "<nonce>", "handler": "<name>", "payload": {...}}`
 * 你 → 宿主（stdout，一行一条，必须回）：`{"id": "<nonce>", "ok": true, "result": ...}` 或 `{"id": "<nonce>", "ok": false, "error": "..."}`
-* 主动上报（宿主当前仅观测）：`{"event": "<name>", "data": ...}`
+* 主动上报（宿主当前仅观测；`ready` 除外，它决定就绪状态）：`{"event": "<name>", "data": ...}`
 * 前端调用：`callAction('plugin.rpc', {plugin_id: '__ID__', handler: 'xxx', payload: {}})`，拿到的就是 `result`
+* stdout 只许输出协议行；调试信息写插件目录内的日志文件，否则会污染协议。
+* **调试入口**：后端 `stderr` 会被宿主捕获，并在启动失败/超时的报错里回显；前端 iframe 的 `console` / DOM 在**宿主 Electron 窗口的开发者工具**（`Ctrl+Shift+I`）里看。
 
-## 7. 样式：用宿主 token，但必须自带 fallback
+最小骨架（照此改即可，**别漏掉最后那行 ready**）：
+
+```js
+'use strict';
+const readline = require('readline');
+const handlers = {
+  ping: (payload) => ({ pong: (payload && payload.msg) || null }),
+};
+function send(obj) { process.stdout.write(JSON.stringify(obj) + '\\n'); }
+readline.createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line) => {
+  const text = String(line || '').trim();
+  if (!text) return;
+  let req;
+  try { req = JSON.parse(text); }
+  catch (_) { send({ id: null, ok: false, error: '请求不是合法 JSON' }); return; }
+  const fn = handlers[req.handler];
+  if (!fn) { send({ id: req.id, ok: false, error: '未知 handler: ' + req.handler }); return; }
+  try { send({ id: req.id, ok: true, result: fn(req.payload || {}) }); }
+  catch (e) { send({ id: req.id, ok: false, error: String((e && e.message) || e) }); }
+});
+// ★ 必须：就绪握手，缺了它宿主会等 15 秒后判定"后端未就绪"
+send({ event: 'ready' });
+```
+
+## 7. 设计与样式约定
+
+### 7.1 用宿主 token，但必须自带 fallback
 
 宿主 CSS 变量**不跨 iframe 继承**，所以每个插件都要像框架文件那样写 fallback：
 
@@ -148,6 +280,51 @@ window.parent.postMessage({ type: 'callAction', id: id, actionId: 'state.get', p
 常用 token（全量见 `ui/web-minimal/assets/theme.css`）：`--wm-font`、`--wm-mono`、`--wm-radius`、`--wm-radius-sm`、
 `--wm-bg-base`、`--wm-bg-panel`、`--wm-bg-sidebar`、`--wm-bg-input`、`--wm-bg-hover`、`--wm-label`、
 `--wm-label-2nd`、`--wm-label-dim`、`--wm-border`、`--wm-accent`、`--wm-shadow`、`--wm-bl-0`…`--wm-bl-900`。
+
+### 7.2 默认风格：瑞士国际主义
+
+用户**没有给出明确的前端样式需求**时，默认用**瑞士国际主义**；
+用户明确给了风格（如"可爱风""毛玻璃"）时按用户的来，本条让位。
+
+### 7.3 排版别过密，侧栏别太多
+
+插件是塞进宿主**某个容器里的一小块**，不是整屏应用：
+
+* 别默认铺一排侧栏 / 多级分栏；需要分栏最多一层，宽度不够时优先**上下堆叠**，而不是继续挤。
+* 组件之间留呼吸空间（用宿主间距 token 或统一栅格）；卡片别塞满，文字别贴边。
+* 放不下时优先**减内容 / 分组 / 折叠 / 滚动**，不要靠缩小字号、压缩间距硬塞。
+
+### 7.4 职责边界：不要自己造会话列表
+
+会话列表 / 会话历史 / 会话记录已由宿主的会话类插件负责（`sidebar` / `session` 槽）。除非用户**明确要求**，
+**不要在插件里再实现一套会话列表或历史记录**；需要会话数据时调用宿主 action（`sessions.list`、`state.get`、
+`requests.list` 等）取即可。这样既避免与现有会话插件重复，也避免误占单例槽。
+
+### 7.5 不要用浏览器原生弹窗
+
+宿主跑在 Electron 里，`window.prompt` **不被支持**：调用会立刻返回 `null` 且不弹任何框。
+所以 `if (!prompt(...)) return;` 这类写法会让按钮表现得"点了没反应"。
+`window.alert` / `window.confirm` 在嵌入容器里同样不建议用（同步阻塞、样式不受控、跨平台表现不一致）。
+需要输入或二次确认时，一律用**插件自己实现的浮层**（DOM 覆盖层 + 自己的输入框 / 按钮）。
+
+### 7.6 按工作流分层，按钮不要堆在一页
+
+先把这个插件里**用户的操作流程拆成几个步骤 / 层级**，
+再按层级决定**每个按钮出现在哪一页**：
+
+* 顶层（首页）只放"选择与进入"类入口按钮；**不要把后面每一步的操作按钮都摊在首页**。
+* 具体操作按钮跟着它所属的对象 / 步骤出现。
+* 用**递进的页面 / 视图**承载（列表页 → 详情页 → 操作页），而不是把所有按钮塞进同一页。
+* 自检：任意一屏上，用户"当前能做的下一步"应该只有少数几个，其余靠进入下一层才出现。
+
+### 7.7 功能多就拆多个文件
+
+功能较多时，把界面拆成**多个文件**（多个 `.html` / `.js` / `.css`），按视图或模块分文件组织，
+**不要把所有界面都塞进一个 HTML**：
+
+* 每个视图 / 页面一个独立文件，由入口 `index.html` 负责切换 / 挂载。
+* 公共样式、工具函数抽到单独文件，多个页面共用。
+* 这样单文件更短、更好读也更好改，避免一次性生成一个巨长的 HTML。
 
 ## 8. 铁律
 
