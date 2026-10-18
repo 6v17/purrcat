@@ -514,6 +514,8 @@ def delete_workplace_api(workplace_id: str, type: str = "skill"):
         shutil.rmtree(w_path, onerror=on_rm_error)
         return {"status": "success", "message": "沙盒已彻底清理"}
 
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"沙盒删除失败: {str(e)}")

@@ -170,10 +170,33 @@
     renderSide();
   }
 
-  // 沙盒内：列出 Graph 工厂加工中的产物（点击只读预览）
+  // 沙盒内：列出 Graph 工厂加工中的产物（点击载入可视化画布编辑）
   async function loadWorkplaces() {
     state.workplaces = await EV.sandboxList('graph');
     renderSide();
+  }
+
+  // 彻底清理沙盒工作区（不可逆；不影响正式库）
+  async function deleteWorkplace(wp) {
+    var ok = await EV.confirm({
+      title: '清理沙盒',
+      message: '确定要彻底清理「' + wp.name + '」的沙盒工作区吗？\n此操作不可逆；已合并成功的沙盒清理不会影响正式库。',
+      okLabel: '彻底清理', danger: true
+    });
+    if (!ok) return;
+    try {
+      await EV.api.del('/api/evolve/workplace/' + encodeURIComponent(wp.workplace_id) + '?type=graph');
+      EV.toast('沙盒已彻底清理');
+      if (state.sandboxCtx && state.sandboxCtx.workplace_id === wp.workplace_id) {
+        state.sandboxCtx = null;
+        state.graphName = '';
+        state.dirty = false;
+        renderToolbar();
+      }
+      await loadWorkplaces();
+    } catch (e) {
+      EV.toast('清理失败：' + e.message, true);
+    }
   }
 
   // 打开沙盒内 Graph 产物：直接载入可视化画布（可编辑，保存回写沙盒 graph.json）
@@ -477,6 +500,11 @@
       nm.appendChild(EV.el('span', 'nm', wp.name));
       item.appendChild(nm);
       item.appendChild(EV.el('div', 'item-sub', '沙盒 ' + wp.workplace_id));
+      var x = EV.el('button', 'item-x');
+      x.title = '清理沙盒';
+      x.innerHTML = EV.icon('trash', 14);
+      x.onclick = function (e) { e.stopPropagation(); deleteWorkplace(wp); };
+      item.appendChild(x);
       item.title = '在画布中打开沙盒产物，编辑后保存回写 graph.json';
       item.onclick = function () { openSandboxGraph(wp); };
       body.appendChild(item);
