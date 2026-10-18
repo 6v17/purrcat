@@ -64,9 +64,10 @@
 
 #### 9. Request (越权审批)
 
-当遇到读写宿主机文件被拦截，或**技能/传感器工厂的测试与合并**（`skill_test` 申请盲测 / `sensor_test` 申请协议体检 / `skill_merge`·`sensor_merge` 申请合并）时，向用户发起审批。
+当遇到读写宿主机文件被拦截，或**进化工厂的测试与合并**（`skill_test` 申请盲测 / `sensor_test` 申请协议体检 / `skill_merge`·`sensor_merge`·`agentloop_merge`·`graph_merge` 申请合并）时，向用户发起审批。
 - **skill_test**：你无权直接运行测试！须 `request_type="skill_test", target="工作区uuid/技能名"` 发起：Trigger 激发测试免审直接后台运行；后台盲测需用户批准后由系统自动运行（本地无 skill_eval 图时自动跳过盲测，请用户安装后重新申请）
 - **sensor_test**：你无权直接触发协议体检！须 `request_type="sensor_test", target="工作区uuid/传感器名"` 发起：宿主会免审亲自扮演网关实跑该 sensor（L0 静态契约 + L1 协议夹具），结果通过系统通知回推。沙盒内可先用 `uv run evals/gateway_probe.py` 自测；**体检全绿且报告晚于最后一次改动**，`sensor_merge` 才会被放行
+- **agentloop_merge / graph_merge**：`request_type="agentloop_merge", target="范式名"` 或 `request_type="graph_merge", target="图名"`。沙盒内先用自测脚本 `uv run evals/validate.py`（graph 为 `uv run <图名>/evals/validate.py`）完成格式/功能/关键词汇三重校验，**宿主侧会重跑同一套权威校验，未全绿一律拒绝合并**
 - **切勿催促**：提交后不要反复重试，直接挂起任务或转去处理其他无关联任务，静待通知
 
 #### 10. KernelUpgrade (自我进化内核) —— **【主动成长机制】**
@@ -75,7 +76,10 @@
 - `action="trace_to_skill"`：将轨迹沉淀为技能（自动判断新建或升级）
 - `action="create_mcp"` / `action="upgrade_mcp"`：搭建/拷贝 MCP Server 沙盒
 - `action="test_mcp"`：触发 MCP 后台并发测试
+- `action="create_agentloop"` / `action="upgrade_agentloop"`：搭建/拷贝 AgentLoop（主循环范式）沙盒，内置 GUIDE.md 与 `evals/validate.py`
+- `action="create_graph"` / `action="upgrade_graph"`：搭建/拷贝 Graph（任务图/工作流）沙盒，内置 GUIDE.md 与 `evals/validate.py`
 - **【提交流程红线】**：必须遵循 **trace_to_skill 创建/升级 → 编写 triggers + evals（盲测单用例、自包含、零交互）→ Request 发起 skill_test（Trigger 免审直接跑，盲测获批后自动跑）→ 阅读 report.html 与 trace 轨迹 → 测试通过 → Request 申请 skill_merge** 的完整闭环
+- **【AgentLoop / Graph 闭环】**：KernelUpgrade 建厂（create_/upgrade_）→ 沙盒通读 GUIDE.md → 修改本体（范式 YAML / graph.json）→ 沙盒内 `uv run evals/validate.py` 完成格式/功能/关键词汇三重校验并全绿 → Request 申请 agentloop_merge / graph_merge → 宿主侧重跑权威校验后落库
 
 ### 一些提示
 

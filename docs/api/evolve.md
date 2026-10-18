@@ -2,12 +2,12 @@
 
 > 源码：`src/server/api/evolve.py` ｜ 前缀：`/api/evolve` ｜ 端点：12 个
 
-进化工厂（Evolution Factory）管理接口。`type` 指定加工厂类型：`skill`（默认）、`mcp`、`sensor`。每个沙盒按 `workplace_id` 组织，位于 `AGENT_VM_DIR/{type}_workplace/{workplace_id}/` 下。
+进化工厂（Evolution Factory）管理接口。`type` 指定加工厂类型：`skill`（默认）、`mcp`、`sensor`、`agentloop`、`graph`。每个沙盒按 `workplace_id` 组织，位于 `AGENT_VM_DIR/{type}_workplace/{workplace_id}/` 下。
 
 **约定**
 
-- `type` 取值：`skill` | `mcp` | `sensor`（缺省 `"skill"`）。
-- skill/mcp 的「本体」为 workplace 下同名子目录；sensor 的本体为 workplace 根目录下的单个 `<name>.py`。
+- `type` 取值：`skill` | `mcp` | `sensor` | `agentloop` | `graph`（缺省 `"skill"`）。
+- skill/mcp 的「本体」为 workplace 下同名子目录；sensor 的本体为 workplace 根目录下的单个 `<name>.py`；agentloop 的本体为 workplace 根目录下的单个 `<name>.yaml`；graph 的本体为 workplace 下的同名目录（含 `graph.json`）。
 - `POST /api/evolve/test/run` 为后台异步接口，立即返回受理态，进度经 `/api/evolve/test/iterations`、`/api/evolve/test/report` 轮询。
 
 ---
@@ -276,7 +276,7 @@ curl 'http://127.0.0.1:8000/api/evolve/test/benchmark?workplace_id=wp-001&type=s
 { "diff_content": "diff --git ..." }
 ```
 
-对比正式库与沙盒：`skill` 对比 `SKILL_DIR/{name}`，`mcp` 对比 `./mcps/{name}`，`sensor` 对比 `{name}.py`。全新模块返回文字说明，无变化返回提示语。异常返回 `500`。
+对比正式库与沙盒：`skill` 对比 `SKILL_DIR/{name}`，`mcp` 对比 `./mcps/{name}`，`sensor` 对比 `{name}.py`，`agentloop` 对比 `PARADIGMS_DIR/{name}.yaml`，`graph` 对比 `GRAPHS_DIR/{name}`。全新模块返回文字说明，无变化返回提示语。异常返回 `500`。
 
 **示例**
 
