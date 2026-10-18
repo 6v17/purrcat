@@ -807,8 +807,8 @@
 
   // ---- 设置面板：左导航 + 内容区（宿主固有资产，非插件）----
   // 主导航：UI 插件 + 原配置中心逐标签页
-  const CONFIG_NAV = ['plugins', 'model', 'sensor', 'file', 'mcp', 'app', 'acp', 'deploy'];
-  const CONFIG_LABEL = { plugins: 'UI 插件', model: '模型', sensor: '传感器', file: '文件', mcp: 'MCP', app: '应用', acp: 'ACP', deploy: '部署' };
+  const CONFIG_NAV = ['plugins', 'model', 'sensor', 'file', 'mcp', 'app', 'soul', 'acp', 'deploy'];
+  const CONFIG_LABEL = { plugins: 'UI 插件', model: '模型', sensor: '传感器', file: '文件', mcp: 'MCP', app: '应用', soul: '全局人设', acp: 'ACP', deploy: '部署' };
   let settingsTab = 'plugins';
   let settingsRenderedTab = '';   // 上一次渲染的标签页（同页重建才恢复滚动位置）
   let deployPollT = null;   // 部署页轮询定时器句柄
@@ -913,6 +913,45 @@
           status.textContent = '已保存并应用';
           renderSettings();
         })
+        .catch(function (e) {
+          save.disabled = false;
+          status.textContent = '保存失败';
+          HOST.alert('保存失败：' + (e && e.message || ''));
+        });
+    });
+    bar.appendChild(save);
+    bar.appendChild(status);
+    main.appendChild(bar);
+  }
+
+  // 全局人设：SOUL.md 在线编辑（GET/PUT /api/config/markdown/SOUL，落盘 ~/.purrcat/core/SOUL.md）
+  function renderSoulEditor(main) {
+    const tip = HOST.document.createElement('div');
+    tip.className = 'cfg-tip';
+    tip.textContent = '全局人设 SOUL.md：只有在 AgentLoop / Graph 等流程中显式引用 @SOUL 时，此内容才会注入对应 Agent（是否注入取决于具体实现），并非所有 Agent 自动携带（落盘 ~/.purrcat/core/SOUL.md）。';
+    main.appendChild(tip);
+    const tx = HOST.document.createElement('textarea');
+    tx.className = 'settings-json';
+    tx.spellcheck = false;
+    tx.placeholder = '读取中…';
+    main.appendChild(tx);
+    const status = HOST.document.createElement('span');
+    status.className = 'p-tag';
+    fetch('/api/config/markdown/SOUL').then(function (r) { return r.json(); }).then(function (d) {
+      tx.value = (d && d.content) || '';
+      status.textContent = '已加载';
+    }).catch(function () { status.textContent = '加载失败'; });
+    const bar = HOST.document.createElement('div');
+    bar.className = 'settings-actions';
+    const save = HOST.document.createElement('button');
+    save.className = 'btn cfg-save';
+    save.textContent = '保存';
+    save.addEventListener('click', function () {
+      save.disabled = true;
+      status.textContent = '保存中…';
+      fetch('/api/config/markdown/SOUL', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: tx.value }) })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); })
+        .then(function () { save.disabled = false; status.textContent = '已保存'; })
         .catch(function (e) {
           save.disabled = false;
           status.textContent = '保存失败';
@@ -1139,6 +1178,7 @@
   function renderConfigSection(main, key) {
     if (key === 'acp') return renderAcpCard(main);
     if (key === 'deploy') return renderDeployCards(main);
+    if (key === 'soul') return renderSoulEditor(main);
     cfgToolbar(main, key);
     if ((cfgState.mode[key] || 'cards') === 'json') {
       renderRawJson(main, key);
