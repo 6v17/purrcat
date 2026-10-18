@@ -23,8 +23,13 @@ from src.evolve import (
     sensor_factory_init,
     sensor_request_handle,
     run_sensor_eval_background,
+    agentloop_factory_init,
+    agentloop_request_handle,
+    graph_factory_init,
+    graph_request_handle,
 )
 from src.utils.config import SKILL_DIR, AGENT_VM_DIR, SENSOR_EXTENSION_DIR
+from src.utils.config import PARADIGMS_DIR, GRAPHS_DIR
 
 router = APIRouter(prefix="/api/evolve", tags=["Evolution Factory"])
 
@@ -37,9 +42,11 @@ def body_root(module_type: str, workplace_id: str, name: str) -> str:
     """沙盒内「本体」所在目录。
 
     skill/mcp 的本体是 workplace 下的同名子目录；sensor 的本体是 workplace
-    根目录下的单个 <name>.py（没有独立子目录），故直接返回工作区根。
+    根目录下的单个 <name>.py（没有独立子目录），故直接返回工作区根；
+    graph 的本体是 workplace 下的同名文件夹；agentloop 的本体是 workplace
+    根目录下的单个 <name>.yaml，同样直接返回工作区根。
     """
-    if module_type == "sensor":
+    if module_type in ("sensor", "agentloop"):
         return os.path.join(get_root(module_type), workplace_id)
     return os.path.join(get_root(module_type), workplace_id, name)
 
@@ -90,6 +97,16 @@ def unified_generate_diff(name: str, workplace_root: str, module_type: str) -> s
         source_dir = os.path.join(SENSOR_EXTENSION_DIR, f"{name}.py")
         target_dir = os.path.join(workplace_root, f"{name}.py")
         label = "Sensor"
+    elif module_type == "agentloop":
+        # agentloop 本体是单文件：正式库 paradigms/<name>.yaml ↔ 沙盒 <name>.yaml
+        source_dir = os.path.join(PARADIGMS_DIR, f"{name}.yaml")
+        target_dir = os.path.join(workplace_root, f"{name}.yaml")
+        label = "AgentLoop"
+    elif module_type == "graph":
+        # graph 本体是文件夹：正式库 graph/<name> ↔ 沙盒 <name>
+        source_dir = os.path.join(GRAPHS_DIR, name)
+        target_dir = os.path.join(workplace_root, name)
+        label = "Graph"
     elif module_type == "mcp":
         source_dir = f"./mcps/{name}"
         target_dir = os.path.join(workplace_root, name)
@@ -120,6 +137,12 @@ def unified_rollback(name: str, module_type: str) -> str:
     if module_type == "sensor":
         repo_root = SENSOR_EXTENSION_DIR
         target = f"{name}.py"
+    elif module_type == "agentloop":
+        repo_root = PARADIGMS_DIR
+        target = f"{name}.yaml"
+    elif module_type == "graph":
+        repo_root = GRAPHS_DIR
+        target = name
     else:
         repo_root = "./mcps" if module_type == "mcp" else SKILL_DIR
         target = name
@@ -187,6 +210,21 @@ def list_workplaces(type: str = "skill"):
                     )
                 continue
 
+            if type == "agentloop":
+                # agentloop 工厂：本体是工作区根目录下的单个 <name>.yaml（不是同名子目录）
+                item_name = "unknown"
+                for item in sorted(os.listdir(w_path)):
+                    if item.endswith((".yaml", ".yml")) and os.path.isfile(
+                        os.path.join(w_path, item)
+                    ):
+                        item_name = os.path.splitext(item)[0]
+                        break
+                if item_name != "unknown":
+                    workplaces.append(
+                        {"workplace_id": wid, "name": item_name, "status": "processing"}
+                    )
+                continue
+
             item_name = "unknown"
             for item in os.listdir(w_path):
                 item_path = os.path.join(w_path, item)
@@ -197,6 +235,11 @@ def list_workplaces(type: str = "skill"):
                 # skill 工厂：技能本体是含 SKILL.md 的目录（跳过 blind-* 等评估产物目录）
                 if type == "skill" and not os.path.exists(
                     os.path.join(item_path, "SKILL.md")
+                ):
+                    continue
+                # graph 工厂：图本体是含 graph.json 的目录
+                if type == "graph" and not os.path.exists(
+                    os.path.join(item_path, "graph.json")
                 ):
                     continue
                 item_name = item
@@ -219,6 +262,12 @@ def init_sandbox_api(req: InitReq):
             )
         elif req.type == "sensor":
             msg, workplace_id = sensor_factory_init(req.name, req.is_upgrade, req.goal)
+        elif req.type == "agentloop":
+            msg, workplace_id = agentloop_factory_init(
+                req.name, req.is_upgrade, req.goal
+            )
+        elif req.type == "graph":
+            msg, workplace_id = graph_factory_init(req.name, req.is_upgrade, req.goal)
         else:
             msg, workplace_id = skill_improve_init(req.name, req.is_upgrade, req.goal)
 
@@ -383,6 +432,10 @@ def handle_request_api(req: HandleReq):
             msg = mcp_request_handle(w_path, req.name, req.is_approved)
         elif req.type == "sensor":
             msg = sensor_request_handle(w_path, req.name, req.is_approved)
+        elif req.type == "agentloop":
+            msg = agentloop_request_handle(w_path, req.name, req.is_approved)
+        elif req.type == "graph":
+            msg = graph_request_handle(w_path, req.name, req.is_approved)
         else:
             msg = skill_request_handle(w_path, req.name, req.is_approved)
         return {"status": "success", "message": msg}
