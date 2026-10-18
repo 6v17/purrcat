@@ -18,7 +18,7 @@ Let expression no longer be a lossy compression — let the Agent work your way.
 
 ## Quickstart
 
-PurrCat is still iterating quickly. Installing from source is recommended so you can pick up the latest features and fixes as they land.
+> PurrCat is still iterating quickly. Installing from source is recommended so you can pick up the latest features and fixes as they land.
 
 ### One-line install
 
@@ -68,7 +68,7 @@ PurrCat cares not only about what the model can do, but also about how task info
 - **Multi-layer hybrid memory**: Inject short-term working memory, `MEMORY.md`, and PurrMemo's episodic memory, semantic memory, and knowledge graph in stages, helping the Agent retrieve the relevant information when it needs it.
 - **Sub-agents that share context**: SubAgents use their own branch id, model instance, and event loop while sharing the same contextual foundation, so a sub-agent fully understands the main Agent's needs without building all collaboration on natural-language conversation between Agents — efficient and context-managed at the same time.
 
-### 01 · Everything Is a Plugin
+### 01 · Everything Is Plugins
 
 > **Beyond the kernel — capabilities, flows, and interfaces are all extensible.**
 
