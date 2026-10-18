@@ -97,6 +97,7 @@
     baseline: '',
     dirty: false,
     workplaces: [],                                // 沙盒内（AgentLoop 工厂加工中的产物）
+    sandboxCtx: null,                              // 当前编辑的是沙盒产物时为 {workplace_id, name}；否则 null
     drawers: { sandbox: true, library: true }      // 左侧分类抽屉的展开状态
   };
 
@@ -182,7 +183,7 @@
       state.files = [];
       EV.toast('获取 paradigm 列表失败：' + e.message, true);
     }
-    if (state.activeName && !state.files.some(function (f) { return f.name === state.activeName; })) {
+    if (state.activeName && !state.sandboxCtx && !state.files.some(function (f) { return f.name === state.activeName; })) {
       state.activeName = '';
     }
     renderSide();
@@ -202,6 +203,7 @@
       var data = await EV.api.get('/api/paradigms/' + encodeURIComponent(name));
       applyDoc(data && data.data);
       state.activeName = name;
+      state.sandboxCtx = null;
       state.baseline = JSON.stringify(buildDoc());
       state.dirty = false;
       renderSide();
@@ -211,8 +213,50 @@
     }
   }
 
+  // 打开沙盒内 AgentLoop 产物：载入范式编辑器（可编辑，保存回写沙盒 <name>.yaml）
+  async function openSandboxAgentLoop(wp) {
+    if (state.dirty) {
+      var ok = await EV.confirm({
+        title: '未保存的修改',
+        message: '当前有未保存的修改，切换到沙盒产物「' + wp.name + '」将丢弃这些修改。确定继续吗？',
+        okLabel: '继续切换'
+      });
+      if (!ok) return;
+    }
+    try {
+      var q = EV.qs({ workplace_id: wp.workplace_id, name: wp.name });
+      var data = await EV.api.get('/api/evolve/paradigm' + q);
+      applyDoc(data && data.data);
+      state.activeName = wp.name;
+      state.sandboxCtx = { workplace_id: wp.workplace_id, name: wp.name };
+      state.baseline = JSON.stringify(buildDoc());
+      state.dirty = false;
+      renderSide();
+      renderMain();
+      EV.toast('已载入沙盒产物 ' + wp.name + '.yaml');
+    } catch (e) {
+      EV.toast('载入沙盒产物失败：' + e.message, true);
+    }
+  }
+
   async function save() {
     if (!state.activeName) return;
+    // 沙盒模式：直接回写沙盒 <name>.yaml
+    if (state.sandboxCtx) {
+      var c = state.sandboxCtx;
+      try {
+        var q = EV.qs({ workplace_id: c.workplace_id, name: c.name });
+        await EV.api.post('/api/evolve/paradigm' + q, { data: buildDoc() });
+        state.baseline = JSON.stringify(buildDoc());
+        state.dirty = false;
+        renderToolbar();
+        renderBody();
+        EV.toast('已保存到沙盒：' + c.name + '.yaml');
+      } catch (e) {
+        EV.toast('保存到沙盒失败：' + e.message, true);
+      }
+      return;
+    }
     try {
       await EV.api.post('/api/paradigms/' + encodeURIComponent(state.activeName), { data: buildDoc() });
       state.baseline = JSON.stringify(buildDoc());
@@ -329,7 +373,7 @@
     ));
   }
 
-  // 沙盒内：列出 AgentLoop 工厂加工中的产物（点击只读预览）
+  // 沙盒内：列出 AgentLoop 工厂加工中的产物（点击载入范式编辑器编辑）
   async function loadWorkplaces() {
     state.workplaces = await EV.sandboxList('agentloop');
     renderSide();
@@ -341,16 +385,15 @@
       return;
     }
     state.workplaces.forEach(function (wp) {
-      var item = EV.el('div', 'item');
+      var on = state.sandboxCtx && state.sandboxCtx.workplace_id === wp.workplace_id;
+      var item = EV.el('div', 'item' + (on ? ' on' : ''));
       var nm = EV.el('div', 'item-name');
       nm.innerHTML = EV.icon('loop', 14);
       nm.appendChild(EV.el('span', 'nm', wp.name));
       item.appendChild(nm);
       item.appendChild(EV.el('div', 'item-sub', '沙盒 ' + wp.workplace_id));
-      item.title = '查看沙盒内正在加工的产物';
-      item.onclick = function () {
-        EV.previewSandboxFile('agentloop', wp, wp.name + '.yaml', 'AgentLoop');
-      };
+      item.title = '在编辑器中打开沙盒产物，编辑后保存回写 ' + wp.name + '.yaml';
+      item.onclick = function () { openSandboxAgentLoop(wp); };
       body.appendChild(item);
     });
   }
@@ -400,6 +443,11 @@
     var label = EV.el('span', 'note');
     label.textContent = state.activeName ? state.activeName + '.yaml' : '未打开文件';
     nameWrap.appendChild(label);
+    if (state.sandboxCtx) {
+      var schip = EV.el('span', 'chip', '沙盒编辑 · ' + state.sandboxCtx.workplace_id);
+      schip.title = '当前编辑的是沙盒内产物，保存将回写沙盒 ' + state.sandboxCtx.name + '.yaml';
+      nameWrap.appendChild(schip);
+    }
     if (state.dirty) {
       var dot = EV.el('span', 'chip warn', '未保存');
       nameWrap.appendChild(dot);
@@ -430,7 +478,8 @@
 
     var saveBtn = EV.el('button', 'btn primary');
     saveBtn.innerHTML = EV.icon('save', 14);
-    saveBtn.appendChild(EV.el('span', null, state.dirty ? '保存 *' : '保存'));
+    var saveText = state.sandboxCtx ? '保存到沙盒' : '保存';
+    saveBtn.appendChild(EV.el('span', null, state.dirty ? saveText + ' *' : saveText));
     saveBtn.disabled = !state.activeName;
     saveBtn.onclick = save;
     toolbarEl.appendChild(saveBtn);

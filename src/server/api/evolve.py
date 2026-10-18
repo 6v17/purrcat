@@ -5,6 +5,7 @@ import stat
 import shutil
 import subprocess
 import traceback
+import yaml
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -86,6 +87,10 @@ class HandleReq(BaseModel):
 class RollbackReq(BaseModel):
     type: str = "skill"
     name: str
+
+
+class ParadigmSaveReq(BaseModel):
+    data: dict
 
 
 # ==========================================
@@ -330,6 +335,39 @@ def update_file_api(
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
+
+
+@router.get("/paradigm")
+def get_sandbox_paradigm_api(workplace_id: str, name: str):
+    """读取沙盒内 AgentLoop 范式（YAML）并解析为结构化对象（供面板编辑器加载）。"""
+    path = os.path.join(get_root("agentloop"), workplace_id, f"{name}.yaml")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="范式的沙盒文件不存在")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        raise HTTPException(status_code=400, detail=f"YAML 解析失败: {e}")
+    return {"name": name, "data": data if isinstance(data, dict) else {}}
+
+
+@router.post("/paradigm")
+def save_sandbox_paradigm_api(workplace_id: str, name: str, req: ParadigmSaveReq):
+    """把结构化对象序列化回沙盒内 <name>.yaml（面板编辑器的「保存到沙盒」）。"""
+    path = os.path.join(get_root("agentloop"), workplace_id, f"{name}.yaml")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(
+                req.data if isinstance(req.data, dict) else {},
+                f,
+                allow_unicode=True,
+                sort_keys=False,
+                default_flow_style=False,
+            )
+    except yaml.YAMLError as e:
+        raise HTTPException(status_code=400, detail=f"YAML 序列化失败: {e}")
+    return {"status": "success", "message": "保存成功"}
 
 
 @router.post("/test/run")
