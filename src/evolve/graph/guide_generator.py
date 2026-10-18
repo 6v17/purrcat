@@ -104,7 +104,15 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 | `sourceHandle` | 上游输出端口名（不写默认 `"default"`）|
 | `targetHandle` | 下游输入端口名（不写默认 `"default"`）|
 
-## 6. 校验脚本（格式 / 功能 / 关键词汇）
+## 6. 编排建议（最佳实践）
+
+* **尽量不用命令执行节点**：能交给 Agent 解决的就不要用 `command` 节点，直接把要做的事写进提示词交给 `agent_loop` 即可。
+* **不通用就别单独建 AgentLoop**：若这段 Agent 逻辑只是本图专用、没有复用价值，就不必单独做一个 `agentloop` 范式，直接把提示词写在 `string`（自定义输入）节点里，接到 `agent_loop` 的 `messages` 输入即可；只有通用、可被多处复用的逻辑才值得沉淀成独立范式。
+* **复杂任务拆多个 Agent**：一个 `agent_loop` 只承担单一职责，复杂任务应拆成多个 `agent_loop` 节点，让每个节点的提示词保持聚焦、不臃肿。
+* **独立子任务并行**：彼此独立的子任务拆成并行分支，让多个 `agent_loop` 同时推进，提高整体效率。
+* **上下文交接分两种**：前后环节相关性高的，把上游 `messages` 接到下游 `messages`，用**共享上下文**无缝交接；相关性不高的，只接上游 `summary` 传递摘要即可，避免把无关历史灌给下游。
+
+## 7. 校验脚本（格式 / 功能 / 关键词汇）
 
 沙盒内置自测脚本 `evals/validate.py`，做三重校验：
 
@@ -120,7 +128,7 @@ uv run evals/validate.py
 
 结论写入 `evals/outputs/validation.json`。**有 ❌（error）项一律不许提交合并**，⚠️（warn）项按需处理。
 
-## 7. 提交合并
+## 8. 提交合并
 
 校验全绿后调用 `Request(request_type="graph_merge", target="{name}")`，
 并在 reason 中简述图的功能点供用户 Code Review。批准后系统会：
