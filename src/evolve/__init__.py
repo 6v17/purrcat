@@ -41,6 +41,8 @@ from .mcp.evaluator import run_mcp_eval_background
 from .sensor.factory import sensor_factory_init, sensor_request_handle
 from .sensor.evaluator import run_sensor_eval_background
 from .ui_plugin.factory import ui_plugin_init
+from .agentloop.factory import agentloop_factory_init, agentloop_request_handle
+from .graph.factory import graph_factory_init, graph_request_handle
 
 __all__ = [
     "skill_improve_init",
@@ -58,4 +60,8 @@ __all__ = [
     "sensor_request_handle",
     "run_sensor_eval_background",
     "ui_plugin_init",
+    "agentloop_factory_init",
+    "agentloop_request_handle",
+    "graph_factory_init",
+    "graph_request_handle",
 ]

@@ -1,0 +1,134 @@
+"""
+Graph 指南生成器模块 (evolve/graph/guide_generator.py)
+单文件指南：覆盖目录约定、节点/边词汇表、校验与提交全流程。
+"""
+
+
+def generate_graph_guide(name: str, goal: str = "") -> str:
+    goal_section = f"\n> 🎯 **本次构建目标**：{goal}\n\n" if goal else ""
+    return f"""# {name} Graph 工厂指南 (GUIDE)
+
+Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node）+ 边（Edge）**描述一条多步骤工作流。
+每个 Graph 是一个独立文件夹（`graph.json` + 可选 `asset/`），由运行时引擎按拓扑顺序执行。
+本指南覆盖结构规范、专有词汇表、校验与提交全流程，动手前请先通读。
+{goal_section}
+## 1. 目录约定
+
+```text
+{name}/                       # 沙盒内你的图文件夹
+├── graph.json                # 图定义（必需）
+└── asset/                    # 静态资源：看板 html 等（可选）
+```
+
+**文件夹名 = `graph.json` 内的 `name` 字段**，两者必须严格一致（合并校验会拦）。
+
+## 2. graph.json 顶层字段
+
+```json
+{{
+  "version": "2.0",
+  "name": "{name}",
+  "description": "One-line English description.",
+  "description-zh": "一句话中文描述。",
+  "core": "openai:deepseek-v4-flash",
+  "global_schema": {{ "prompt": {{ "type": "string", "required": true, "description": "用户任务描述" }} }},
+  "nodes": [ ... ],
+  "edges": [ ... ],
+  "dashboard": "purrcat://graph/{name}/asset/dashboard.html"
+}}
+```
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `name` | 是 | 必须与文件夹名一致 |
+| `description` | 是 | 英文描述（市场展示）|
+| `description-zh` | 是 | 中文描述 |
+| `version` | 建议 | 规范版本（当前 `"2.0"`）|
+| `core` | 否 | 该图执行所用模型，缺省 `openai:deepseek-v4-flash` |
+| `global_schema` | 否 | 全局输入变量声明 `{{ 变量名: {{ type, required, description }} }}`，驱动前端表单与运行时校验 |
+| `nodes` | 否 | 节点定义数组 |
+| `edges` | 否 | 连边定义数组 |
+| `dashboard` | 否 | 看板地址：字符串或多看板数组 |
+
+## 3. 节点对象与端口语义
+
+```json
+{{ "id": "nd_tpl", "type": "template_renderer", "name": "组装指令", "position": [100, -50],
+  "config": {{ "template": "你好 {{{{prompt}}}}" }} }}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `id` | 节点唯一标识（图内不重复），边通过它连线 |
+| `type` | 节点类型（见第 4 节白名单）|
+| `name` | 节点显示名 |
+| `position` | `[x, y]` 画布坐标 |
+| `config` | 该节点类型的配置对象 |
+
+* 端口分 **static**（固定）与 **dynamic**（由 `config` 动态生成，如 `task_input.global_vars` 生成输出端口、
+  `template_renderer.template` 里的 `{{{{变量}}}}` 生成输入端口）。
+* **触发端口 `trigger`**：若节点有 `trigger` 输入端口且**未连线**，开局自动执行；**连线**则等上游信号。
+
+## 4. 节点类型白名单（专有词汇表）
+
+| `type` | 名称 | 主要端口（输入 → 输出）|
+| --- | --- | --- |
+| `task_input` | 全局输入 | — → `dynamic_outputs`（按 global_vars 生成）|
+| `task_output` | 全局输出 | `dynamic_inputs` → — |
+| `string` | 自定义输入 | `trigger` → `text`/`number`/`boolean`/`json` |
+| `template_renderer` | 模板渲染器 | `template`/`dynamic_vars`/`trigger` → `rendered_text` |
+| `message_card_builder` | 消息卡片构建器 | `content`/`role`/`trigger` → `message_list` |
+| `appender` | 列表追加 | `base_list`/`append_list` → `merged_list` |
+| `json_builder` | JSON 构建器 | `dynamic_inputs`/`trigger` → `json_string` |
+| `json_extractor` | JSON 提取器 | `data` → `dynamic_outputs` |
+| `env_loader` | 环境变量加载器 | — → `dynamic_outputs` |
+| `skill_info` | Skill 知识包 | `trigger` → `skill_kit_string` |
+| `mcp_info` | MCP 知识包 | `trigger` → `mcp_kit_string` |
+| `agent_loop` | 智能体循环 | `messages`/`agentloop` → `messages`/`summary` |
+| `human_intervention` | 人工干预 | `trigger`/`context_data`/`prompt` → `human_reply`/`context_data` |
+| `command` | 命令执行 | `command`/`os`/`trigger` → `stdout`/`stderr`/`exit_code`/`skipped` |
+| `file_reader` | 文件读取/预览 | `trigger`/`source` → `content`/`file` |
+| `file_writer` | 文件落盘 | `trigger`/`content`/`filename` → `file` |
+
+> 已废弃类型（`preview`、`if_else_router`、`python_runner` 等）会被校验器判错，必须改用上表类型。
+
+## 5. 边（Edge）映射
+
+```json
+{{ "source": "nd_input", "target": "nd_tpl", "sourceHandle": "prompt", "targetHandle": "prompt" }}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `source` / `target` | 上游 / 下游节点 `id`（都必须存在，校验器会拦）|
+| `sourceHandle` | 上游输出端口名（不写默认 `"default"`）|
+| `targetHandle` | 下游输入端口名（不写默认 `"default"`）|
+
+## 6. 校验脚本（格式 / 功能 / 关键词汇）
+
+沙盒内置自测脚本 `evals/validate.py`，做三重校验：
+
+* **格式**：`graph.json` 可解析；顶层为对象；`name` 与文件夹名一致；`description`/`description-zh` 非空。
+* **关键词汇**：每个节点的 `type` 必须属于白名单（已废弃类型直接判错）；节点 `id` 唯一。
+* **功能**：边的 `source`/`target` 必须指向已定义节点；端口名与类型匹配性复核（动态端口仅告警）；
+  检出**孤立节点**（既无连边又无 trigger，开局不会执行）；`global_schema` 必填键与 `task_input` 声明的一致性。
+
+```bash
+cd /agent_vm/graph_workplace/<uuid>/{name}
+uv run evals/validate.py
+```
+
+结论写入 `evals/outputs/validation.json`。**有 ❌（error）项一律不许提交合并**，⚠️（warn）项按需处理。
+
+## 7. 提交合并
+
+校验全绿后调用 `Request(request_type="graph_merge", target="{name}")`，
+并在 reason 中简述图的功能点供用户 Code Review。批准后系统会：
+1. 把整个 `{name}/` 文件夹拷贝到正式目录 `~/.purrcat/graph/`；
+2. Git 提交版本记录，落盘即被后续任务读取（热更新，无需重启）。
+
+合并前系统会**宿主侧重跑同一套校验**（防止篡改脚本），有错直接拒绝——所以务必先自查再申请。
+"""
+
+
+__all__ = ["generate_graph_guide"]
