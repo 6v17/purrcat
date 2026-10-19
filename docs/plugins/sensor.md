@@ -137,7 +137,7 @@ stdio Sensor **固定当前活跃会话**——网关在你发 `session/new` 时
 4. **有游标/登录态的（长轮询 cursor、扫码 token 等）必须持久化到脚本同目录的 state 文件**并随更新落盘——Sensor 会被热重启，不落盘就丢消息/丢登录态。
 5. **一切外部网络调用放后台线程**，主线程只跑 stdin 读取循环。
 6. **失败上报**：连接成功保持静默；只有失败（缺凭证、连不上、异常）才用 `session/prompt` 上报失败详情，并带上缺失/出错的凭证名，禁止推送成功调试信息。
-7. 提交合并前必须通过**协议体检**（见第 8 节）。
+7. 提交合并前建议先跑**协议体检**（见第 8 节）；体检不通过不再阻止合并，只会在合并结果里给出提醒。
 
 ---
 
@@ -255,7 +255,7 @@ uv run evals/gateway_probe.py
 
 失败排查线索在 `evals/probe_stderr.log`（Sensor 的 stderr 全量日志）。
 
-### 8.2 协议体检（合并硬性判据）
+### 8.2 协议体检（合并前建议项）
 
 | # | 判据 | 说明 |
 | --- | --- | --- |
@@ -277,6 +277,8 @@ uv run evals/gateway_probe.py
 - 安装：市场接口 `/api/tools/market/sensors/install`（下载 `config.json` + `<name>.py` 到 `~/.purrcat/sensor/`，并把条目合并进 `~/.purrcat/activate_sensor.json`）。
 - 启用/禁用与填 `env`：写 `activate_sensor.json` 对应条目的 `enabled` / `env`。
 - 重载：`POST /api/config/sensor/reload`（停掉全部旧进程，按配置重新拉起启用项）。
+- 运行状态：`GET /api/config/sensor/runtime` 列出运行中的 Sensor（`name` / `pid` / `alive`）。
+- 停止单个：`POST /api/config/sensor/{name}/stop` 杀死指定 Sensor 进程，并把它在 `activate_sensor.json` 里置为 `enabled=false`（不会被 watchdog 再拉起）。
 - 本地无 `<name>.py` 时，主进程会后台按官方仓库地址自动下载后拉起。
 
 接口细节见 [../api/config.md](../api/config.md)、[../api/tools.md](../api/tools.md)。

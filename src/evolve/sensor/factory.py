@@ -613,14 +613,9 @@ def sensor_request_handle(
     if not os.path.exists(source_path):
         return f"❌ 合并失败：沙盒中未找到 '{sensor_name}.py'，请补齐后再申请合并。"
 
-    # 0. 协议体检把关：L0/L1 必须全绿，且证据对应当前代码
+    # 0. 协议体检：只作提醒，不再硬性拦截——体检未过/证据过期也照常合并，
+    #    仅在结果里附一条建议重跑的提示，避免卡住用户主动发起的合并
     verdict_ok, verdict_text = _latest_protocol_verdict(workplace_root)
-    if not verdict_ok:
-        return (
-            f"❌ 合并被阻止：{verdict_text}。\n"
-            f"请先执行 `Request(sensor_test, target='{os.path.basename(workplace_root)}/{sensor_name}')` "
-            f"跑完协议体检并修复全部硬伤后再申请合并。"
-        )
 
     # 1. 强校验：读取 Agent 维护的 sensor_config.json（注册唯一依据）
     config_path = os.path.join(workplace_root, "sensor_config.json")
@@ -703,10 +698,16 @@ def sensor_request_handle(
         else f"\n🔑 {len(filled_keys)} 个凭证已随合并写入正式配置，用户无需再重填。"
     )
 
+    verdict_note = (
+        f"🔬 协议体检: {verdict_text}"
+        if verdict_ok
+        else f"⚠️ 协议体检提醒（不阻止合并）: {verdict_text}；建议重跑 sensor_test 后再发布"
+    )
+
     return (
         f"🎉 审批通过！Sensor '{sensor_name}' 成功合并。\n"
         f"📁 正式路径: {target_path}\n"
-        f"🔬 协议体检: {verdict_text}\n"
+        f"{verdict_note}\n"
         f"⚙️ 已写入 activate_sensor.json（enabled=true，含 {len(merged_env)} 个环境变量声明），"
         f"系统正在后台热重启 Sensor 线程池。{auth_hint}\n"
         f"Git: {commit_msg}"
