@@ -462,9 +462,10 @@ body.settings-open [data-layer="settings"] { display: flex; }
 .cfg-chip.warn { background: rgba(224, 177, 67, 0.25); color: #9a7a24; }
 .cfg-chip.bad { background: rgba(228, 88, 78, 0.2); color: #b0433b; }
 
-.cfg-edit, .cfg-del, .cfg-save { font-size: 12.5px; padding: 4px 12px; }
+.cfg-edit, .cfg-del, .cfg-stop, .cfg-save { font-size: 12.5px; padding: 4px 12px; }
 .cfg-edit { color: var(--wm-ink); }
 .cfg-del { color: #d0453b; border-color: rgba(208, 69, 59, 0.4); }
+.cfg-stop { color: #b0433b; border-color: rgba(208, 69, 59, 0.4); }
 .cfg-save { background: var(--wm-bg-active); font-weight: 600; }
 
 .cfg-add-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

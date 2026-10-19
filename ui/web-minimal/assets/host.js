@@ -1453,9 +1453,18 @@
     if (t === 'object') { try { return JSON.parse(str); } catch (e) { return orig; } }
     return str;
   }
+  // sensor 后台进程表：name -> {pid, alive}（配置页展示「运行中/未运行」与停止按钮）
+  function sensorRuntimeMap() {
+    return fetch('/api/config/sensor/runtime')
+      .then(function (r) { return r.json(); })
+      .then(function (d) { const m = {}; ((d && d.running) || []).forEach(function (s) { m[s.name] = s; }); return m; })
+      .catch(function () { return {}; });
+  }
   function renderGenericCards(main, key) {
-    cfgData(key).then(function (data) {
-      const obj = data || {};
+    const isSensor = key === 'sensor';
+    Promise.all([cfgData(key), isSensor ? sensorRuntimeMap() : Promise.resolve({})]).then(function (res) {
+      const obj = res[0] || {};
+      const runMap = res[1] || {};
       const keys = Object.keys(obj).filter(function (k) { return k !== '__ARRAY_WRAPPER__'; });
       if (keys.length === 0) { const e = HOST.document.createElement('div'); e.className = 'p-tag'; e.textContent = '（空配置）'; main.appendChild(e); }
       keys.forEach(function (k) {
@@ -1463,9 +1472,37 @@
         const isOpen = cfgState.openKey[key] === k;
         const card = cfgCard(main);
         const raw = (typeof val === 'object') ? JSON.stringify(val) : String(val);
+        const rt = isSensor ? runMap[k] : null;
+        const running = !!(rt && rt.alive);
         // sensor：卡片头展示 icon（config 里的 icon 链接，留空/失效回退默认图标）
-        const iconArg = (key === 'sensor' && val && typeof val === 'object') ? (val.icon || '') : undefined;
-        const h = cfgCardHead(card, k, (Array.isArray(val) ? 'array' : typeof val), raw.slice(0, 90) + (raw.length > 90 ? '…' : ''), iconArg);
+        const iconArg = (isSensor && val && typeof val === 'object') ? (val.icon || '') : undefined;
+        // 卡片不展示配置内容（env 等含凭证），其值只在展开编辑时才呈现
+        const sub = isSensor ? '' : (raw.slice(0, 90) + (raw.length > 90 ? '…' : ''));
+        const h = cfgCardHead(card, k, (Array.isArray(val) ? 'array' : typeof val), sub, iconArg);
+        if (isSensor) {
+          const st = HOST.document.createElement('span');
+          st.className = 'cfg-chip ' + (running ? 'on' : 'off');
+          st.textContent = running ? '运行中' : '未运行';
+          if (running && rt.pid) st.title = 'PID ' + rt.pid;
+          h.titleRow.appendChild(st);
+        }
+        // 运行中的 sensor 可直接停止：杀进程 + 置 enabled=false
+        if (isSensor && running) {
+          const stopBtn = HOST.document.createElement('button');
+          stopBtn.className = 'btn cfg-stop';
+          stopBtn.textContent = '停止';
+          stopBtn.title = '杀死该 Sensor 后台进程，并在配置里置为 enabled=false';
+          stopBtn.addEventListener('click', function () {
+            if (!HOST.confirm('停止 Sensor "' + k + '"？将杀死其后台进程并置为 enabled=false。')) return;
+            stopBtn.disabled = true;
+            stopBtn.textContent = '停止中…';
+            fetch('/api/config/sensor/' + encodeURIComponent(k) + '/stop', { method: 'POST' })
+              .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error((b && b.detail) || ('HTTP ' + r.status)); return b; }); })
+              .then(function () { delete cfgState.data[key]; delete cfgState.openKey[key]; rerenderConfig(main, key); })
+              .catch(function (e) { stopBtn.disabled = false; stopBtn.textContent = '停止'; HOST.alert('停止失败：' + (e && e.message || '')); });
+          });
+          h.right.appendChild(stopBtn);
+        }
         const edit = HOST.document.createElement('button');
         edit.className = 'btn cfg-edit';
         edit.textContent = isOpen ? '关闭' : '编辑';
