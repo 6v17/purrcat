@@ -532,7 +532,9 @@ def sensor_factory_init(
             newline="\n",
         ) as f:
             f.write(_config_template(sensor_name))
-        action_msg = f"已为你搭建了全新的 '{sensor_name}' 可运行骨架（含凭证校验与失败上报示例）"
+        action_msg = (
+            f"已为你搭建了全新的 '{sensor_name}' 可运行骨架（含凭证校验与失败上报示例）"
+        )
 
     evals_dir = os.path.join(workplace_root, "evals")
     os.makedirs(evals_dir, exist_ok=True)

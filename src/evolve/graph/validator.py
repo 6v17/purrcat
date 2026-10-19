@@ -111,7 +111,13 @@ def validate_graph_doc(doc, expected_name=None):
     # ---- 格式校验（每条断言都登记，通过项 ok=True，便于全量查看） ----
     for key in REQUIRED_TOP:
         ok = bool(doc.get(key))
-        _check(checks, f"必填字段 `{key}` 非空", ok, "error", "" if ok else f"缺少或为空：`{key}`")
+        _check(
+            checks,
+            f"必填字段 `{key}` 非空",
+            ok,
+            "error",
+            "" if ok else f"缺少或为空：`{key}`",
+        )
 
     name = doc.get("name")
     if expected_name and name:
@@ -121,7 +127,9 @@ def validate_graph_doc(doc, expected_name=None):
             "name 与文件夹名一致",
             ok,
             "error",
-            "" if ok else f"name={name!r}，文件夹={expected_name!r}（CI 与市场安装都要求两者一致）",
+            ""
+            if ok
+            else f"name={name!r}，文件夹={expected_name!r}（CI 与市场安装都要求两者一致）",
         )
 
     ok = "version" in doc
@@ -246,11 +254,23 @@ def validate_graph_doc(doc, expected_name=None):
 
         # 端口名校验（dynamic 端口名由 config 决定，故仅做警告级提示）
         sh = edge.get("sourceHandle")
-        if sh and sh not in STATIC_OUTPUTS.get(src_type, []) and src_type not in DYNAMIC_OUTPUT_TYPES:
-            bad_source_handle.append(f"edges[{j}]（{sh!r} 不属于 {src_type} 的输出端口）")
+        if (
+            sh
+            and sh not in STATIC_OUTPUTS.get(src_type, [])
+            and src_type not in DYNAMIC_OUTPUT_TYPES
+        ):
+            bad_source_handle.append(
+                f"edges[{j}]（{sh!r} 不属于 {src_type} 的输出端口）"
+            )
         th = edge.get("targetHandle")
-        if th and th not in STATIC_INPUTS.get(dst_type, []) and dst_type not in DYNAMIC_INPUT_TYPES:
-            bad_target_handle.append(f"edges[{j}]（{th!r} 不属于 {dst_type} 的输入端口）")
+        if (
+            th
+            and th not in STATIC_INPUTS.get(dst_type, [])
+            and dst_type not in DYNAMIC_INPUT_TYPES
+        ):
+            bad_target_handle.append(
+                f"edges[{j}]（{th!r} 不属于 {dst_type} 的输入端口）"
+            )
 
     _check(
         checks,
@@ -317,10 +337,20 @@ def validate_graph_doc(doc, expected_name=None):
     gs = doc.get("global_schema")
     if gs is not None:
         ok = isinstance(gs, dict)
-        _check(checks, "global_schema 为对象", ok, "error", "" if ok else "global_schema 必须是对象")
+        _check(
+            checks,
+            "global_schema 为对象",
+            ok,
+            "error",
+            "" if ok else "global_schema 必须是对象",
+        )
         if ok:
             bad_gs_obj = [f"`{k}`" for k, v in gs.items() if not isinstance(v, dict)]
-            bad_gs_type = [f"`{k}`" for k, v in gs.items() if isinstance(v, dict) and "type" not in v]
+            bad_gs_type = [
+                f"`{k}`"
+                for k, v in gs.items()
+                if isinstance(v, dict) and "type" not in v
+            ]
             _check(
                 checks,
                 "global_schema 各项均为对象",
@@ -339,7 +369,9 @@ def validate_graph_doc(doc, expected_name=None):
                 missing = [
                     k
                     for k, v in gs.items()
-                    if isinstance(v, dict) and v.get("required") and k not in global_vars
+                    if isinstance(v, dict)
+                    and v.get("required")
+                    and k not in global_vars
                 ]
                 _check(
                     checks,
@@ -375,8 +407,12 @@ def validate_graph_folder(folder, expected_name=None):
     _check(checks, "graph.json 可解析", True, "error")
     res = validate_graph_doc(doc, expected_name)
     res["checks"] = checks + res["checks"]
-    res["errors"] = sum(1 for c in res["checks"] if c["level"] == "error" and not c["ok"])
-    res["warnings"] = sum(1 for c in res["checks"] if c["level"] == "warn" and not c["ok"])
+    res["errors"] = sum(
+        1 for c in res["checks"] if c["level"] == "error" and not c["ok"]
+    )
+    res["warnings"] = sum(
+        1 for c in res["checks"] if c["level"] == "warn" and not c["ok"]
+    )
     res["ok"] = res["errors"] == 0
     return res
 

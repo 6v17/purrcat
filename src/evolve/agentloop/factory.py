@@ -58,18 +58,24 @@ def _sandbox_validator_source() -> str:
 def _write_sandbox(root: str, name: str, goal: str):
     """写 GOAL.md / GUIDE.md / evals/validate.py。"""
     if goal:
-        with open(os.path.join(root, "GOAL.md"), "w", encoding="utf-8", newline="\n") as f:
+        with open(
+            os.path.join(root, "GOAL.md"), "w", encoding="utf-8", newline="\n"
+        ) as f:
             f.write(f"# 🎯 Build Goal\n\n{goal}\n")
     with open(os.path.join(root, "GUIDE.md"), "w", encoding="utf-8", newline="\n") as f:
         f.write(generate_agentloop_guide(name, goal))
 
     evals_dir = os.path.join(root, "evals")
     os.makedirs(evals_dir, exist_ok=True)
-    with open(os.path.join(evals_dir, "validate.py"), "w", encoding="utf-8", newline="\n") as f:
+    with open(
+        os.path.join(evals_dir, "validate.py"), "w", encoding="utf-8", newline="\n"
+    ) as f:
         f.write(_sandbox_validator_source())
 
 
-def agentloop_factory_init(name: str, is_upgrade: bool, goal: str = "") -> tuple[str, str]:
+def agentloop_factory_init(
+    name: str, is_upgrade: bool, goal: str = ""
+) -> tuple[str, str]:
     """初始化 AgentLoop 进化沙盒，返回 (系统提示, workplace_id)"""
     try:
         base = _safe_name(name)
@@ -104,7 +110,7 @@ def agentloop_factory_init(name: str, is_upgrade: bool, goal: str = "") -> tuple
         f"💡 系统已在沙盒根目录生成官方说明文档 GUIDE.md（含阶段/动作词汇表），动手前请先通读！\n"
         f"🧪 自测脚本：`evals/validate.py`，在沙盒根目录执行 `uv run evals/validate.py` 即可完成"
         f"格式 / 功能 / 关键词汇三重校验（结论写入 evals/outputs/validation.json）。\n"
-        f"🔀 校验全绿后，用 Request(request_type=\"agentloop_merge\", target=\"{base}\") 申请合并。"
+        f'🔀 校验全绿后，用 Request(request_type="agentloop_merge", target="{base}") 申请合并。'
     ), short_uuid
 
 
@@ -149,7 +155,9 @@ def agentloop_request_handle(workplace_root: str, name: str, is_approved: bool) 
     # Git 版本接管（首次自动 init）
     if not os.path.exists(os.path.join(PARADIGMS_DIR, ".git")):
         subprocess.run(["git", "init"], cwd=PARADIGMS_DIR)
-        with open(os.path.join(PARADIGMS_DIR, ".gitignore"), "w", encoding="utf-8") as f:
+        with open(
+            os.path.join(PARADIGMS_DIR, ".gitignore"), "w", encoding="utf-8"
+        ) as f:
             f.write("__pycache__/\n*.pyc\n")
         subprocess.run(["git", "add", ".gitignore"], cwd=PARADIGMS_DIR)
     subprocess.run(["git", "add", f"{base}.yaml"], cwd=PARADIGMS_DIR)

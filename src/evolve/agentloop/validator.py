@@ -104,13 +104,21 @@ def validate_agentloop_doc(doc, expected_name=None):
 
     # ---- 格式校验 ----
     if not isinstance(doc, dict):
-        _check(checks, "YAML 顶层为映射对象", False, "error", "顶层必须是 key: value 映射")
+        _check(
+            checks, "YAML 顶层为映射对象", False, "error", "顶层必须是 key: value 映射"
+        )
         return _report(checks)
     _check(checks, "YAML 顶层为映射对象", True, "error")
 
     for key in REQUIRED_TOP:
         if key not in doc:
-            _check(checks, f"必填字段 `{key}` 存在", False, "error", f"缺少顶层字段 `{key}`")
+            _check(
+                checks,
+                f"必填字段 `{key}` 存在",
+                False,
+                "error",
+                f"缺少顶层字段 `{key}`",
+            )
     for key in RECOMMENDED_TOP:
         if key not in doc:
             _check(checks, f"建议字段 `{key}` 存在", False, "warn", f"建议补齐 `{key}`")
@@ -134,7 +142,9 @@ def validate_agentloop_doc(doc, expected_name=None):
     # ---- 关键词汇 + 功能校验（hooks）----
     hooks = doc.get("hooks")
     if not isinstance(hooks, dict) or not hooks:
-        _check(checks, "hooks 为非空映射", False, "error", "hooks 必须是非空阶段→动作映射")
+        _check(
+            checks, "hooks 为非空映射", False, "error", "hooks 必须是非空阶段→动作映射"
+        )
         return _report(checks)
     _check(checks, "hooks 为非空映射", True, "error")
 
@@ -322,8 +332,12 @@ def validate_agentloop_file(path, expected_name=None):
     _check(checks, "YAML 可解析", True, "error")
     res = validate_agentloop_doc(doc, expected_name)
     res["checks"] = checks + res["checks"]
-    res["errors"] = sum(1 for c in res["checks"] if c["level"] == "error" and not c["ok"])
-    res["warnings"] = sum(1 for c in res["checks"] if c["level"] == "warn" and not c["ok"])
+    res["errors"] = sum(
+        1 for c in res["checks"] if c["level"] == "error" and not c["ok"]
+    )
+    res["warnings"] = sum(
+        1 for c in res["checks"] if c["level"] == "warn" and not c["ok"]
+    )
     res["ok"] = res["errors"] == 0
     return res
 
@@ -381,7 +395,9 @@ def main():
     except OSError:
         pass
 
-    print("\n提示：修正 ✗ 项后重跑本脚本；全绿后再用 Request(agentloop_merge) 申请合并。")
+    print(
+        "\n提示：修正 ✗ 项后重跑本脚本；全绿后再用 Request(agentloop_merge) 申请合并。"
+    )
     return 0 if ok else 1
 
 

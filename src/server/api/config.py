@@ -104,7 +104,9 @@ def api_get_sensor_runtime():
 
         return {"running": get_manager().list_running()}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"读取 Sensor 运行状态失败: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"读取 Sensor 运行状态失败: {str(e)}"
+        )
 
 
 @router.post("/sensor/{name}/stop")
@@ -182,7 +184,9 @@ def api_purge_sensor(name: str):
             os.remove(script_path)
             file_deleted = True
         except OSError as e:
-            raise HTTPException(status_code=500, detail=f"删除 {script_path} 失败: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"删除 {script_path} 失败: {str(e)}"
+            )
 
     message = (
         f"已彻底删除 Sensor '{name}'（进程{'已停止' if stopped else '未在运行'}，"

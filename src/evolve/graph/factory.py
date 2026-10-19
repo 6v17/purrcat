@@ -36,7 +36,9 @@ def _safe_name(name: str) -> str:
 
 def _skeleton(name: str, goal: str = "") -> dict:
     """全新 Graph 的最小可用骨架（渲染问候语并交给智能体循环）"""
-    zh = goal.strip().splitlines()[0] if goal.strip() else "渲染问候语并交给智能体循环。"
+    zh = (
+        goal.strip().splitlines()[0] if goal.strip() else "渲染问候语并交给智能体循环。"
+    )
     return {
         "version": "2.0",
         "name": name,
@@ -107,12 +109,42 @@ def _skeleton(name: str, goal: str = "") -> dict:
             },
         ],
         "edges": [
-            {"source": "in", "target": "tpl", "sourceHandle": "name", "targetHandle": "name"},
-            {"source": "tpl_text", "target": "tpl", "sourceHandle": "text", "targetHandle": "template"},
-            {"source": "tpl", "target": "card", "sourceHandle": "rendered_text", "targetHandle": "content"},
-            {"source": "card", "target": "loop", "sourceHandle": "message_list", "targetHandle": "messages"},
-            {"source": "al_text", "target": "loop", "sourceHandle": "text", "targetHandle": "agentloop"},
-            {"source": "loop", "target": "out", "sourceHandle": "summary", "targetHandle": "reply"},
+            {
+                "source": "in",
+                "target": "tpl",
+                "sourceHandle": "name",
+                "targetHandle": "name",
+            },
+            {
+                "source": "tpl_text",
+                "target": "tpl",
+                "sourceHandle": "text",
+                "targetHandle": "template",
+            },
+            {
+                "source": "tpl",
+                "target": "card",
+                "sourceHandle": "rendered_text",
+                "targetHandle": "content",
+            },
+            {
+                "source": "card",
+                "target": "loop",
+                "sourceHandle": "message_list",
+                "targetHandle": "messages",
+            },
+            {
+                "source": "al_text",
+                "target": "loop",
+                "sourceHandle": "text",
+                "targetHandle": "agentloop",
+            },
+            {
+                "source": "loop",
+                "target": "out",
+                "sourceHandle": "summary",
+                "targetHandle": "reply",
+            },
         ],
     }
 
@@ -126,14 +158,18 @@ def _sandbox_validator_source() -> str:
 def _write_sandbox(root: str, graph_dir: str, name: str, goal: str):
     """写 GOAL.md / GUIDE.md / <name>/evals/validate.py。"""
     if goal:
-        with open(os.path.join(root, "GOAL.md"), "w", encoding="utf-8", newline="\n") as f:
+        with open(
+            os.path.join(root, "GOAL.md"), "w", encoding="utf-8", newline="\n"
+        ) as f:
             f.write(f"# 🎯 Build Goal\n\n{goal}\n")
     with open(os.path.join(root, "GUIDE.md"), "w", encoding="utf-8", newline="\n") as f:
         f.write(generate_graph_guide(name, goal))
 
     evals_dir = os.path.join(graph_dir, "evals")
     os.makedirs(evals_dir, exist_ok=True)
-    with open(os.path.join(evals_dir, "validate.py"), "w", encoding="utf-8", newline="\n") as f:
+    with open(
+        os.path.join(evals_dir, "validate.py"), "w", encoding="utf-8", newline="\n"
+    ) as f:
         f.write(_sandbox_validator_source())
 
 
@@ -180,7 +216,7 @@ def graph_factory_init(name: str, is_upgrade: bool, goal: str = "") -> tuple[str
         f"🧪 自测脚本：`{base}/evals/validate.py`，在沙盒根目录执行 "
         f"`uv run {base}/evals/validate.py` 即可完成格式 / 功能 / 关键词汇三重校验"
         f"（结论写入 {base}/evals/outputs/validation.json）。\n"
-        f"🔀 校验全绿后，用 Request(request_type=\"graph_merge\", target=\"{base}\") 申请合并。"
+        f'🔀 校验全绿后，用 Request(request_type="graph_merge", target="{base}") 申请合并。'
     ), short_uuid
 
 
@@ -223,7 +259,9 @@ def graph_request_handle(workplace_root: str, name: str, is_approved: bool) -> s
     if is_upgrade:
         shutil.rmtree(target_dir, ignore_errors=True)
     os.makedirs(os.path.dirname(target_dir), exist_ok=True)
-    ignore = shutil.ignore_patterns("__pycache__", ".git", "node_modules", "evals", "*.pyc")
+    ignore = shutil.ignore_patterns(
+        "__pycache__", ".git", "node_modules", "evals", "*.pyc"
+    )
     shutil.copytree(source_dir, target_dir, ignore=ignore)
 
     # Git 版本接管（首次自动 init）
