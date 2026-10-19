@@ -1,6 +1,6 @@
 # 进化工厂 `/api/evolve`
 
-> 源码：`src/server/api/evolve.py` ｜ 前缀：`/api/evolve` ｜ 端点：12 个
+> 源码：`src/server/api/evolve.py` ｜ 前缀：`/api/evolve` ｜ 端点：14 个
 
 进化工厂（Evolution Factory）管理接口。`type` 指定加工厂类型：`skill`（默认）、`mcp`、`sensor`、`agentloop`、`graph`。每个沙盒按 `workplace_id` 组织，位于 `AGENT_VM_DIR/{type}_workplace/{workplace_id}/` 下。
 
@@ -137,6 +137,65 @@ curl 'http://127.0.0.1:8000/api/evolve/file?workplace_id=wp-001&name=my-skill&fi
 curl -X PUT 'http://127.0.0.1:8000/api/evolve/file?workplace_id=wp-001&name=my-skill&filename=SKILL.md' \
   -H 'Content-Type: application/json' \
   -d '{"content": "# My Skill"}'
+```
+
+---
+
+## GET `/api/evolve/paradigm`
+
+读取沙盒内 AgentLoop 范式（`<name>.yaml`）并解析为结构化对象，供前端范式编辑器加载。
+
+> 仅用于 `agentloop` 工厂：沙盒路径固定为 `agentloop_workplace/{workplace_id}/<name>.yaml`。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| workplace_id | query | string | 是 | 沙盒工作区 ID |
+| name | query | string | 是 | 范式名称（对应沙盒内 `<name>.yaml`）|
+
+**响应**
+
+```json
+{ "name": "my-paradigm", "data": { "name": "my-paradigm", "hooks": {} } }
+```
+
+`data` 为解析后的范式对象（顶层非映射时归一化为 `{}`）。文件不存在返回 `404`，YAML 解析失败返回 `400`。
+
+**示例**
+
+```bash
+curl 'http://127.0.0.1:8000/api/evolve/paradigm?workplace_id=wp-001&name=my-paradigm'
+```
+
+---
+
+## POST `/api/evolve/paradigm`
+
+把结构化范式对象序列化回沙盒内 `<name>.yaml`（前端编辑器的「保存到沙盒」）。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| workplace_id | query | string | 是 | 沙盒工作区 ID |
+| name | query | string | 是 | 范式名称（写回 `<name>.yaml`）|
+| data | body | object | 是 | 完整范式对象；序列化时保留原始键序、不转 flow 风格 |
+
+**响应**
+
+```json
+{ "status": "success", "message": "保存成功" }
+```
+
+写入前会自动创建父目录；非映射的 `data` 会被写成空映射。YAML 序列化失败返回 `400`。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/evolve/paradigm?workplace_id=wp-001&name=my-paradigm' \
+  -H 'Content-Type: application/json' \
+  -d '{"data": {"name": "my-paradigm", "path": "agent_vm", "hooks": {}}}'
 ```
 
 ---
