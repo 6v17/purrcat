@@ -707,8 +707,8 @@ def sensor_request_handle(
 
     empty_keys = [k for k, v in merged_env.items() if v in (None, "")]
     auth_hint = (
-        f"\n⚠️ 仍有 {len(empty_keys)} 个凭证留空（{', '.join(empty_keys)}），"
-        f"代码会在缺凭证时向 Agent 上报失败详情；请引导用户补齐。"
+        f"\n⚠️ 漏配告警：{len(empty_keys)} 个凭证在合并时仍为空（{', '.join(empty_keys)}）——"
+        f"凭证本应在申请合并前就填好，现在该 sensor 会持续上报失败。请引导用户立即补齐。"
         if empty_keys
         else ""
     )
