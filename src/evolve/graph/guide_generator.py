@@ -17,7 +17,7 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 ```text
 {name}/                       # 沙盒内你的图文件夹
 ├── graph.json                # 图定义（必需）
-└── asset/                    # 静态资源：看板 html 等（可选）
+└── asset/                    # 静态资源（可选）
 ```
 
 **文件夹名 = `graph.json` 内的 `name` 字段**，两者必须严格一致（合并校验会拦）。
@@ -33,8 +33,7 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
   "core": "openai:deepseek-v4-flash",
   "global_schema": {{ "prompt": {{ "type": "string", "required": true, "description": "用户任务描述" }} }},
   "nodes": [ ... ],
-  "edges": [ ... ],
-  "dashboard": "purrcat://graph/{name}/asset/dashboard.html"
+  "edges": [ ... ]
 }}
 ```
 
@@ -48,7 +47,6 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 | `global_schema` | 否 | 全局输入变量声明 `{{ 变量名: {{ type, required, description }} }}`，驱动前端表单与运行时校验 |
 | `nodes` | 否 | 节点定义数组 |
 | `edges` | 否 | 连边定义数组 |
-| `dashboard` | 否 | 看板地址：字符串或多看板数组 |
 
 ## 3. 节点对象与端口语义
 
@@ -182,6 +180,10 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 前缀与上游逐字一致，云侧可直接命中 KV Cache，长图里时延与成本都明显更低。因此：
 
 * ✅ **只在尾部追加**（`appender` 天然满足）。
+* ✅ **系统提示词只在「全新会话开启」时构建一次**：`messages` 里已有 `system` 就不再重建（下游范式自己的
+  `on_build_system_prompt` 也不会再执行），会话中途不会刷新系统提示。
+* ❌ **不要在追加指令里追加 `role=system` 的消息**：历史中途插入 system 会让其后所有 token 的位置整体后移，
+  **KV Cache 直接失效**（语义上也会出现第二个 system）。新阶段指令一律用 `role=user`。
 * ❌ **不要改写 / 删除 / 前插已有消息**：把新指令插到历史前面、重排历史、或另起一条 system 插到头部
   （下游发现 `messages` 里没有 system 时会新构建一条 system 并插到 index 0）都会改变前缀，整段缓存作废。
 * ✅ 同一张图尽量保持同一个 `core` 模型与同一把密钥；模型 / 密钥跳变会让已缓存的前缀失效。
