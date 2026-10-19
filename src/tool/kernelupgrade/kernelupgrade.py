@@ -88,6 +88,8 @@ def KernelUpgrade(action: str, target: str, **kwargs) -> dict:
             sys_note, _ = sensor_factory_init(
                 target, is_upgrade=False, goal=kwargs.get("goal", "")
             )
+            if not sys_note.startswith("【Sensor 工厂分配成功】"):
+                return error_response(sys_note, "❌ Sensor 创建失败")
             return text_response(
                 f"✅ 全新 Sensor 沙盒构建完成！\n\n{sys_note}",
                 f"📡 {target} Sensor已创建",

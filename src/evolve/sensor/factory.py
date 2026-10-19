@@ -24,7 +24,7 @@ from .guide_generator import generate_sensor_guide
 
 
 def _skeleton(sensor_name: str) -> str:
-    """全新 sensor 的可运行骨架（ACP 方言）：握手 → 鉴权求助 → 事件线程 → update 消费循环"""
+    """全新 sensor 的可运行骨架（ACP 方言）：握手 → 凭证校验 → 事件线程 → update 消费循环"""
     return f'''# /// script
 # requires-python = ">=3.10"
 # dependencies = [
@@ -50,6 +50,7 @@ _REQ_LOCK = threading.Lock()
 _PENDING = {{}}  # rid -> {{"event", "result"}}（仅 track=True 的请求可等响应）
 _SID = ""
 _SID_READY = threading.Event()
+_REPORTED = set()  # 已上报过的失败详情（同一失败只报一次，避免重连风暴刷屏）
 
 
 def send_request(method: str, params: dict, track: bool = False, rid=None) -> int:
@@ -91,10 +92,12 @@ def acp_connect() -> None:
 
 
 def prompt_agent(text: str) -> None:
-    """外部事件（用户消息/提醒/鉴权求助）注入当前活跃会话。
+    """把消息注入当前活跃会话。
 
     🌟 必须先等 session/new 的响应拿到 sessionId 再发——带着空 sessionId 发出去的
-    prompt 会被网关静默丢弃，表现为"求助消息没人收到"。
+    prompt 会被网关静默丢弃，表现为"消息没人收到"。
+
+    🌟 只用来上报**失败详情**。连接成功请保持静默，严禁推送"连接成功"之类的调试信息。
     """
     _SID_READY.wait(timeout=30)
     if not _SID:
@@ -104,6 +107,15 @@ def prompt_agent(text: str) -> None:
         "session/prompt",
         {{"sessionId": _SID, "prompt": [{{"type": "text", "text": text}}]}},
     )
+
+
+def report_failure(detail: str) -> None:
+    """上报失败详情（同一条只报一次，避免重连风暴刷屏）；成功时严禁上报"""
+    key = detail[:120]
+    if key in _REPORTED:
+        return
+    _REPORTED.add(key)
+    prompt_agent(f"[{{SENSOR_NAME}} 异常] {{detail}}")
 
 
 def handle_notification(msg: dict) -> None:
@@ -128,16 +140,13 @@ def handle_notification(msg: dict) -> None:
 
 
 def check_auth() -> bool:
-    """首次启动鉴权检查：缺凭证必须发文字消息向 Agent 求助，严禁静默退出"""
+    """启动凭证检查：缺凭证时**上报失败详情**并保持存活（不发布鉴权教程、不静默退出）"""
     # TODO: 按实际情况替换凭证名
-    token = os.environ.get("MY_TOKEN", "")
-    if not token:
-        prompt_agent(
-            "[{sensor_name} 求助] 首次启动需要鉴权凭证 MY_TOKEN（当前为空）。"
-            "请前往 https://example.com/console 依次进入「开发者设置 → 凭证管理」"
-            "复制 Token（按实际情况替换为真实控制台地址与步骤），"
-            "回填到前端配置中心 → Sensor 设置 → {sensor_name} 后保存启用，"
-            "我会在热重启后自动连接并保持待命。"
+    missing = [k for k in ("MY_TOKEN",) if not os.environ.get(k, "")]
+    if missing:
+        print(f"❌ [{{SENSOR_NAME}}] 缺少必需凭证：{{', '.join(missing)}}")
+        report_failure(
+            "缺少必需凭证：" + ", ".join(missing) + "，请补齐后重新加载本 sensor。"
         )
         return False
     return True
@@ -150,9 +159,12 @@ def start_event_listener():
         while True:
             try:
                 # TODO: 替换为真实外部服务连接/监听逻辑
+                # 🌟 连上成功后保持静默，不要 prompt_agent 推送成功调试信息
                 time.sleep(3600)
             except Exception as e:
                 print(f"❌ [{{SENSOR_NAME}}] 事件监听崩溃，5秒后重试: {{e}}")
+                # 只有失败才上报；report_failure 自带去重，重连风暴不会刷屏
+                report_failure(f"外部服务连接失败，5秒后重试：{{e}}")
                 time.sleep(5)
 
     threading.Thread(target=_worker, daemon=True).start()
@@ -209,6 +221,7 @@ def _config_template(sensor_name: str) -> str:
         {
             "name": sensor_name,
             "env": {"MY_TOKEN": ""},
+            "icon": "",
             "tool_detail": False,
             "source": "remote",
         },
@@ -225,7 +238,7 @@ def _gateway_probe() -> str:
 用法（在沙盒根目录执行）:
     uv run evals/gateway_probe.py
 
-它扮演网关拉起同级目录里的 sensor，验证：握手顺序 / 空凭证求助 / sessionId 回填 /
+它扮演网关拉起同级目录里的 sensor，验证：握手顺序 / 缺凭证失败上报 / sessionId 回填 /
 stdout 纯净 / 空转存活。宿主侧的正式体检（含 L0 静态契约）由 Request(sensor_test) 触发。
 """
 
@@ -377,7 +390,7 @@ def main():
     checks = [
         ("uv 拉起并完成握手", got_handshake, "检查 PEP 723 依赖与启动异常"),
         ("握手顺序 1 \\u2192 2", ordered[:2] == [1, 2], "必须先 initialize 再 session/new"),
-        ("空凭证发出求助", got_prompt, "缺凭证必须 session/prompt 求助，不能静默哑掉"),
+        ("空凭证上报失败详情", got_prompt, "缺凭证必须用 session/prompt 上报失败详情，不能静默哑掉"),
         ("sessionId 回填", sid == SID, "应为网关回填的 %s，当前 %r" % (SID, sid)),
         ("stdout 纯净", not polluted, "非协议输出: %r" % (polluted[:2],)),
         ("空转不退出", alive, "进程自行退出（详见 evals/probe_stderr.log）"),
@@ -395,7 +408,7 @@ def main():
             print("  \\u274c %s \\u2014 %s" % (title, hint))
 
     if text:
-        print("\\n\\u2139\\ufe0f 抓到的求助文本:\\n%s" % text[:400])
+        print("\\n\\u2139\\ufe0f 抓到的上报文本:\\n%s" % text[:400])
 
     if proc.poll() is None:
         try:
@@ -444,6 +457,21 @@ def sensor_factory_init(
     workplace_root = os.path.join(AGENT_VM_DIR, "sensor_workplace", short_uuid)
     script_path = os.path.join(workplace_root, f"{sensor_name}.py")
 
+    # 同名唯一：新建时若正式目录/注册配置里已有同名 sensor，直接拦回，避免同名多份互相抢占
+    if not is_upgrade:
+        from src.utils.config import get_sensor_config
+
+        if (
+            os.path.exists(os.path.join(SENSOR_EXTENSION_DIR, f"{sensor_name}.py"))
+            or sensor_name in (get_sensor_config() or {})
+        ):
+            return (
+                f"❌ 已存在同名sensor：{sensor_name}，"
+                f"如果是同一功能请直接在其基础上改进（改用 KernelUpgrade(action='upgrade_sensor')），"
+                f"若是新sensor请重新命名防止冲突。",
+                "",
+            )
+
     if os.path.exists(workplace_root):
         shutil.rmtree(workplace_root, ignore_errors=True)
     os.makedirs(workplace_root, exist_ok=True)
@@ -453,13 +481,14 @@ def sensor_factory_init(
         if not os.path.exists(source):
             return f"❌ 无法执行升级：正式目录中未找到 '{sensor_name}.py'。", ""
         shutil.copy2(source, script_path)
-        # 沿用现有注册配置（env 已填的值不丢），缺则补模板
+        # 沿用现有注册配置（env/icon 已填的值不丢），缺则补模板
         from src.utils.config import get_sensor_config
 
         cfg = (get_sensor_config() or {}).get(sensor_name, {})
         config = {
             "name": sensor_name,
             "env": cfg.get("env") or {"MY_TOKEN": ""},
+            "icon": cfg.get("icon", ""),
             "tool_detail": cfg.get("tool_detail", False),
             "source": cfg.get("source", "remote"),
         }
@@ -481,7 +510,7 @@ def sensor_factory_init(
             newline="\n",
         ) as f:
             f.write(_config_template(sensor_name))
-        action_msg = f"已为你搭建了全新的 '{sensor_name}' 可运行骨架（含鉴权求助示例）"
+        action_msg = f"已为你搭建了全新的 '{sensor_name}' 可运行骨架（含凭证校验与失败上报示例）"
 
     evals_dir = os.path.join(workplace_root, "evals")
     os.makedirs(evals_dir, exist_ok=True)
@@ -497,9 +526,12 @@ def sensor_factory_init(
         f"【Sensor 工厂分配成功】工作区路径：{sandbox_root}（workplace_id: {short_uuid}）。\n"
         f"{action_msg}。\n"
         f"💡 提示：系统已在沙盒根目录为你生成了官方说明文档 GUIDE.md"
-        f"（覆盖 stdio 协议/鉴权求助/文件收发/提交全流程），动手前请先通读！\n"
+        f"（覆盖 stdio 协议/凭证与配置/失败上报/文件收发/提交全流程），动手前请先通读！\n"
+        f"🔑 凭证流程：请先引导用户到外部平台获取所需凭证，拿到后**直接在沙盒 "
+        f"sensor_config.json 的 env 里填真实值**——合并时会原样写入正式配置并注入，"
+        f"用户无需再去配置中心重填。\n"
         f"🧪 自测夹具：`evals/gateway_probe.py`（宿主同款真网关精简版），"
-        f"在沙盒根目录执行 `uv run evals/gateway_probe.py` 即可验证握手/鉴权求助/"
+        f"在沙盒根目录执行 `uv run evals/gateway_probe.py` 即可验证握手/缺凭证失败上报/"
         f"sessionId 回填/stdout 纯净/存活，通过后再提交 Request(sensor_test) 做正式体检。"
     ), short_uuid
 
@@ -628,7 +660,7 @@ def sensor_request_handle(
     )
     subprocess.run(["git", "commit", "-m", commit_msg], cwd=SENSOR_EXTENSION_DIR)
 
-    # 4. 注入 activate_sensor.json（enabled=true，env 空值留待用户填写）
+    # 4. 注入 activate_sensor.json（enabled=true；env 取沙盒实填值，留空键保留正式配置里的旧值）
     sensor_config = {}
     if os.path.exists(SENSOR_CONFIG_PATH):
         try:
@@ -636,9 +668,22 @@ def sensor_request_handle(
                 sensor_config = json.load(f)
         except Exception:
             pass
+    prev_entry = sensor_config.get(sensor_name)
+    if not isinstance(prev_entry, dict):
+        prev_entry = {}
+    prev_env = prev_entry.get("env")
+    if not isinstance(prev_env, dict):
+        prev_env = {}
+
+    # 沙盒里填了真实值的键直接生效；留空的键沿用上次已填好的值，避免每次合并都把凭证清空重填
+    merged_env = {}
+    for k, v in env_data.items():
+        merged_env[k] = v if v not in (None, "") else prev_env.get(k, v)
+
     sensor_config[sensor_name] = {
         "enabled": True,
-        "env": env_data,
+        "env": merged_env,
+        "icon": sandbox_config.get("icon") or prev_entry.get("icon", ""),
         "tool_detail": bool(sandbox_config.get("tool_detail", False)),
         "source": sandbox_config.get("source", "remote"),
     }
@@ -649,19 +694,20 @@ def sensor_request_handle(
     # 5. 热重启 Sensor 线程池
     _hot_restart_sensors()
 
-    empty_keys = [k for k, v in env_data.items() if v in (None, "")]
+    empty_keys = [k for k, v in merged_env.items() if v in (None, "")]
+    filled_keys = [k for k, v in merged_env.items() if v not in (None, "")]
     auth_hint = (
-        f"\n⚠️ 该 sensor 声明了 {len(empty_keys)} 个未填写的凭证（{', '.join(empty_keys)}），"
-        f"热重启后它若发出鉴权求助消息，请转告用户到前端配置中心填写后再启用。"
+        f"\n⚠️ 仍有 {len(empty_keys)} 个凭证留空（{', '.join(empty_keys)}），"
+        f"代码会在缺凭证时向 Agent 上报失败详情；请引导用户补齐。"
         if empty_keys
-        else ""
+        else f"\n🔑 {len(filled_keys)} 个凭证已随合并写入正式配置，用户无需再重填。"
     )
 
     return (
         f"🎉 审批通过！Sensor '{sensor_name}' 成功合并。\n"
         f"📁 正式路径: {target_path}\n"
         f"🔬 协议体检: {verdict_text}\n"
-        f"⚙️ 已写入 activate_sensor.json（enabled=true，含 {len(env_data)} 个环境变量声明），"
+        f"⚙️ 已写入 activate_sensor.json（enabled=true，含 {len(merged_env)} 个环境变量声明），"
         f"系统正在后台热重启 Sensor 线程池。{auth_hint}\n"
         f"Git: {commit_msg}"
     )
