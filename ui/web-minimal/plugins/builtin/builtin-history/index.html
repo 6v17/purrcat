@@ -333,11 +333,11 @@
     border-radius: 16px;
     box-shadow: var(--wm-shadow, 0 4px 16px rgba(15,17,21,.08));
     padding: 10px 10px 8px;
-    min-height: 104px;
   }
   .bar textarea {
-    flex: 1;
-    min-height: 0;
+    flex: none;
+    min-height: 25px;
+    max-height: 240px;
     resize: none;
     font-family: inherit; font-size: 14px; line-height: 1.5;
     color: var(--wm-label, #16191d);
@@ -1686,10 +1686,20 @@
     if (text) events.push({ type: 'user', content: text });
     sendBtn.disabled = true;
     callAction('chat.sendBatch', { events: events })
-      .then(function () { input.value = ''; quotes = []; renderQuotes(); toggleRef(false); })
+      .then(function () { input.value = ''; autosizeInput(); quotes = []; renderQuotes(); toggleRef(false); })
       .catch(function (e) { alert('发送失败: ' + e.message); })
       .finally(function () { sendBtn.disabled = readOnly; });
   }
+  // 输入框随内容自动调高（上限由 CSS max-height 控制，超出后内部滚动）
+  var INPUT_MAX_H = 240;
+  function autosizeInput() {
+    input.style.height = 'auto';
+    var h = Math.min(input.scrollHeight, INPUT_MAX_H);
+    input.style.height = h + 'px';
+    input.style.overflowY = input.scrollHeight > INPUT_MAX_H ? 'auto' : 'hidden';
+  }
+  input.addEventListener('input', autosizeInput);
+  window.addEventListener('resize', autosizeInput);
   input.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   });
