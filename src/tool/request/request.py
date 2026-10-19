@@ -6,7 +6,6 @@ import traceback
 from src.tool.request.request_operations import submit_request
 from src.tool.utils.format import error_response, text_response
 from src.utils.config import AGENT_VM_DIR
-from src.utils.graph_api import graph_file
 
 
 def _validate_skill_test(target: str) -> tuple[str, str] | None:
@@ -70,10 +69,11 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
     向人类（用户）发起审批请求。
 
     适用场景：
-    - 权限拦截：读写宿主机文件
-    - 技能盲测：沙盒开发完毕后申请 skill_test，获批后由系统自动运行
-    - 传感器协议体检：沙盒开发完毕后申请 sensor_test，宿主免审直接跑 L0/L1
-    - 合并：skill_merge / mcp_merge / sensor_merge / agentloop_merge / graph_merge
+    - 权限拦截：读写宿主机文件（file_read / file_write）
+
+    注意：进化工厂的测试与合并已从本工具剥离，改由 KernelUpgrade 工具代发
+    （KernelUpgrade(action='test'/'merge', type=..., target=...)），此处不再接受
+    skill_test / sensor_test / *_merge 等类型。
 
     提交后会等待用户的 Yes/No 审批，期间可挂起或执行其他独立任务。
     """
@@ -81,67 +81,13 @@ def Request(request_type: str, target: str, reason: str, **kwargs) -> str:
         valid_types = [
             "file_write",
             "file_read",
-            "skill_test",  # Skill 盲测：批准后由系统自动运行
-            "skill_merge",  # 保留：合并代码仍需审批
-            "mcp_merge",  # 新增：MCP 代码合并
-            "sensor_test",  # Sensor 协议体检：宿主免审复跑
-            "sensor_merge",  # 新增：Sensor 代码合并
-            "agentloop_merge",  # 新增：AgentLoop（范式）合并
-            "graph_merge",  # 新增：Graph（任务图）合并
         ]
 
         if request_type not in valid_types:
             return error_response(
-                f"不支持的 request_type: {request_type}", "❌ 参数错误"
-            )
-
-        if request_type == "skill_test":
-            err = _validate_skill_test(target)
-            if err:
-                return error_response(*err)
-
-            # 🌟 统一入队：Trigger 免审测试由主进程轮询接管自动启动（工具运行在隔离子进程，
-            # 此处不能直接起后台线程，否则线程会随子进程退出被杀）
-            has_graph = os.path.exists(graph_file("skill_eval"))
-            result = submit_request(
-                request_type=request_type,
-                target=target,
-                reason=reason,
-                extra={"trigger_started": False, "has_graph": has_graph},
-            )
-
-            trigger_note = (
-                "🎯 Trigger 激发测试无需审批，系统即将自动启动，完成后通过系统级通知汇报结果。"
-                if has_graph
-                else "🎯 Trigger 激发测试无需审批，系统即将自动启动，完成后通过系统级通知汇报结果。\n"
-                "⚠️ 注意：本地无 skill test 的图（图库缺少 skill_eval 测试图），将跳过后台盲测；"
-                "如需完整盲测，请用户先安装 skill_eval 测试图，再重新提交 skill_test 申请。"
-            )
-            blind_note = (
-                "\n✅ 后台盲测申请已提交用户审批，获批后系统将自动在后台运行，期间请挂起等待，禁止轮询。"
-                if has_graph
-                else ""
-            )
-            msg = f"{trigger_note}{blind_note}"
-            return text_response(msg, f"⏳ skill_test 已受理: {result['id']}")
-
-        if request_type == "sensor_test":
-            err = _validate_sensor_test(target)
-            if err:
-                return error_response(*err)
-
-            # 🌟 与 skill_test 同理：体检由主进程轮询接管自动启动（工具运行在隔离子进程中）
-            result = submit_request(
-                request_type=request_type,
-                target=target,
-                reason=reason,
-                extra={"eval_started": False},
-            )
-            return text_response(
-                "🔬 Sensor 协议体检无需审批，系统即将自动启动（宿主亲自扮演网关实跑你的 sensor），"
-                "完成后通过系统级通知汇报结果。\n"
-                "💡 体检全绿后才能申请 sensor_merge；若改动了代码，务必重跑本体检。",
-                f"⏳ sensor_test 已受理: {result['id']}",
+                f"不支持的 request_type: {request_type}。"
+                "进化工厂的测试与合并请改用 KernelUpgrade(action='test'/'merge', type=..., target=...)。",
+                "❌ 参数错误",
             )
 
         result = submit_request(

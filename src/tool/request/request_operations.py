@@ -28,7 +28,8 @@ def submit_request(
     提交一个人类审批请求到 requests.json
 
     Args:
-        request_type: 请求类型 (file_write/file_read/skill_test/skill_merge/mcp_merge/sensor_test/sensor_merge)
+        request_type: 请求类型（file_write/file_read 由 Request 工具发起；
+              skill_test/sensor_test/*_merge 由 KernelUpgrade 工具代发）
         target: 目标对象 (文件路径或插件名称)
         reason: 申请理由
         extra: 附加字段（如 skill_test 的 trigger_started 标记）
