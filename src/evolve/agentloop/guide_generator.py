@@ -79,6 +79,10 @@ hooks:                             # 阶段 → hook 列表（必填、非空）
 > `keyword_check`（in检查）只检查「本批收到的输入」是否含关键词，因此仅在带 `received_messages` 的
 > `on_input_received` 阶段有意义；它不拦截输入，唯一产出就是提示词——两个提示词都留空则等于什么都没做。
 >
+> `on_build_system_prompt` 的**作用域**：主 Agent 会话里它是 system 头部；但在 **graph（任务图）的 `agent_loop` 节点**里，
+> 它的输出会被转成一条 **user** 消息、只在「从零开始的会话」时追加到上游输入末尾（不占 system 位、不破坏 KV Cache）。
+> 两个场景都照常写这个阶段即可，无需为 graph 改写范式。
+>
 > `on_loop_epoch` 上的 `injection` 必须写 `interval`（或 `delay`），**禁止每轮注入**（见「周期性提醒的注入规则」）。
 
 ## 4. 动作清单（专有词汇表 · 动作）
