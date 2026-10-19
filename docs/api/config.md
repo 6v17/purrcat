@@ -17,7 +17,7 @@
 ```json
 {
   "main": {
-    "openai:deepseek-v4-flash": {
+    "openai:deepseek-flash": {
       "api_keys": [""],
       "base_url": "https://api.deepseek.com",
       "max_token": 500000

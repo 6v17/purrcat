@@ -114,29 +114,29 @@ SOUL_MD_TEMPLATE = """## 性格
 def _get_model_config_dict():
     return {
         "main": {
-            "openai:deepseek-v4-flash": {
+            "openai:deepseek-flash": {
                 "api_keys": [""],
                 "base_url": "https://api.deepseek.com",
                 "rpm": 60,
                 "tpm": 1000000,
                 "concurrency": 3,
                 "max_token": 500000,
-                "vision": False,
+                "vision": True,
             }
         },
         "task": {
-            "openai:deepseek-v4-flash": {
+            "openai:deepseek-flash": {
                 "api_keys": [""],
                 "base_url": "https://api.deepseek.com",
                 "rpm": 60,
                 "tpm": 1000000,
                 "concurrency": 3,
                 "max_token": 500000,
-                "vision": False,
+                "vision": True,
             }
         },
         "vision": {
-            "openai:deepseek-v4-flash-vision-exp": {
+            "openai:deepseek-flash": {
                 "api_keys": [""],
                 "base_url": "https://api.deepseek.com",
             }
