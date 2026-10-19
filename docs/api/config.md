@@ -226,6 +226,34 @@ curl -X POST 'http://127.0.0.1:8000/api/config/sensor/feishu/purge'
 
 ---
 
+## POST `/api/config/sensor/{name}/restart`
+
+重启指定 Sensor（配置页「重启」按钮，仅在卡片显示「未运行」时提供）。执行顺序：① 若该项在 `activate_sensor.json` 里为 `enabled=false` 则置回 `true` 并落盘（否则 watchdog 不会复拉）→ ② 整树击杀同名旧进程 → ③ 按当前配置重新 `uv run` 拉起。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `name` | path | string | 是 | Sensor 名称（对应 `<name>.py`） |
+
+**响应**
+
+```json
+{ "status": "ok", "started": true, "message": "已重启 Sensor 'feishu'（新进程已拉起）" }
+```
+
+- 配置里不存在该 Sensor 时返回 `404`：`{ "detail": "未配置 Sensor 'feishu'，无法重启" }`
+- `started=false` 表示新进程未登记成功（本地缺 `<name>.py` 或 `uv` 不可用），此时配置已置为 `enabled=true`，watchdog 会在后续巡检中继续尝试。
+- 启用配置写入失败返回 `500`。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/config/sensor/feishu/restart'
+```
+
+---
+
 ## GET `/api/config/file`
 
 读取文件权限配置（`~/.purrcat/file.json`），定义 `blocked` / `readonly` / `writable` 三类路径规则与默认权限。

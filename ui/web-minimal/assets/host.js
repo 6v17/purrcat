@@ -1502,6 +1502,26 @@
               .catch(function (e) { stopBtn.disabled = false; stopBtn.textContent = '停止'; HOST.alert('停止失败：' + (e && e.message || '')); });
           });
           h.right.appendChild(stopBtn);
+        } else if (isSensor) {
+          // 未运行（被停止或启动失败）时才给「重启」：置 enabled=true 后重新拉起进程
+          const restartBtn = HOST.document.createElement('button');
+          restartBtn.className = 'btn cfg-restart';
+          restartBtn.textContent = '重启';
+          restartBtn.title = '置为 enabled=true 并重新拉起该 Sensor 后台进程';
+          restartBtn.addEventListener('click', function () {
+            if (!HOST.confirm('重启 Sensor "' + k + '"？将置为 enabled=true 并重新拉起后台进程。')) return;
+            restartBtn.disabled = true;
+            restartBtn.textContent = '重启中…';
+            fetch('/api/config/sensor/' + encodeURIComponent(k) + '/restart', { method: 'POST' })
+              .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error((b && b.detail) || ('HTTP ' + r.status)); return b; }); })
+              .then(function (b) {
+                delete cfgState.data[key]; delete cfgState.openKey[key];
+                rerenderConfig(main, key);
+                if (b && b.started === false) HOST.alert('重启未成功：' + ((b && b.message) || '请检查本地 <name>.py 与 uv'));
+              })
+              .catch(function (e) { restartBtn.disabled = false; restartBtn.textContent = '重启'; HOST.alert('重启失败：' + (e && e.message || '')); });
+          });
+          h.right.appendChild(restartBtn);
         }
         const edit = HOST.document.createElement('button');
         edit.className = 'btn cfg-edit';

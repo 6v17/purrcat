@@ -196,6 +196,34 @@ def api_purge_sensor(name: str):
     }
 
 
+@router.post("/sensor/{name}/restart")
+def api_restart_sensor(name: str):
+    """重启指定 Sensor：先把配置置为 enabled=true（被停止过的是 false，否则 watchdog 不会复拉），
+    再整树击杀旧进程并按当前配置重新拉起"""
+    cfg = get_sensor_config()
+    if not isinstance(cfg, dict) or not isinstance(cfg.get(name), dict):
+        raise HTTPException(status_code=404, detail=f"未配置 Sensor '{name}'，无法重启")
+
+    if not cfg[name].get("enabled", False):
+        cfg[name]["enabled"] = True
+        if not _save_json_file(SENSOR_CONFIG_PATH, cfg):
+            raise HTTPException(status_code=500, detail="启用配置写入失败，已放弃重启")
+
+    try:
+        from src.sensor.manager import get_manager
+
+        started = get_manager().restart_sensor(name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"重启 Sensor 失败: {str(e)}")
+
+    message = (
+        f"已重启 Sensor '{name}'（新进程已拉起）"
+        if started
+        else f"Sensor '{name}' 拉起失败：请检查本地是否存在 {name}.py 以及 uv 是否可用"
+    )
+    return {"status": "ok", "started": started, "message": message}
+
+
 # ── File Config ──
 @router.get("/file")
 def api_get_file_config():

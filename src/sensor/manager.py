@@ -267,6 +267,22 @@ class SensorManager:
         print(f"🛑 [Manager] 已停止 Sensor 子进程: {name} (PID: {process.pid})")
         return True
 
+    def restart_sensor(self, name: str) -> bool:
+        """重启单个 Sensor：整树击杀同名旧进程，再按当前配置重新拉起。
+
+        返回是否成功把新进程登记进线程池（本地缺 <name>.py、或 uv 拉起失败时为 False）。
+        """
+        config = get_sensor_config().get(name, {})
+        script_path = os.path.join(self.extension_dir, f"{name}.py")
+        old = self.processes.pop(name, None)
+        if old is not None:
+            self._kill_process_tree(old)
+        if not os.path.exists(script_path):
+            print(f"❌ [Manager] 重启 {name} 失败：本地未找到 {script_path}")
+            return False
+        self._start_sensor(name, script_path, config)
+        return name in self.processes
+
 
 _manager = SensorManager()
 atexit.register(_manager.stop_all)
