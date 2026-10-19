@@ -61,6 +61,8 @@
     'layout-panel-left': '<rect width="7" height="18" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+    // sensor 默认图标（配置项未提供 icon 或图标加载失败时回退）
+    sensor: '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>',
   };
   const ICON_SVG_ATTR = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"';
   // 把 icon 画进容器：登记名 → 内置 SVG；<svg> → 去脚本后原样内嵌；其它 → 文本字形
@@ -1155,6 +1157,18 @@
       seg.addEventListener('click', function () { cfgState.mode[key] = mode; fn(main, key); });
       tb.appendChild(seg);
     });
+    // 支持刷新：丢弃本地缓存，重新从磁盘拉取该 tab 的配置并重绘
+    const rf = HOST.document.createElement('button');
+    rf.className = 'cfg-seg cfg-reload';
+    rf.textContent = '刷新';
+    rf.title = '丢弃本地缓存，重新从磁盘读取配置并重绘';
+    rf.addEventListener('click', function () {
+      delete cfgState.data[key];
+      cfgState.openKey = cfgState.openKey || {};
+      delete cfgState.openKey[key];
+      fn(main, key);
+    });
+    tb.appendChild(rf);
     // sensor/mcp：手动强制重载（改了 ~/.purrcat 下的代码或外部配置文件时用）
     if (RELOAD_EP[key]) {
       const rl = HOST.document.createElement('button');
@@ -1223,14 +1237,34 @@
     main.appendChild(c);
     return c;
   }
-  function cfgCardHead(card, title, kind, sub) {
+  function cfgIcon(url) {
+    const wrap = HOST.document.createElement('span');
+    wrap.className = 'cfg-card-icon';
+    const useDefault = function () {
+      wrap.innerHTML = '<svg ' + ICON_SVG_ATTR + '>' + ICON_SVG.sensor + '</svg>';
+    };
+    const u = String(url == null ? '' : url).trim();
+    if (!u) { useDefault(); return wrap; }
+    const img = HOST.document.createElement('img');
+    img.alt = '';
+    img.referrerPolicy = 'no-referrer';
+    // 图标链接加载失败时回退默认图标
+    img.onerror = function () { if (img.parentNode) { img.parentNode.removeChild(img); } useDefault(); };
+    img.src = u;
+    wrap.appendChild(img);
+    return wrap;
+  }
+  function cfgCardHead(card, title, kind, sub, iconUrl) {
     const head = HOST.document.createElement('div');
     head.className = 'cfg-card-head';
     const left = HOST.document.createElement('div');
     left.className = 'cfg-card-head-l';
     const trow = HOST.document.createElement('div');
     trow.className = 'cfg-card-title';
+    // 传入 iconUrl（含空串）时展示头像：有链接用图片，留空或加载失败回退默认图标
+    if (iconUrl !== undefined) trow.appendChild(cfgIcon(iconUrl));
     const t = HOST.document.createElement('span');
+    t.className = 'cfg-card-name';
     t.textContent = title;
     trow.appendChild(t);
     if (kind) { const k = HOST.document.createElement('span'); k.className = 'cfg-chip type'; k.textContent = kind; trow.appendChild(k); }
@@ -1429,7 +1463,9 @@
         const isOpen = cfgState.openKey[key] === k;
         const card = cfgCard(main);
         const raw = (typeof val === 'object') ? JSON.stringify(val) : String(val);
-        const h = cfgCardHead(card, k, (Array.isArray(val) ? 'array' : typeof val), raw.slice(0, 90) + (raw.length > 90 ? '…' : ''));
+        // sensor：卡片头展示 icon（config 里的 icon 链接，留空/失效回退默认图标）
+        const iconArg = (key === 'sensor' && val && typeof val === 'object') ? (val.icon || '') : undefined;
+        const h = cfgCardHead(card, k, (Array.isArray(val) ? 'array' : typeof val), raw.slice(0, 90) + (raw.length > 90 ? '…' : ''), iconArg);
         const edit = HOST.document.createElement('button');
         edit.className = 'btn cfg-edit';
         edit.textContent = isOpen ? '关闭' : '编辑';
