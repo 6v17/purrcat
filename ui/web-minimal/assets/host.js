@@ -1885,7 +1885,17 @@
         if (target && target !== groupState.activeSessionId && (await activeSessionBusy())) return { status: 'busy' };
         // 切到已有会话即退出草稿态（放弃未发送的新会话占位）
         if (target) groupState.draft = false;
-        if (target) { groupState.activeSessionId = target; await refreshSessions(); updateEmpty(); broadcastSessions('session.switched', { session_id: target }); }
+        if (target) {
+          // 关键：把后端「当前活跃会话」一并检出。后端 Agent 只挂载一个活跃会话，
+          // 未指定 session_id 的外部事件会路由到它；只改前端状态不 checkout，
+          // 新事件仍会落进上一个会话。
+          const res = await fetch('/api/sessions/' + encodeURIComponent(target) + '/checkout', { method: 'POST' });
+          if (!res.ok) throw new Error((await res.text()) || '切换会话失败');
+          groupState.activeSessionId = target;
+          await refreshSessions();
+          updateEmpty();
+          broadcastSessions('session.switched', { session_id: target });
+        }
         return { status: 'ok' };
       }
       // 重命名会话：对齐后端 PUT /api/sessions/{id}/rename
@@ -1908,10 +1918,19 @@
       case 'session.delete': {
         const sid = String(payload.session_id || '');
         if (!sid) throw new Error('缺少 session_id');
+        const wasActive = groupState.activeSessionId === sid;
+        // 后端禁止删除正在活跃的会话：删当前会话前先把它检出到另一个会话，
+        // 否则前端与后端活跃会话同步后这条请求必被拒绝
+        if (wasActive) {
+          const other = groupState.sessions.find((s) => s.id !== sid);
+          if (other) {
+            const co = await fetch('/api/sessions/' + encodeURIComponent(other.id) + '/checkout', { method: 'POST' });
+            if (!co.ok) throw new Error((await co.text()) || '切换会话失败');
+          }
+        }
         const res = await fetch('/api/sessions/' + encodeURIComponent(sid), { method: 'DELETE' });
         if (!res.ok) throw new Error((await res.text()) || '删除失败');
         // 删掉的正是当前会话：清空活动会话（回到欢迎态），并让各 slot 重新对账
-        const wasActive = groupState.activeSessionId === sid;
         if (wasActive) groupState.activeSessionId = '';
         await refreshSessions();
         updateEmpty();
