@@ -45,12 +45,13 @@ class Node(AgentNode):
             with open(path, "r", encoding="utf-8") as f:
                 return (yaml.safe_load(f) or {}), path
 
-        path = resolve_paradigm_path(None)
+        # 未提供 agentloop：按「空范式」执行，不加载任何钩子（不回退默认范式）
         self.log(
-            context, "SYSTEM", f"📄 [AgentLoop] 未提供 agentloop，回退默认范式: {path}"
+            context,
+            "SYSTEM",
+            "📄 [AgentLoop] 未提供 agentloop，按空范式执行（不响应任何钩子）",
         )
-        with open(path, "r", encoding="utf-8") as f:
-            return (yaml.safe_load(f) or {}), path
+        return {}, None
 
     async def execute(self, inputs: Dict[str, Any], context: Any) -> Dict[str, Any]:
         self.log(context, "SYSTEM", "🤖 [Agent循环] 开始执行（范式驱动）")

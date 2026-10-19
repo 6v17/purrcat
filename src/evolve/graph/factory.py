@@ -75,6 +75,23 @@ def _skeleton(name: str, goal: str = "") -> dict:
                 "config": {"role": "user"},
             },
             {
+                "id": "al_text",
+                "type": "string",
+                "name": "范式-AgentLoop",
+                "position": [500, -200],
+                "config": {
+                    "value": (
+                        'name: "graph_skeleton"\n'
+                        'description: "Minimal agent loop for the graph skeleton."\n'
+                        "loop_end_max_retry: 3\n"
+                        "hooks:\n"
+                        "  on_build_system_prompt:\n"
+                        "    - injection:\n"
+                        '        content: "这是一句系统提示词"\n'
+                    )
+                },
+            },
+            {
                 "id": "loop",
                 "type": "agent_loop",
                 "name": "智能体循环",
@@ -94,6 +111,7 @@ def _skeleton(name: str, goal: str = "") -> dict:
             {"source": "tpl_text", "target": "tpl", "sourceHandle": "text", "targetHandle": "template"},
             {"source": "tpl", "target": "card", "sourceHandle": "rendered_text", "targetHandle": "content"},
             {"source": "card", "target": "loop", "sourceHandle": "message_list", "targetHandle": "messages"},
+            {"source": "al_text", "target": "loop", "sourceHandle": "text", "targetHandle": "agentloop"},
             {"source": "loop", "target": "out", "sourceHandle": "summary", "targetHandle": "reply"},
         ],
     }

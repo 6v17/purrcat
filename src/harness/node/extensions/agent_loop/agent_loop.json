@@ -15,7 +15,7 @@
             "name": "agentloop",
             "type": ["string", "jsonstring", "any"],
             "port_type": "static",
-            "description": "符合 YAML 格式的 agentloop（范式）；也可传范式名或绝对路径。为空时回退默认范式。",
+            "description": "符合 YAML 格式的 agentloop（范式）；也可传范式名或绝对路径。为空时按空范式执行（不响应任何钩子，不回退默认范式）。",
             "required": false
         }
     ],
