@@ -29,6 +29,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 test.py
+!src/tool/kernelupgrade/test.py
 src/agent/checkpoint.json
 *.so
 todo.md
