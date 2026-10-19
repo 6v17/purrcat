@@ -2498,12 +2498,16 @@
     const w0 = HOST.document.documentElement.style.getPropertyValue('--wm-panel-w');
     const base = w0 ? parseFloat(w0) : ((panelDesiredWidth != null) ? panelDesiredWidth : 420);
     const sx0 = e.clientX;
+    // 拖动期间关掉容器宽度的 0.15s 过渡：手柄 left 绑的是 --wm-panel-w 且无过渡，
+    // 容器若还慢慢追，手柄与容器边缘会分离、内置浏览器的原生视图也跟着滞后。
+    HOST.document.body.classList.add('wm-panel-dragging');
     const move = (ev) => {
       // 拖动只记录「期望宽度」，实际宽度由 applyPanelWidth 夹到可用范围（右缘/✕ 不出可视区）
       panelDesiredWidth = Math.max(PANEL_MIN_W, base + (ev.clientX - sx0));
       applyPanelWidth();
     };
     const up = () => {
+      HOST.document.body.classList.remove('wm-panel-dragging');
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);

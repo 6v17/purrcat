@@ -306,7 +306,6 @@
   }
 
   // ---- 原生视图 bounds 同步（插件 iframe 局部坐标，宿主负责加上 iframe 偏移）----
-  var syncTimer = null;
   var lastHidden = null;
   function ensureHidden() {
     if (lastHidden === true) return;
@@ -315,17 +314,16 @@
   }
   // pick 模式绝不插手动原生视图：pick-start 已按原尺寸把它移到屏外，此时若再 hide
   // 会把视图压成 1×1 → Chromium 重新布局 → 截图与 DOM 错位，元素拾取会偏。
-  function syncBounds(immediate) {
-    if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
-    var run = function () {
-      if (mode === 'pick') return;
-      if (covered || !activeId) { ensureHidden(); return; }
-      var r = wrap.getBoundingClientRect();
-      if (!r || r.width < 40 || r.height < 40) { ensureHidden(); return; }
-      lastHidden = false;
-      silent('browser.bounds', { x: r.left, y: r.top, w: r.width, h: r.height });
-    };
-    if (immediate) run(); else syncTimer = setTimeout(run, 10);
+  // 汇报不做 debounce：改宽度时 ResizeObserver 逐帧触发，尾部 debounce 会被每一帧重置，
+  // 直到停止缩放才落地 → 原生视图（真实网页画面）整个缩放期间停在旧尺寸、溢出容器。
+  // 逐帧直发才能与容器同帧跟随；重复上报（RO 与 window.resize 同时触发）由主进程按值去重。
+  function syncBounds() {
+    if (mode === 'pick') return;
+    if (covered || !activeId) { ensureHidden(); return; }
+    var r = wrap.getBoundingClientRect();
+    if (!r || r.width < 40 || r.height < 40) { ensureHidden(); return; }
+    lastHidden = false;
+    silent('browser.bounds', { x: r.left, y: r.top, w: r.width, h: r.height });
   }
 
   // ---- pick 模式布局：把截图按逻辑视口等比缩放居中 ----

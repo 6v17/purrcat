@@ -317,7 +317,7 @@ function createWindow() {
   mainWindow.webContents.on('will-navigate', (e, navUrl) => {
     if (isWebScheme(navUrl)) return;
     e.preventDefault();
-    routeNonWebUrl(navUrl);
+    routeUrlToApp(navUrl);
   });
 
   // 🌟 主窗口关闭 = 用户想退出应用：连带销毁所有附属窗口（IDE / 浏览器独立窗口）。
@@ -407,8 +407,10 @@ function isWebScheme(url) {
   try { return WEB_SCHEMES.has(new URL(url).protocol); } catch { return false; }
 }
 
-// 把非 web scheme 的导航/新开标签交给前端统一路由（由它翻译 purrcat:// 等内部协议）
-function routeNonWebUrl(url) {
+// 把要在应用内打开的地址回传主窗口渲染进程，交给前端统一链接路由决定去向
+// （web 链接 → 内置浏览器新建标签页；purrcat:// 等内部协议 → 先翻译成真实后端地址再打开）。
+// 主窗口自身的 window.open、内置浏览器视图里的 window.open / target=_blank 共用这条链路。
+function routeUrlToApp(url) {
   if (!url || url === 'about:blank') return;
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('purrcat:open-url', url);
 }
@@ -423,7 +425,7 @@ ipcMain.handle('browser:new-tab', (_e, url) => {
   // 非 web scheme（如 purrcat://）：绝不 loadURL，转交前端路由翻译成可访问的后端地址
   if (!isWebScheme(url)) {
     pushTabEvent({ type: 'blocked', url, reason: '已交由应用内链接路由处理该协议' });
-    routeNonWebUrl(url);
+    routeUrlToApp(url);
     return null;
   }
   const tabId = 'tab_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
@@ -454,7 +456,14 @@ ipcMain.handle('browser:new-tab', (_e, url) => {
     if (isWebScheme(navUrl)) return;
     e3.preventDefault();
     pushTabEvent({ type: 'blocked', url: navUrl, reason: '已交由应用内链接路由处理该协议' });
-    routeNonWebUrl(navUrl);
+    routeUrlToApp(navUrl);
+  });
+  // 网页里 target=_blank / window.open（如百度搜索结果链接）：Electron 默认会新建一个系统
+  // BrowserWindow —— 用户看到的就是一个突兀弹出的新窗口。这里与主窗口同一策略：拒绝弹窗，
+  // 把地址回传统一链接路由，由内置浏览器新建标签页打开。
+  view.webContents.setWindowOpenHandler(({ url: openUrl }) => {
+    routeUrlToApp(openUrl);
+    return { action: 'deny' };
   });
   // 🌟 dom-ready 后再聚焦一次：new-tab 时 showView 的 focus() 可能早于渲染进程就绪而失效
   view.webContents.once('dom-ready', () => {
@@ -522,7 +531,7 @@ ipcMain.handle('browser:navigate', (_e, { tabId, url }) => {
   // 非 web scheme（如 purrcat://）：不 loadURL，转交前端路由处理
   if (!isWebScheme(url)) {
     pushTabEvent({ type: 'blocked', url, reason: '已交由应用内链接路由处理该协议' });
-    routeNonWebUrl(url);
+    routeUrlToApp(url);
     return;
   }
   t.url = url;
@@ -548,50 +557,52 @@ ipcMain.handle('browser:go-forward', (_e, tabId) => {
   try { t.view.webContents.goForward(); } catch (_) {}
 });
 
-let _setBoundsTimer = null;
+// 立即应用、不做尾部 debounce：改面板宽度时前端会逐帧汇报尺寸，尾部 debounce 会被每一帧重置，
+// 整个缩放期间视图尺寸停在旧值（原生视图比容器宽 → 溢出容器并盖住聊天区），停止后才落地。
+// 同一组值重复上报（ResizeObserver 与 window.resize 同时触发）在此按值跳过，避免重复 setBounds。
 ipcMain.handle('browser:set-bounds', (_e, { x, y, w, h, scale }) => {
   if (browserDetached) return;
 
   const safeW = Math.min(Math.max(Math.round(w) || 1, 1), 3840);
   const safeH = Math.min(Math.max(Math.round(h) || 1, 1), 2160);
   const factor = scale && Number.isFinite(scale) && scale > 0 ? Math.min(Math.max(scale, 0.1), 2.0) : 1;
+  const next = { x: Math.round(x) || 0, y: Math.round(y) || 0, width: safeW, height: safeH };
 
-  // 前端 resize 事件 + ResizeObserver 会同时触发多次 set-bounds，
-  // 用 16ms debounce 合并，避免 setBounds/setZoomFactor 重复调用导致尺寸闪烁
-  if (_setBoundsTimer) clearTimeout(_setBoundsTimer);
-  _setBoundsTimer = setTimeout(() => {
-    currentBounds = { x: Math.round(x) || 0, y: Math.round(y) || 0, width: safeW, height: safeH };
-    currentScale = factor;
-    _boundsInitialized = true;
-    if (activeTabId) {
-      const t = tabs.get(activeTabId);
-      if (t) {
-        // pick 模式下只更新 currentBounds/currentScale，不碰 view（view 保持屏外 1280x800）
-        // 等 pick-end -> showView 时用最新的 currentBounds 恢复
-        if (!_pickModeTabs.has(activeTabId)) {
-          t.view.setBounds(currentBounds);
-          try { t.view.webContents.setZoomFactor(factor); } catch (_) {}
-          // 面板从隐藏恢复可见（browser:hide → 重新挂载后首次 set-bounds）：重新聚焦页面，
-          // 否则 view 保持失焦状态，页内 pointer lock / 键盘操作全部失效
-          if (browserHidden) {
-            browserHidden = false;
-            try { t.view.webContents.focus(); } catch (_) {}
-          }
+  const unchanged = currentBounds
+    && currentBounds.x === next.x && currentBounds.y === next.y
+    && currentBounds.width === next.width && currentBounds.height === next.height
+    && currentScale === factor;
+  // 视图当前在屏外（hide / pick）时不能跳过，否则面板恢复显示后视图回不来
+  if (unchanged && !browserHidden && !_pickModeTabs.has(activeTabId)) return;
+
+  currentBounds = next;
+  currentScale = factor;
+  _boundsInitialized = true;
+  if (activeTabId) {
+    const t = tabs.get(activeTabId);
+    if (t) {
+      // pick 模式下只更新 currentBounds/currentScale，不碰 view（view 保持屏外 1280x800）
+      // 等 pick-end -> showView 时用最新的 currentBounds 恢复
+      if (!_pickModeTabs.has(activeTabId)) {
+        t.view.setBounds(currentBounds);
+        try { t.view.webContents.setZoomFactor(factor); } catch (_) {}
+        // 面板从隐藏恢复可见（browser:hide → 重新挂载后首次 set-bounds）：重新聚焦页面，
+        // 否则 view 保持失焦状态，页内 pointer lock / 键盘操作全部失效
+        if (browserHidden) {
+          browserHidden = false;
+          try { t.view.webContents.focus(); } catch (_) {}
         }
       }
     }
-  }, 16);
+  }
 });
 
 // 隐藏内置浏览器：前端面板卸载时调用，把所有原生 view 移到屏外，避免盖住工作区
 ipcMain.handle('browser:hide', () => {
   if (browserDetached) return; // 独立窗口模式下不隐藏
   browserHidden = true;
-  // 🌟 竞态修复：必须取消尚未落地的 set-bounds debounce。否则 hide 刚把 view 移到屏外，
-  //    16ms 后 timer 又把 activeTabId 的 view setBounds(currentBounds) 拉回屏幕，
-  //    且把 browserHidden 重置为 false —— 这就是"关掉内置浏览器后网页还贴在屏幕上盖住聊天框"的根因。
-  //    面板重新挂载后会发来新的 set-bounds，届时再恢复显示即可。
-  if (_setBoundsTimer) { clearTimeout(_setBoundsTimer); _setBoundsTimer = null; }
+  // 面板关闭 / 切走：全部原生视图移到屏外。set-bounds 现已即时应用、无待落地的定时器，
+  // 不存在「hide 后又被拉回屏幕」的竞态；面板重新挂载后会发来新的 set-bounds 恢复显示。
   for (const id of tabs.keys()) hideView(id);
 });
 

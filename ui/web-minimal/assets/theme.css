@@ -569,6 +569,10 @@ body.settings-open [data-layer="settings"] { display: flex; }
   z-index: 20;              /* 在聊天区(main z5)之上、顶栏(22)之下 */
   transition: width 0.15s ease;
 }
+/* 拖动中栏分隔条期间关掉上面的宽度过渡：手柄跟手（无过渡），容器若仍用 150ms 追赶会与手柄
+   边缘分离；内置浏览器的原生视图（真实网页画面）不参与 CSS 动画，追赶会露出容器外。 */
+body.wm-panel-dragging .wm-ppanel,
+body.wm-panel-dragging [data-slot="panel-container"] > iframe { transition: none; }
 /* 左侧栏隐藏时，中栏左移贴住白条 */
 body.rail-nosidebar .wm-ppanel,
 body.rail-nosidebar [data-slot="panel-container"] > iframe {
