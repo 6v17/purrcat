@@ -166,7 +166,20 @@ def _get_file_config_dict():
 
 
 def _get_mcp_config_dict():
-    return {"mcpServers": {}}
+    return {
+        "mcpServers": {
+            "chrome-devtools": {
+                "command": "npx",
+                "args": [
+                    "-y",
+                    "chrome-devtools-mcp@latest",
+                    "--browser-url=http://127.0.0.1:9222",
+                    "--blocked-url-pattern=http://localhost:8000/*",
+                    "--blocked-url-pattern=http://localhost:3000/*",
+                ],
+            }
+        }
+    }
 
 
 def _get_app_config_dict():
