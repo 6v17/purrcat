@@ -195,6 +195,37 @@ curl -X POST 'http://127.0.0.1:8000/api/config/sensor/feishu/stop'
 
 ---
 
+## POST `/api/config/sensor/{name}/purge`
+
+**彻底删除**指定 Sensor（不可恢复）。与普通删除（`PUT /api/config/sensor` 只移除注册项）不同，这里连正式文件一起删。执行顺序：① 从 `activate_sensor.json` 移除该项（先消失，watchdog 才不会在杀进程后的窗口里把它拉起来）→ ② 整树击杀运行中的进程 → ③ 删除 `~/.purrcat/sensor/<name>.py`（优先 `git rm -f` 并提交，非 Git 仓库或未跟踪时退化为直接删文件）。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `name` | path | string | 是 | Sensor 名称（对应 `<name>.py`） |
+
+**响应**
+
+```json
+{
+  "status": "ok",
+  "stopped": true,
+  "file_deleted": true,
+  "message": "已彻底删除 Sensor 'feishu'（进程已停止，文件已删除，配置已移除）"
+}
+```
+
+文件删除失败返回 `500`（配置此时已被移除）。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/config/sensor/feishu/purge'
+```
+
+---
+
 ## GET `/api/config/file`
 
 读取文件权限配置（`~/.purrcat/file.json`），定义 `blocked` / `readonly` / `writable` 三类路径规则与默认权限。

@@ -1,5 +1,7 @@
 import json
 import os
+import subprocess
+from datetime import datetime
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Body
@@ -15,6 +17,7 @@ from src.utils.config import (
     MCP_CONFIG_PATH,
     MODEL_CONFIG_PATH,
     SENSOR_CONFIG_PATH,
+    SENSOR_EXTENSION_DIR,
     AGENT_CORE_DIR,
     GLOBAL_CONFIG_FILE,
     CRON_FILE,
@@ -126,6 +129,71 @@ def api_stop_sensor(name: str):
         else f"Sensor '{name}' 当前没有运行中的进程（已置为 enabled=false）"
     )
     return {"status": "ok", "stopped": stopped, "message": message}
+
+
+@router.post("/sensor/{name}/purge")
+def api_purge_sensor(name: str):
+    """彻底删除指定 Sensor（不可恢复）：先从配置移除 → 再杀进程 → 最后删正式 <name>.py。
+
+    顺序很重要：配置项先消失，watchdog 才不会在杀进程后的窗口里把它又拉起来。
+    """
+    cfg = get_sensor_config()
+    if isinstance(cfg, dict) and name in cfg:
+        cfg.pop(name, None)
+        if not _save_json_file(SENSOR_CONFIG_PATH, cfg):
+            raise HTTPException(status_code=500, detail="配置写入失败，已放弃彻底删除")
+
+    stopped = False
+    try:
+        from src.sensor.manager import get_manager
+
+        stopped = get_manager().stop_sensor(name)
+    except Exception as e:
+        print(f"[Config API] 彻底删除时停止 Sensor 失败 {name}: {e}")
+
+    script_path = os.path.join(SENSOR_EXTENSION_DIR, f"{name}.py")
+    file_deleted = False
+    # 正式目录是 git 仓库：优先 git rm（连带清索引并提交），失败再退化为直接删文件
+    if os.path.isdir(os.path.join(SENSOR_EXTENSION_DIR, ".git")):
+        try:
+            rm = subprocess.run(
+                ["git", "rm", "-f", f"{name}.py"],
+                cwd=SENSOR_EXTENSION_DIR,
+                capture_output=True,
+                text=True,
+            )
+            if rm.returncode == 0:
+                file_deleted = True
+                subprocess.run(
+                    [
+                        "git",
+                        "commit",
+                        "-m",
+                        f"purge sensor {name} {datetime.now().strftime('%Y-%m-%d')}",
+                    ],
+                    cwd=SENSOR_EXTENSION_DIR,
+                    capture_output=True,
+                    text=True,
+                )
+        except Exception as e:
+            print(f"[Config API] 彻底删除时 git rm 失败 {name}: {e}")
+    if not file_deleted and os.path.isfile(script_path):
+        try:
+            os.remove(script_path)
+            file_deleted = True
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=f"删除 {script_path} 失败: {str(e)}")
+
+    message = (
+        f"已彻底删除 Sensor '{name}'（进程{'已停止' if stopped else '未在运行'}，"
+        f"文件{'已删除' if file_deleted else '不存在'}，配置已移除）"
+    )
+    return {
+        "status": "ok",
+        "stopped": stopped,
+        "file_deleted": file_deleted,
+        "message": message,
+    }
 
 
 # ── File Config ──

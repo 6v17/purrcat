@@ -279,6 +279,7 @@ uv run evals/gateway_probe.py
 - 重载：`POST /api/config/sensor/reload`（停掉全部旧进程，按配置重新拉起启用项）。
 - 运行状态：`GET /api/config/sensor/runtime` 列出运行中的 Sensor（`name` / `pid` / `alive`）。
 - 停止单个：`POST /api/config/sensor/{name}/stop` 杀死指定 Sensor 进程，并把它在 `activate_sensor.json` 里置为 `enabled=false`（不会被 watchdog 再拉起）。
+- 彻底删除：`POST /api/config/sensor/{name}/purge` 从配置移除 + 杀进程 + 删除正式 `<name>.py`（不可恢复）；普通删除只移除注册项，文件与运行中进程都会保留。
 - 本地无 `<name>.py` 时，主进程会后台按官方仓库地址自动下载后拉起。
 
 接口细节见 [../api/config.md](../api/config.md)、[../api/tools.md](../api/tools.md)。
