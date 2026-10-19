@@ -30,6 +30,8 @@ trigger:                      # 定时触发声明（可选）
 hooks:
   on_build_system_prompt:
     - injection: { content: "你是一个严谨的助手。" }
+  on_input_received:
+    - keyword_check: { keyword: "周报", type: user, successed_prompt: "用户要写周报：先列出数据来源与周期，再按模板生成。", failed_prompt: "本次输入与周报无关，不要生成周报。" }
   on_loop_start:
     - skill_info: { skills: ["my-skill"], failed_prompt: "缺少技能，请先获取。" }
   on_loop_end:
@@ -67,7 +69,7 @@ hooks:
 | `on_tool_calling` | 即将调用工具时 | `tool_use_check`、`injection` |
 | `on_loop_end` | 一轮循环结束判定时 | `tool_use_check`、`file_operation` |
 
-> `keyword_check` 只检查「本批收到的输入」是否含关键词，因此仅在带 `received_messages` 的 `on_input_received` 阶段有意义。
+> `keyword_check`（in检查）只检查「本批收到的输入」是否含关键词，因此仅在带 `received_messages` 的 `on_input_received` 阶段有意义；它不拦截输入，唯一产出就是提示词——两个提示词都留空则等于什么都没做。
 
 ---
 
@@ -94,7 +96,7 @@ hooks:
 | action | 参数 | 说明 |
 | --- | --- | --- |
 | `tool_use_check` | `name`、`parameter_check`、`successed_prompt`、`failed_prompt` | 检查本轮是否调用了工具 `name`（可要求特定参数 `parameter_check`）；据此放行或回打并附提示 |
-| `keyword_check` | `keyword`、`type`、`successed_prompt`、`failed_prompt` | 关键词命中检查（`type` 控制匹配方式）|
+| `keyword_check` | `keyword`、`type`、`successed_prompt`、`failed_prompt` | in检查：看本批输入里有没有 `keyword`，`type` 只检查该类型的消息（留空不限）；只做提示注入、不拦截输入（见下方「in检查的语义」）|
 | `file_operation` | `action`、`path`、`content`、`failed_prompt` | 文件检查/操作，`action` ∈ `read` / `exist_check` / `write_in` / `add_in` / `delete` |
 | `command_run` | `command`、`return_log`、`failed_prompt` | 执行命令并按结果判定（`on_loop_epoch` 常用）|
 
@@ -104,7 +106,38 @@ hooks:
 - `interval`：每 `interval` 个 epoch 执行一次。
 - `expect`：`on_loop_end` 中 `"fail"` 表示“未满足才算通过”（用于反向结束条件）。
 
-### 4.5 `@引用` 语法（`injection.content` 内可直接使用）
+### 4.5 检查类动作的通用语义（重点：提示词才是它的产出）
+
+- 检查类动作——`tool_use_check`、`keyword_check`、`file_operation` 的 `read` / `exist_check` / `delete`、`command_run`、`skill_info`——只做两件事：判断通过 / 不通过，并把 `successed_prompt` / `failed_prompt` 以 role=user 的提示消息注入回历史给模型看。
+- 因此**不写提示词的检查等于白写**：条件不通过时既没有回打理由，也没有任何内容注入给模型。除「纯放行的闸门」外，都应写出 `failed_prompt`。
+- 各阶段「不通过」的后果不同：
+
+  | 阶段 | 不通过时的后果 | 提示词效果 |
+  | --- | --- | --- |
+  | `on_tool_calling` | 拦下本次工具调用的后续流程、继续循环 | 注入 `failed_prompt`，模型据此重来 |
+  | `on_loop_end` | 未达 `loop_end_max_retry` 上限时整轮打回重试（系统另附一条通用打回提示）| 注入 `failed_prompt`；**通过时 `successed_prompt` 不生效**（结束即静默放行）|
+  | `on_input_received` | **不拦不挡，只做提示**（不决定循环能否结束）| 命中注入 `successed_prompt`，未命中注入 `failed_prompt` |
+
+- 结论：挂在 `on_input_received` 上的检查**价值 100% 体现在提示词上**，只写检查条件、两个提示词都留空，是最典型的“写了但没用”的写法。
+
+### 4.6 in检查（`keyword_check`）的语义（重点）
+
+- 它检查的是**输入侧**：本批以 role=user 注入历史的消息里有没有 `keyword`——不检查模型输出，也不检查文件。
+- 「输入」不只是用户真实提问：钩子自己注入的提示消息（含 `on_loop_end` 的打回提示）同样算输入，想只针对真实用户提问时用 `type: user` 收窄；`type` 留空则不限制消息类型。
+- 命中即通过、未命中即不通过，但它**不拦截输入、不阻塞流程、不影响循环能否结束**，唯一作用是往历史里追加一条提示，用来做**输入分诊**。
+- 只在 `on_input_received` 上有意义：其他阶段拿不到本批输入，会**恒定判为「未命中」**并一直注入 `failed_prompt`。
+
+```yaml
+on_input_received:
+  # 输入分诊：用户提到「周报」才引导周报流程；没提到也要明确告诉模型别乱走流程
+  - keyword_check:
+      keyword: "周报"
+      type: user
+      successed_prompt: "用户要写周报：先列出数据来源与周期，再按模板生成。"
+      failed_prompt: "本次输入与周报无关，不要生成周报，按用户真实诉求处理。"
+```
+
+### 4.7 `@引用` 语法（`injection.content` 内可直接使用）
 
 | 引用 | 含义 |
 | --- | --- |
