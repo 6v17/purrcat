@@ -526,13 +526,7 @@ def sensor_factory_init(
         f"【Sensor 工厂分配成功】工作区路径：{sandbox_root}（workplace_id: {short_uuid}）。\n"
         f"{action_msg}。\n"
         f"💡 提示：系统已在沙盒根目录为你生成了官方说明文档 GUIDE.md"
-        f"（覆盖 stdio 协议/凭证与配置/失败上报/文件收发/提交全流程），动手前请先通读！\n"
-        f"🔑 凭证流程：请先引导用户到外部平台获取所需凭证，拿到后**直接在沙盒 "
-        f"sensor_config.json 的 env 里填真实值**——合并时会原样写入正式配置并注入，"
-        f"用户无需再去配置中心重填。\n"
-        f"🧪 自测夹具：`evals/gateway_probe.py`（宿主同款真网关精简版），"
-        f"在沙盒根目录执行 `uv run evals/gateway_probe.py` 即可验证握手/缺凭证失败上报/"
-        f"sessionId 回填/stdout 纯净/存活，通过后再提交 Request(sensor_test) 做正式体检。"
+        f"（覆盖 stdio 协议/凭证与配置/失败上报/文件收发/提交全流程），动手前请先通读。"
     ), short_uuid
 
 
@@ -690,12 +684,11 @@ def sensor_request_handle(
     _hot_restart_sensors()
 
     empty_keys = [k for k, v in merged_env.items() if v in (None, "")]
-    filled_keys = [k for k, v in merged_env.items() if v not in (None, "")]
     auth_hint = (
         f"\n⚠️ 仍有 {len(empty_keys)} 个凭证留空（{', '.join(empty_keys)}），"
         f"代码会在缺凭证时向 Agent 上报失败详情；请引导用户补齐。"
         if empty_keys
-        else f"\n🔑 {len(filled_keys)} 个凭证已随合并写入正式配置，用户无需再重填。"
+        else ""
     )
 
     verdict_note = (
