@@ -449,6 +449,26 @@ def _write_goal_and_guide(workplace_root: str, sensor_name: str, goal: str):
         f.write(generate_sensor_guide(sensor_name, goal))
 
 
+def _sandbox_sensor_names() -> set:
+    """扫描全部进化沙盒，返回沙盒里已有 sensor 的名称集合。
+
+    沙盒本体是各自根目录下单个 <name>.py（evals/、__pycache__ 等子目录天然被跳过），
+    与 list_workplaces 的识别口径保持一致。
+    """
+    names: set = set()
+    root = os.path.join(AGENT_VM_DIR, "sensor_workplace")
+    if not os.path.isdir(root):
+        return names
+    for wid in os.listdir(root):
+        w_path = os.path.join(root, wid)
+        if not os.path.isdir(w_path):
+            continue
+        for item in os.listdir(w_path):
+            if item.endswith(".py") and os.path.isfile(os.path.join(w_path, item)):
+                names.add(item[:-3])
+    return names
+
+
 def sensor_factory_init(
     sensor_name: str, is_upgrade: bool, goal: str = ""
 ) -> tuple[str, str]:
@@ -457,13 +477,15 @@ def sensor_factory_init(
     workplace_root = os.path.join(AGENT_VM_DIR, "sensor_workplace", short_uuid)
     script_path = os.path.join(workplace_root, f"{sensor_name}.py")
 
-    # 同名唯一：新建时若正式目录/注册配置里已有同名 sensor，直接拦回，避免同名多份互相抢占
+    # 同名唯一：新建时若正式目录/注册配置/任意进化沙盒里已有同名 sensor，直接拦回，
+    # 避免同名多份互相抢占
     if not is_upgrade:
         from src.utils.config import get_sensor_config
 
         if (
             os.path.exists(os.path.join(SENSOR_EXTENSION_DIR, f"{sensor_name}.py"))
             or sensor_name in (get_sensor_config() or {})
+            or sensor_name in _sandbox_sensor_names()
         ):
             return (
                 f"❌ 已存在同名sensor：{sensor_name}，"
