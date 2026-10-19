@@ -108,71 +108,65 @@ def validate_graph_doc(doc, expected_name=None):
         return _report(checks)
     _check(checks, "graph.json 顶层为对象", True, "error")
 
-    # ---- 格式校验 ----
+    # ---- 格式校验（每条断言都登记，通过项 ok=True，便于全量查看） ----
     for key in REQUIRED_TOP:
-        if not doc.get(key):
-            _check(checks, f"必填字段 `{key}` 非空", False, "error", f"缺少或为空：`{key}`")
+        ok = bool(doc.get(key))
+        _check(checks, f"必填字段 `{key}` 非空", ok, "error", "" if ok else f"缺少或为空：`{key}`")
 
     name = doc.get("name")
-    if expected_name and name and str(name) != expected_name:
+    if expected_name and name:
+        ok = str(name) == expected_name
         _check(
             checks,
             "name 与文件夹名一致",
-            False,
+            ok,
             "error",
-            f"name={name!r}，文件夹={expected_name!r}（CI 与市场安装都要求两者一致）",
+            "" if ok else f"name={name!r}，文件夹={expected_name!r}（CI 与市场安装都要求两者一致）",
         )
-    elif expected_name and name:
-        _check(checks, "name 与文件夹名一致", True, "error")
 
-    if "version" not in doc:
-        _check(checks, "建议声明 version", False, "warn", '建议加 "version": "2.0"')
+    ok = "version" in doc
+    _check(checks, "声明 version", ok, "warn", "" if ok else '建议加 "version": "2.0"')
 
-    nodes = doc.get("nodes") or []
-    edges = doc.get("edges") or []
-    if not isinstance(nodes, list):
-        _check(checks, "nodes 为数组", False, "error", "nodes 必须是数组")
+    nodes = doc.get("nodes")
+    edges = doc.get("edges")
+    ok = isinstance(nodes, list)
+    _check(checks, "nodes 为数组", ok, "error", "" if ok else "nodes 必须是数组")
+    if not ok:
         return _report(checks)
-    if not isinstance(edges, list):
-        _check(checks, "edges 为数组", False, "error", "edges 必须是数组")
+    ok = isinstance(edges, list)
+    _check(checks, "edges 为数组", ok, "error", "" if ok else "edges 必须是数组")
+    if not ok:
         return _report(checks)
 
-    # ---- 关键词汇 + 功能校验：节点 ----
+    # ---- 关键词汇 + 功能校验：节点（扫描后汇总为每条断言的通过情况） ----
     ids = {}
     has_task_input = False
     has_task_output = False
     global_vars = set()
+    bad_obj = []  # 非对象的 nodes 项
+    bad_id = []  # 缺 id 或 id 重复
+    bad_name = []  # 缺节点显示名
+    bad_deprecated = []  # 使用了已废弃类型
+    bad_type = []  # 类型不在白名单
     for i, node in enumerate(nodes):
         if not isinstance(node, dict):
-            _check(checks, f"nodes[{i}] 为对象", False, "error")
+            bad_obj.append(f"nodes[{i}]")
             continue
         nid = node.get("id")
         ntype = node.get("type")
         if not nid:
-            _check(checks, f"nodes[{i}] 含 `id`", False, "error", "节点缺少 id")
+            bad_id.append(f"nodes[{i}]（缺 id）")
         elif nid in ids:
-            _check(checks, f"节点 id `{nid}` 唯一", False, "error", "id 重复")
+            bad_id.append(f"`{nid}`（与 nodes[{ids[nid]}] 重复）")
         else:
             ids[nid] = i
         if not node.get("name"):
-            _check(checks, f"节点 `{nid}` 含 `name`", False, "warn", "缺少节点显示名")
+            bad_name.append(f"`{nid}`")
 
         if ntype in DEPRECATED_TYPES:
-            _check(
-                checks,
-                f"节点 `{nid}` 未使用已废弃类型",
-                False,
-                "error",
-                f"`{ntype}` 已在下线清单：{sorted(DEPRECATED_TYPES)}",
-            )
+            bad_deprecated.append(f"`{nid}`（{ntype}）")
         elif ntype not in NODE_TYPES:
-            _check(
-                checks,
-                f"节点 `{nid}` 的类型 `{ntype}` 属于白名单",
-                False,
-                "error",
-                f"未知节点类型，合法值：{sorted(NODE_TYPES)}",
-            )
+            bad_type.append(f"`{nid}`（{ntype}）")
 
         if ntype == "task_input":
             has_task_input = True
@@ -182,29 +176,60 @@ def validate_graph_doc(doc, expected_name=None):
         if ntype == "task_output":
             has_task_output = True
 
-    # ---- 功能校验：边引用 + 端口 ----
+    _check(
+        checks,
+        "所有 nodes 项均为对象",
+        not bad_obj,
+        "error",
+        f"非对象项：{bad_obj}" if bad_obj else "",
+    )
+    _check(
+        checks,
+        "节点 id 唯一且非空",
+        not bad_id,
+        "error",
+        f"异常节点：{bad_id}" if bad_id else "",
+    )
+    _check(
+        checks,
+        "所有节点均含显示名 name",
+        not bad_name,
+        "warn",
+        f"缺 name 的节点：{bad_name}" if bad_name else "",
+    )
+    _check(
+        checks,
+        "节点类型未使用已废弃类型",
+        not bad_deprecated,
+        "error",
+        f"已废弃：{bad_deprecated}；下线清单：{sorted(DEPRECATED_TYPES)}"
+        if bad_deprecated
+        else "",
+    )
+    _check(
+        checks,
+        "节点类型均属于白名单",
+        not bad_type,
+        "error",
+        f"未知类型：{bad_type}；合法值：{sorted(NODE_TYPES)}" if bad_type else "",
+    )
+
+    # ---- 功能校验：边引用 + 端口（同样汇总为每条断言的通过情况） ----
     incoming = {nid: 0 for nid in ids}
+    bad_edge_obj = []  # 非对象的 edges 项
+    bad_src = []  # source 指向未定义节点
+    bad_dst = []  # target 指向未定义节点
+    bad_source_handle = []  # sourceHandle 不属于上游输出端口
+    bad_target_handle = []  # targetHandle 不属于下游输入端口
     for j, edge in enumerate(edges):
         if not isinstance(edge, dict):
-            _check(checks, f"edges[{j}] 为对象", False, "error")
+            bad_edge_obj.append(f"edges[{j}]")
             continue
         src, dst = edge.get("source"), edge.get("target")
         if src not in ids:
-            _check(
-                checks,
-                f"edges[{j}].source `{src}` 指向已定义节点",
-                False,
-                "error",
-                "source 引用了不存在的节点 id",
-            )
+            bad_src.append(f"edges[{j}]（source={src!r}）")
         if dst not in ids:
-            _check(
-                checks,
-                f"edges[{j}].target `{dst}` 指向已定义节点",
-                False,
-                "error",
-                "target 引用了不存在的节点 id",
-            )
+            bad_dst.append(f"edges[{j}]（target={dst!r}）")
         elif src in ids:
             incoming[dst] = incoming.get(dst, 0) + 1
 
@@ -222,70 +247,107 @@ def validate_graph_doc(doc, expected_name=None):
         # 端口名校验（dynamic 端口名由 config 决定，故仅做警告级提示）
         sh = edge.get("sourceHandle")
         if sh and sh not in STATIC_OUTPUTS.get(src_type, []) and src_type not in DYNAMIC_OUTPUT_TYPES:
-            _check(
-                checks,
-                f"edges[{j}].sourceHandle `{sh}` 属于 `{src_type}` 的输出端口",
-                False,
-                "warn",
-                f"静态输出端口为 {STATIC_OUTPUTS.get(src_type, [])}；若为动态端口请确认 config 已声明",
-            )
+            bad_source_handle.append(f"edges[{j}]（{sh!r} 不属于 {src_type} 的输出端口）")
         th = edge.get("targetHandle")
         if th and th not in STATIC_INPUTS.get(dst_type, []) and dst_type not in DYNAMIC_INPUT_TYPES:
-            _check(
-                checks,
-                f"edges[{j}].targetHandle `{th}` 属于 `{dst_type}` 的输入端口",
-                False,
-                "warn",
-                f"静态输入端口为 {STATIC_INPUTS.get(dst_type, [])}；若为动态端口请确认 config 已声明",
-            )
+            bad_target_handle.append(f"edges[{j}]（{th!r} 不属于 {dst_type} 的输入端口）")
+
+    _check(
+        checks,
+        "所有 edges 项均为对象",
+        not bad_edge_obj,
+        "error",
+        f"非对象项：{bad_edge_obj}" if bad_edge_obj else "",
+    )
+    _check(
+        checks,
+        "所有边的 source 指向已定义节点",
+        not bad_src,
+        "error",
+        f"异常边：{bad_src}" if bad_src else "",
+    )
+    _check(
+        checks,
+        "所有边的 target 指向已定义节点",
+        not bad_dst,
+        "error",
+        f"异常边：{bad_dst}" if bad_dst else "",
+    )
+    _check(
+        checks,
+        "所有 sourceHandle 属于上游输出端口（动态端口除外）",
+        not bad_source_handle,
+        "warn",
+        f"可疑边：{bad_source_handle}" if bad_source_handle else "",
+    )
+    _check(
+        checks,
+        "所有 targetHandle 属于下游输入端口（动态端口除外）",
+        not bad_target_handle,
+        "warn",
+        f"可疑边：{bad_target_handle}" if bad_target_handle else "",
+    )
 
     # ---- 功能校验：孤立节点 ----
+    orphans = []  # 既无入边又没有 trigger 端口的节点
     for nid, idx in ids.items():
         node = nodes[idx]
         ntype = node.get("type")
         if ntype in ("task_input", "env_loader"):
             continue  # 无输入端口的开局节点
-        if incoming.get(nid, 0) == 0:
-            has_trigger = "trigger" in STATIC_INPUTS.get(ntype, [])
-            if not has_trigger:
-                _check(
-                    checks,
-                    f"节点 `{nid}` 有上游输入",
-                    False,
-                    "warn",
-                    f"`{nid}`（{ntype}）既无连边又没有 trigger 端口，开局不会执行",
-                )
+        if incoming.get(nid, 0) == 0 and "trigger" not in STATIC_INPUTS.get(ntype, []):
+            orphans.append(f"`{nid}`（{ntype}）")
+    _check(
+        checks,
+        "所有无 trigger 端口的节点均有上游输入",
+        not orphans,
+        "warn",
+        f"既无连边又无 trigger 端口，开局不会执行：{orphans}" if orphans else "",
+    )
 
-    if not has_task_output:
-        _check(checks, "建议存在 task_output 节点", False, "warn", "图中未声明全局输出节点")
+    _check(
+        checks,
+        "存在 task_output 节点",
+        has_task_output,
+        "warn",
+        "" if has_task_output else "图中未声明全局输出节点",
+    )
 
     # ---- 功能校验：global_schema ----
     gs = doc.get("global_schema")
     if gs is not None:
-        if not isinstance(gs, dict):
-            _check(checks, "global_schema 为对象", False, "error")
-        else:
-            for k, v in gs.items():
-                if not isinstance(v, dict):
-                    _check(checks, f"global_schema.{k} 为对象", False, "error")
-                elif "type" not in v:
-                    _check(
-                        checks,
-                        f"global_schema.{k} 声明 `type`",
-                        False,
-                        "warn",
-                        "缺少 type，前端表单无法渲染该字段",
-                    )
+        ok = isinstance(gs, dict)
+        _check(checks, "global_schema 为对象", ok, "error", "" if ok else "global_schema 必须是对象")
+        if ok:
+            bad_gs_obj = [f"`{k}`" for k, v in gs.items() if not isinstance(v, dict)]
+            bad_gs_type = [f"`{k}`" for k, v in gs.items() if isinstance(v, dict) and "type" not in v]
+            _check(
+                checks,
+                "global_schema 各项均为对象",
+                not bad_gs_obj,
+                "error",
+                f"非对象项：{bad_gs_obj}" if bad_gs_obj else "",
+            )
+            _check(
+                checks,
+                "global_schema 各项均声明 `type`",
+                not bad_gs_type,
+                "warn",
+                f"缺少 type，前端表单无法渲染：{bad_gs_type}" if bad_gs_type else "",
+            )
             if has_task_input:
-                missing = [k for k, v in gs.items() if isinstance(v, dict) and v.get("required") and k not in global_vars]
-                if missing:
-                    _check(
-                        checks,
-                        "必填 global_schema 键已声明为 task_input 全局变量",
-                        False,
-                        "warn",
-                        f"未在 task_input.global_vars 中声明：{missing}",
-                    )
+                missing = [
+                    k
+                    for k, v in gs.items()
+                    if isinstance(v, dict) and v.get("required") and k not in global_vars
+                ]
+                _check(
+                    checks,
+                    "必填 global_schema 键已声明为 task_input 全局变量",
+                    not missing,
+                    "warn",
+                    f"未在 task_input.global_vars 中声明：{missing}" if missing else "",
+                )
 
     return _report(checks)
 
@@ -303,6 +365,7 @@ def validate_graph_folder(folder, expected_name=None):
     if not os.path.isfile(path):
         _check(checks, "graph.json 存在", False, "error", f"未找到 {path}")
         return _report(checks)
+    _check(checks, "graph.json 存在", True, "error")
     try:
         with open(path, "r", encoding="utf-8") as f:
             doc = json.load(f)
@@ -331,22 +394,26 @@ def _locate_folder():
 
 
 def _print_report(title, report):
-    print("=" * 56)
+    checks = report["checks"]
+    total = len(checks)
+    passed = sum(1 for c in checks if c["ok"])
+    print("=" * 68)
     print(title)
-    print("=" * 56)
-    for c in report["checks"]:
+    print("=" * 68)
+    for i, c in enumerate(checks, 1):
         if c["ok"]:
-            mark = "✅"
+            mark = "✅ PASS"
         elif c["level"] == "error":
-            mark = "❌"
+            mark = "❌ FAIL"
         else:
-            mark = "⚠️ "
-        line = f"  {mark} [{c['level']}] {c['title']}"
-        if not c["ok"] and c["detail"]:
+            mark = "⚠️  WARN"
+        line = f"{i:>2}. {mark} [{c['level']}] {c['title']}"
+        if c["detail"]:
             line += f" — {c['detail']}"
         print(line)
     print(
-        f"\n错误 {report['errors']}，警告 {report['warnings']}，"
+        f"\n共 {total} 项，通过 {passed}/{total}；"
+        f"错误 {report['errors']}，警告 {report['warnings']}，"
         f"结论：{'✅ 通过' if report['ok'] else '❌ 未通过'}"
     )
     return report["ok"]
