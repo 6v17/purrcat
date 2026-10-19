@@ -641,13 +641,32 @@
       navigator.clipboard.writeText(String(text == null ? '' : text)).then(done).catch(function () { fallbackCopy(text); done(); });
     } else { fallbackCopy(text); done(); }
   }
+  // 气泡内已有的选区（用户先选了一段再点复制时，只复制这一段）
+  function selectionIn(el) {
+    var sel = window.getSelection ? window.getSelection() : null;
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return '';
+    var n = sel.anchorNode;
+    while (n && n !== el) n = n.parentNode;
+    if (n !== el) return '';
+    return String(sel.toString() || '');
+  }
+  // 复制「屏幕上看得见的文字」：消息是 markdown 渲染出来的，直接复制源码会把 **、#、``` 等标记带进去
+  function visibleText(el) {
+    var t = el.innerText != null ? el.innerText : el.textContent;
+    return String(t == null ? '' : t).replace(/[ \t]*\n[ \t]*$/, '');
+  }
   // 给气泡挂一个 hover 显示的复制按钮（对齐完整模式 ClipboardCopy 交互）
-  function attachCopy(el, text) {
+  function attachCopy(el) {
     el.classList.add('has-copy');
     var b = document.createElement('button');
     b.className = 'copy-btn'; b.type = 'button'; b.title = '复制';
     b.innerHTML = ICON_COPY;
-    b.addEventListener('click', function (ev) { ev.stopPropagation(); copyText(text, b); });
+    // 不阻止默认行为的话，点按钮这一下会把用户已有的选区清掉，导致"选中一段再点复制"永远拿到整条消息
+    b.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
+    b.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      copyText(selectionIn(el) || visibleText(el), b);
+    });
     el.appendChild(b);
     return el;
   }
@@ -770,7 +789,7 @@
         col.appendChild(attWrap); count++;
       }
       parsed.msgs.forEach(function (txt) {
-        if (txt) { col.appendChild(attachCopy(bubble('user', esc(txt)), txt)); count++; }
+        if (txt) { col.appendChild(attachCopy(bubble('user', esc(txt)))); count++; }
       });
       if (show.hint) {
         parsed.hints.forEach(function (h) {
@@ -792,7 +811,7 @@
         var mb = document.createElement('div');
         mb.className = 'md';
         mb.innerHTML = mdToHtml(m.content);
-        col.appendChild(attachCopy(mb, m.content)); count++;
+        col.appendChild(attachCopy(mb)); count++;
       }
       if (show.tool && m.tool_calls && m.tool_calls.length) {
         m.tool_calls.forEach(function (tc) {
@@ -829,7 +848,40 @@
     return count ? wrap : null;
   }
 
-  function renderMessages(rows) {
+  // ---------- 重建保护 ----------
+  // 轮询每 1.5s 会把整段历史重建一次（listEl.innerHTML=''），而重建会摧毁正在进行的文本选择：
+  // 选区锚点节点被换掉后，浏览器会按鼠标当前位置重新解析选区 → 选中范围剧烈跳动、多选到没选中的字。
+  // 因此：拖选中/已有选区时把重建推迟到选择结束；输入没变化时干脆不重建。
+  var pendingRows = null;    // 被推迟的一次重建（选择结束后补做）
+  var dragging = false;      // 是否正在列表内按住鼠标拖动选择
+  var lastSig = '';          // 上次渲染的输入签名（内容+展示开关+分支+思考态），未变化则跳过重建
+  function hasListSelection() {
+    var sel = window.getSelection ? window.getSelection() : null;
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+    var n = sel.anchorNode;
+    while (n && n !== listEl) n = n.parentNode;
+    return n === listEl;
+  }
+  function rebuildBlocked() { return dragging || hasListSelection(); }
+  function flushPendingRender() {
+    if (!pendingRows || rebuildBlocked()) return;
+    var rows = pendingRows; pendingRows = null;
+    renderMessages(rows, true);
+  }
+  document.addEventListener('selectionchange', flushPendingRender);
+  document.addEventListener('mouseup', function () { dragging = false; flushPendingRender(); });
+  // 拖动到 iframe 外松开时收不到 mouseup，靠 mouseleave 兜底；此时若仍有选区，选择保护照样挡住重建
+  document.addEventListener('mouseleave', function () { dragging = false; });
+  listEl.addEventListener('mousedown', function () { dragging = true; });
+
+  function renderMessages(rows, force) {
+    rows = Array.isArray(rows) ? rows : [];
+    // 同样的输入重建出的 DOM 完全一样，跳过可避免无意义的重建（进而保住选区、滚动位置、hover 态）
+    var sig = currentBranchId + '|' + JSON.stringify(show) + '|'
+      + (thinking ? '1:' + live.phase + ':' + live.text.length : '0') + '|' + JSON.stringify(rows);
+    if (!force && sig === lastSig) { pendingRows = null; return; }
+    if (!force && rebuildBlocked()) { pendingRows = rows; return; }   // 等选择结束再重建
+    lastSig = sig; pendingRows = null;
     // 轮询会把整段历史重建一次；若用户已经往上翻看，重建后不能强行拉回底部，
     // 只在「重建前本来就贴着底部」（含首次进入）时才跟随到底。
     // 注意 listEl.innerHTML='' 会把 scrollTop 归零，故旧位置必须先存下来。
@@ -1043,7 +1095,7 @@
       tg.className = 'live-btn' + (liveOpen ? '' : ' collapsed');
       tg.title = liveOpen ? '收起思考内容' : '展开思考内容';
       tg.innerHTML = ICON_CHEVRON;
-      tg.addEventListener('click', function () { liveOpen = !liveOpen; renderMessages(lastRows); });
+      tg.addEventListener('click', function () { liveOpen = !liveOpen; renderMessages(lastRows, true); });
       head.appendChild(tg);
     }
     wrap.appendChild(head);
@@ -1068,6 +1120,8 @@
   // 只增量刷新流式思考块（不重建整段历史）：思考期间的高频拍走这条路
   function updateLiveOnly() {
     if (!thinking || currentBranchId !== 'main') return;
+    // 流式块也是「删掉旧的再插新的」：用户正在选它的时候同样会打断选区，推迟到选择结束补一次整段重建
+    if (rebuildBlocked()) { pendingRows = lastRows || []; return; }
     var stick = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 40;
     var old = listEl.querySelector('.row.live');
     if (old) old.remove();
