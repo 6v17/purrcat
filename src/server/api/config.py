@@ -93,6 +93,41 @@ def api_reload_sensor_manager():
         raise HTTPException(status_code=500, detail=f"热重启失败: {str(e)}")
 
 
+@router.get("/sensor/runtime")
+def api_get_sensor_runtime():
+    """列出当前运行中的 Sensor 进程（配置页「后台进程」展示用）"""
+    try:
+        from src.sensor.manager import get_manager
+
+        return {"running": get_manager().list_running()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取 Sensor 运行状态失败: {str(e)}")
+
+
+@router.post("/sensor/{name}/stop")
+def api_stop_sensor(name: str):
+    """停止指定 Sensor：先把配置置为 enabled=false（防 watchdog 复拉），再整树击杀进程"""
+    cfg = get_sensor_config()
+    if isinstance(cfg, dict) and isinstance(cfg.get(name), dict):
+        cfg[name]["enabled"] = False
+        if not _save_json_file(SENSOR_CONFIG_PATH, cfg):
+            raise HTTPException(status_code=500, detail="禁用配置写入失败，已放弃停止")
+
+    try:
+        from src.sensor.manager import get_manager
+
+        stopped = get_manager().stop_sensor(name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"停止 Sensor 失败: {str(e)}")
+
+    message = (
+        f"已停止 Sensor '{name}' 并置为 enabled=false"
+        if stopped
+        else f"Sensor '{name}' 当前没有运行中的进程（已置为 enabled=false）"
+    )
+    return {"status": "ok", "stopped": stopped, "message": message}
+
+
 # ── File Config ──
 @router.get("/file")
 def api_get_file_config():

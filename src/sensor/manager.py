@@ -244,6 +244,29 @@ class SensorManager:
 
         self.processes.clear()
 
+    def list_running(self) -> list:
+        """列出已登记的 Sensor 进程：[{name, pid, alive}]（alive=false 表示引用尚在但进程已退出）"""
+        result = []
+        for name, process in self.processes.items():
+            result.append(
+                {"name": name, "pid": process.pid, "alive": process.poll() is None}
+            )
+        return sorted(result, key=lambda item: item["name"])
+
+    def stop_sensor(self, name: str) -> bool:
+        """停止指定 Sensor：整树击杀并清理引用。
+
+        调用方须同时把配置置为 enabled=false，否则 watchdog 会按配置把它重新拉起。
+        返回是否命中一个已登记的进程。
+        """
+        process = self.processes.pop(name, None)
+        if process is None:
+            return False
+        self._kill_process_tree(process)
+        self._close_stdin(process)
+        print(f"🛑 [Manager] 已停止 Sensor 子进程: {name} (PID: {process.pid})")
+        return True
+
 
 _manager = SensorManager()
 atexit.register(_manager.stop_all)

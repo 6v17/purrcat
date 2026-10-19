@@ -140,6 +140,61 @@ curl -X POST 'http://127.0.0.1:8000/api/config/sensor/reload'
 
 ---
 
+## GET `/api/config/sensor/runtime`
+
+列出当前由 SensorManager 托管的运行中 Sensor 进程（配置页「后台进程」展示用）。
+
+**请求**
+
+无参数。
+
+**响应**
+
+```json
+{
+  "running": [
+    { "name": "feishu", "pid": 4321, "alive": true },
+    { "name": "wechat-clawbot", "pid": 4380, "alive": false }
+  ]
+}
+```
+
+`alive=false` 表示进程引用尚存但进程已退出（下一次 watchdog 巡检会重启它）。
+
+**示例**
+
+```bash
+curl 'http://127.0.0.1:8000/api/config/sensor/runtime'
+```
+
+---
+
+## POST `/api/config/sensor/{name}/stop`
+
+停止指定 Sensor：先把 `activate_sensor.json` 里该项置为 `enabled=false`（避免 watchdog 按配置复拉），再整树击杀其进程。
+
+**请求**
+
+| 参数 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `name` | path | string | 是 | Sensor 名称（对应 `<name>.py`） |
+
+**响应**
+
+```json
+{ "status": "ok", "stopped": true, "message": "已停止 Sensor 'feishu' 并置为 enabled=false" }
+```
+
+无运行中进程时 `stopped=false`，仍会完成 `enabled=false` 的落盘。禁用配置写入失败返回 `500`。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/config/sensor/feishu/stop'
+```
+
+---
+
 ## GET `/api/config/file`
 
 读取文件权限配置（`~/.purrcat/file.json`），定义 `blocked` / `readonly` / `writable` 三类路径规则与默认权限。
