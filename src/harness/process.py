@@ -585,10 +585,15 @@ class Task:
 
         self.node_memory[node_id]["force_push"].append(instruction)
 
-        # 4. 触发正确的级联重置 (is_injection=True，保护当前节点的记忆)
+        # 4. 注入＝「续跑」而非「重跑」：本节点记忆里已含上游上下文，
+        #    重跑时不能再吸收一次上游 messages，否则上游整段会重复落盘
+        #    （前端会看到同一条 user 消息被发了两遍）
+        self.node_memory[node_id]["skip_upstream"] = True
+
+        # 5. 触发正确的级联重置 (is_injection=True，保护当前节点的记忆)
         self._cascade_reset(node_id, is_injection=True)
 
-        # 5. 唤醒整个任务流
+        # 6. 唤醒整个任务流
         # 🌟 修复：任务仍在运行时保持 RUNNING，交给现有引擎消费指令；
         # 若此处改成 READY，API 层会误判任务已停止而重复拉起第二个引擎，导致双事件循环崩溃
         if self.state != TaskState.RUNNING:
