@@ -53,6 +53,9 @@ ACTIONS = {
 # file_operation 的 action 取值白名单
 FILE_OPERATIONS = {"read", "exist_check", "write_in", "add_in", "delete"}
 
+# file_operation 中属于「检查」的 action（write_in / add_in 是写操作，不做通过/不通过判定）
+FILE_CHECK_OPS = {"read", "exist_check", "delete"}
+
 # 宿主原生工具白名单：tool_use_check.name 只能是这些；
 # 外部拓展工具（MCP）不是原生工具，须经 CallMCP 的参数检查，不能直接写进 name。
 NATIVE_TOOLS = {
@@ -226,6 +229,18 @@ def validate_agentloop_doc(doc, expected_name=None):
                         "缺少 path，运行时会退化到空路径",
                     )
 
+            # 检查类动作：产出就是提示词，缺 failed_prompt 等于白写
+            if _is_prompt_less_check(action, params):
+                _check(
+                    checks,
+                    f"检查类动作 `{action}` 写了 failed_prompt",
+                    False,
+                    "warn",
+                    f"{action} 未写 failed_prompt：检查不通过时不会有任何提示注入给模型"
+                    "（挂在 on_input_received 上更是毫无效果）。"
+                    "除非它只当「纯放行的闸门」用，否则请补 failed_prompt（必要时再补 successed_prompt）",
+                )
+
             # 关键词汇：@引用 符号白名单
             for bad in _unknown_refs(params):
                 _check(
@@ -237,6 +252,31 @@ def validate_agentloop_doc(doc, expected_name=None):
                 )
 
     return _report(checks)
+
+
+def _has_text(value):
+    """参数是否给了非空文本。"""
+    return bool(str(value or "").strip())
+
+
+def _is_prompt_less_check(action, params):
+    """检查类动作是否漏写了提示词（检查只有配上提示词才对模型可见）。
+
+    - tool_use_check / keyword_check：看 failed_prompt；
+    - file_operation：仅 read / exist_check / delete 属于检查，看 failed_prompt；
+    - command_run / command_on：return_log 为真时会回传命令输出，此时不再要求 failed_prompt。
+    """
+    if action in ("tool_use_check", "keyword_check"):
+        return not _has_text(params.get("failed_prompt"))
+    if action == "file_operation":
+        return params.get("action") in FILE_CHECK_OPS and not _has_text(
+            params.get("failed_prompt")
+        )
+    if action in ("command_run", "command_on"):
+        return not bool(params.get("return_log")) and not _has_text(
+            params.get("failed_prompt")
+        )
+    return False
 
 
 def _unknown_refs(params):
