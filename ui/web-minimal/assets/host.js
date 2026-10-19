@@ -2001,7 +2001,7 @@
         if (!initRes.ok) throw new Error((await initRes.text()) || '工厂分配失败');
         const initData = await initRes.json();
         const factoryPath = '/agent_vm/skill_workplace/' + initData.workplace_id + '/' + name;
-        const content = '用户使用了trace_to_skill功能，已为你分配了技能工厂' + factoryPath + '/，请根据用户需要和本次会话的交互记录与历史经验升级或创建对应技能。以下是用户期望：\n' + goal;
+        const content = '用户触发了技能工厂，已为你分配了技能工厂' + factoryPath + '/，请根据用户需要和本次会话的交互记录与历史经验升级或创建对应技能。以下是用户期望：\n' + goal;
         const batchRes = await fetch('/api/chat/batch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

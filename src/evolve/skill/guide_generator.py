@@ -73,7 +73,7 @@ description: 1-200 字符，祈使句，描述用户意图而非底层实现，�
 
 ## 4. 如何测试（Trigger 免审直接跑，盲测需用户批准）
 
-你**无权**直接运行测试！须调用 `Request(request_type="skill_test", target="工作区uuid/{skill_name}")` 发起，两级流程如下：
+你**无权**直接运行测试！须调用 `KernelUpgrade(action="test", type="skill", target="工作区uuid/{skill_name}")` 发起，两级流程如下：
 
 1. **Trigger 激发测试（免审）**：提交后立即在后台运行（影子节点注入真实检索环境，检验 description 能否击败现存技能被唤醒），完成后收到系统级通知，报告归档在 `iteration-N/report.html`（与随后获批的盲测同属一代）。
 2. **后台盲测（需审批）**：用户批准后系统自动在后台双 Agent 隔离环境运行盲测。若本地无 skill_eval 图，盲测会被自动跳过（工具会明确提示），需用户安装测试图后重新申请。
@@ -92,5 +92,5 @@ description: 1-200 字符，祈使句，描述用户意图而非底层实现，�
 
 ## 6. 提交合并
 
-**严禁在未经过沙盒盲测的情况下直接申请合并！** 测试通过后调用 `Request(request_type="skill_merge", target="{skill_name}")`，并在 reason 中简述修改点供用户 Code Review。
+**严禁在未经过沙盒盲测的情况下直接申请合并！** 测试通过后调用 `KernelUpgrade(action="merge", type="skill", target="{skill_name}")`，并在 reason 中简述修改点供用户 Code Review。
 """

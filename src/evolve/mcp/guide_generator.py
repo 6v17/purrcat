@@ -31,8 +31,8 @@ def generate_mcp_guide(mcp_name: str, goal: str = "", agent_vm_dir: str = "") ->
 ## 3. 真实可用性测试
 * 禁用 CallMCP（沙盒未合并，宿主机感知不到）；禁用 Mock 数据，必须真实链路可用。
 * 在 `scripts/` 下自行编写测试脚本验证逻辑；发现报错严禁放弃，必须修复核心代码使其健壮。
-* 🔴 严禁修改 `scripts/evaluation.py`（工厂标准产物生成器，破坏后 test_mcp 永远无法通过）。
-* 🔴 **每次改动代码或工具描述后**，建议重新执行 `python scripts/evaluation.py` 刷新快照，避免报告用旧描述渲染。宿主机只读快照、**不会自动重跑**；若 schema_dump 比源码旧，`test_mcp` 会在返回中给出"快照可能已过期"提醒（不拦截，可自行判断是否忽略）。
+* 🔴 严禁修改 `scripts/evaluation.py`（工厂标准产物生成器，破坏后 KernelUpgrade(action="test", type="mcp") 永远无法通过）。
+* 🔴 **每次改动代码或工具描述后**，建议重新执行 `python scripts/evaluation.py` 刷新快照，避免报告用旧描述渲染。宿主机只读快照、**不会自动重跑**；若 schema_dump 比源码旧，`KernelUpgrade(action="test", type="mcp")` 会在返回中给出"快照可能已过期"提醒（不拦截，可自行判断是否忽略）。
 
 ## 4. 测试用例（evals.json）
 * `triggers`：建议 5-10 个正反例（至少 1 正 1 反，模板已给 2 个示例），检验 description 的语义竞争力；反例 `expected_tool` 设为 `null`。
@@ -72,7 +72,7 @@ MCP 合并后将在**宿主机**上运行（宿主机读取 mcp_config.json 并�
 ## 7. 流水线
 ① 编写 `tools/`、`core/` → ② 建环境（Windows 跑 `powershell -ExecutionPolicy Bypass -File setup.ps1`，macOS/Linux 跑 `bash setup.sh`）→ ③ `scripts/` 真实链路自测 →
 ④ `python scripts/evaluation.py` 生成 schema_dump 与执行产物 →
-⑤ `KernelUpgrade(action="test_mcp")` 呼叫宿主机盲测 →
+⑤ `KernelUpgrade(action="test", type="mcp", target="工作区uuid/{mcp_name}")` 呼叫宿主机盲测 →
 ⑥ 检查并修正 `mcp_server_config.json` →
-⑦ 测试全绿后通过 `Request(request_type="mcp_merge")` 申请合并。
+⑦ 测试全绿后通过 `KernelUpgrade(action="merge", type="mcp", target="工作区uuid/{mcp_name}")` 申请合并。
 """

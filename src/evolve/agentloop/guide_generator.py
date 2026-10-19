@@ -232,7 +232,7 @@ uv run evals/validate.py
 
 ## 6. 提交合并
 
-校验全绿后调用 `Request(request_type="agentloop_merge", target="{name}")`，
+校验全绿后调用 `KernelUpgrade(action="merge", type="agentloop", target="{name}")`，
 并在 reason 中简述范式功能点供用户 Code Review。批准后系统会：
 1. 把 `{name}.yaml` 拷贝到正式目录 `~/.purrcat/paradigms/`；
 2. Git 提交版本记录。

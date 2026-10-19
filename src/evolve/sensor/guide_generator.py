@@ -195,7 +195,7 @@ echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"session
 
 ## 7. 验收标准（协议体检）
 
-提交 `Request(request_type="sensor_test", target="<uuid>/{sensor_name}")` 后，宿主会**亲自扮演网关**
+提交 `KernelUpgrade(action="test", type="sensor", target="<uuid>/{sensor_name}")` 后，宿主会**亲自扮演网关**
 实跑你的 sensor（L0 静态契约 + L1 协议夹具）。全绿即可放心合并——体检**不再硬性拦截**，
 未通过只会让合并结果带上一条提醒。判据：
 
@@ -216,7 +216,7 @@ echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"session
 
 ## 8. 提交合并
 
-建议体检通过后再调用 `Request(request_type="sensor_merge", target="{sensor_name}")`，
+建议体检通过后再调用 `KernelUpgrade(action="merge", type="sensor", target="{sensor_name}")`，
 并在 reason 中简述功能点供用户 Code Review。批准后系统会：
 
 1. 拷贝 `{sensor_name}.py` 至正式目录并写入 activate_sensor.json（enabled=true）
@@ -228,5 +228,5 @@ echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"session
 只能引导用户补齐并重跑流程。
 
 ⚠️ 合并前系统会核对最近一次协议体检结论，但**仅作提醒、不再阻止合并**：
-报告缺失、仍有硬伤或晚于最后一次代码改动时，合并结果里会提示你重跑 `sensor_test`。
+报告缺失、仍有硬伤或晚于最后一次代码改动时，合并结果里会提示你重跑 `KernelUpgrade(action="test", type="sensor", ...)`。
 """

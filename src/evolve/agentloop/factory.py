@@ -110,7 +110,7 @@ def agentloop_factory_init(
         f"💡 系统已在沙盒根目录生成官方说明文档 GUIDE.md（含阶段/动作词汇表），动手前请先通读！\n"
         f"🧪 自测脚本：`evals/validate.py`，在沙盒根目录执行 `uv run evals/validate.py` 即可完成"
         f"格式 / 功能 / 关键词汇三重校验（结论写入 evals/outputs/validation.json）。\n"
-        f'🔀 校验全绿后，用 Request(request_type="agentloop_merge", target="{base}") 申请合并。'
+        f'🔀 校验全绿后，用 KernelUpgrade(action="merge", type="agentloop", target="{base}") 申请合并。'
     ), short_uuid
 
 

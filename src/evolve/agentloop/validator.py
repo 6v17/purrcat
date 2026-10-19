@@ -396,7 +396,7 @@ def main():
         pass
 
     print(
-        "\n提示：修正 ✗ 项后重跑本脚本；全绿后再用 Request(agentloop_merge) 申请合并。"
+        "\n提示：修正 ✗ 项后重跑本脚本；全绿后再用 KernelUpgrade(action='merge', type='agentloop') 申请合并。"
     )
     return 0 if ok else 1
 

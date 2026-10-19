@@ -239,7 +239,7 @@ def _gateway_probe() -> str:
     uv run evals/gateway_probe.py
 
 它扮演网关拉起同级目录里的 sensor，验证：握手顺序 / 缺凭证失败上报 / sessionId 回填 /
-stdout 纯净 / 空转存活。宿主侧的正式体检（含 L0 静态契约）由 Request(sensor_test) 触发。
+stdout 纯净 / 空转存活。宿主侧的正式体检（含 L0 静态契约）由 KernelUpgrade(action="test", type="sensor") 触发。
 """
 
 import json
@@ -428,7 +428,7 @@ def main():
         % ("\\u2705 自测通过" if failed == 0 else "\\u274c %d 项未通过" % failed,
            time.time() - started)
     )
-    print("提示：宿主正式体验证请用 Request(sensor_test)，它还会跑 L0 静态契约。")
+    print("提示：宿主正式体验证请用 KernelUpgrade(action='test', type='sensor')，它还会跑 L0 静态契约。")
     return 0 if failed == 0 else 1
 
 
@@ -489,7 +489,7 @@ def sensor_factory_init(
         ):
             return (
                 f"❌ 已存在同名sensor：{sensor_name}，"
-                f"如果是同一功能请直接在其基础上改进（改用 KernelUpgrade(action='upgrade_sensor')），"
+                f"如果是同一功能请直接在其基础上改进（改用 KernelUpgrade(action='upgrade', type='sensor')），"
                 f"若是新sensor请重新命名防止冲突。",
                 "",
             )
@@ -611,7 +611,7 @@ def _latest_protocol_verdict(workplace_root: str) -> tuple[bool, str]:
         if newer:
             return (
                 False,
-                f"体检后又改动过 {', '.join(newer)}，证据已过期，需重跑 sensor_test",
+                f"体检后又改动过 {', '.join(newer)}，证据已过期，需重跑 KernelUpgrade(action='test', type='sensor')",
             )
 
     return (
@@ -718,7 +718,7 @@ def sensor_request_handle(
     verdict_note = (
         f"🔬 协议体检: {verdict_text}"
         if verdict_ok
-        else f"⚠️ 协议体检提醒（不阻止合并）: {verdict_text}；建议重跑 sensor_test 后再发布"
+        else f"⚠️ 协议体检提醒（不阻止合并）: {verdict_text}；建议重跑 KernelUpgrade(action='test', type='sensor') 后再发布"
     )
 
     return (
