@@ -72,23 +72,30 @@ class Node(AgentNode):
         self.log(context, "SYSTEM", f"🗂️ [TASKSPACE] 专属工作目录: {sandbox_dir}")
 
         # 3) 记忆 + 上游 messages + force_push
+        #    （只组装、不落盘；统一到第 5 步后按「最终顺序」一次性写入，见文末注释）
         messages = self.load_memory_from_file(context)
         newly_user = []
+
+        # 注入触发的「续跑」：记忆里已经吸收了上游上下文，不能再吸收一次
+        # （否则上游整段重复入记忆，前端会看到同一条 user 消息出现两遍）
+        skip_upstream = context.node_memory.setdefault(self.node_id, {}).pop(
+            "skip_upstream", False
+        )
+
         upstream = self.unpack(inputs, "messages") or []
+        if skip_upstream:
+            upstream = []
         if upstream:
-            messages.extend(upstream)
             newly_user += [m for m in upstream if m.get("role") == "user"]
-            await asyncio.to_thread(self.append_memory_to_file, context, upstream)
 
         pending = context.node_memory.setdefault(self.node_id, {}).pop("force_push", [])
+        fps = []
         if pending:
             self.log(context, "SYSTEM", f"🔔 [人工指令] 收到 {len(pending)} 条人工指令")
             fps = [{"role": "user", "content": f"[人工指令] {m}"} for m in pending]
-            messages.extend(fps)
             newly_user += fps
-            await asyncio.to_thread(self.append_memory_to_file, context, fps)
 
-        messages = self._sanitize_messages(messages)
+        messages = self._sanitize_messages(messages + upstream + fps)
 
         # 4) on_input_received：对本批新增 user 消息触发
         if newly_user:
@@ -106,13 +113,21 @@ class Node(AgentNode):
             )
 
         # 5) 系统提示：仅当 messages 无 system 角色时构建
+        sys_msgs = []
         if not any(m.get("role") == "system" for m in messages):
             results = handler.execute("on_build_system_prompt", epoch=0)
             parts = [r["inject_prompt"] for r in results if r.get("inject_prompt")]
             if parts:
                 sys_msg = {"role": "system", "content": "\n\n---\n\n".join(parts)}
                 messages.insert(0, sys_msg)
-                await asyncio.to_thread(self.append_memory_to_file, context, [sys_msg])
+                sys_msgs = [sys_msg]
+
+        # 🌟 本批新增内容按「最终顺序」一次性落盘：system 必须排在 0 号位。
+        # 若各写各的 append，system 会被写到文件尾部（insert(0) 只作用于内存），
+        # 重读时 system 不在 0 号位 → 前缀整体位移 → KV Cache 失效。
+        fresh = sys_msgs + upstream + fps
+        if fresh:
+            await asyncio.to_thread(self.append_memory_to_file, context, fresh)
 
         # 6) on_loop_start
         await self._fire_hooks(handler, "on_loop_start", messages, context, epoch=0)
