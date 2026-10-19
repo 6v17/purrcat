@@ -140,9 +140,52 @@ Graph（任务图 / 工作流）是「任务编排中枢」：用**节点（Node
 * **不通用就别单独建 AgentLoop**：若这段 Agent 逻辑只是本图专用、没有复用价值，就不必单独做一个 `agentloop` 范式，直接把提示词写在 `string`（自定义输入）节点里，接到 `agent_loop` 的 `messages` 输入即可；只有通用、可被多处复用的逻辑才值得沉淀成独立范式。
 * **复杂任务拆多个 Agent**：一个 `agent_loop` 只承担单一职责，复杂任务应拆成多个 `agent_loop` 节点，让每个节点的提示词保持聚焦、不臃肿。
 * **独立子任务并行**：彼此独立的子任务拆成并行分支，让多个 `agent_loop` 同时推进，提高整体效率。
-* **上下文交接分两种**：前后环节相关性高的，把上游 `messages` 接到下游 `messages`，用**共享上下文**无缝交接；相关性不高的，只接上游 `summary` 传递摘要即可，避免把无关历史灌给下游。
+* **上下文交接分两种**：前后环节相关性高的，把上游 `messages` 接到下游 `messages`，用**共享上下文**无缝交接；相关性不高的，只接上游 `summary` 传递摘要即可，避免把无关历史灌给下游。**判据、接线与 KV Cache 注意事项见第 7 节。**
 
-## 7. 校验脚本（格式 / 功能 / 关键词汇）
+## 7. agent_loop 上下文交接：什么时候直连 `messages`，什么时候用 `summary`
+
+**唯一判据是前后环节的关联强度**：前后信息关联度大 → 直连 `messages`；关联度小 → 只传 `summary`。
+
+### 7.1 强关联阶段：直连 `messages`（信息丢失率最小，首选）
+
+上游 `agent_loop` 的 `messages` 是它**完整的思考轨迹**（含每一步工具调用、工具原始返回、试错过程）。
+把新阶段指令**直接拼接**到这条历史尾部再交给下一个 `agent_loop`，等于让下游 Agent 读到全部一手证据，
+**信息丢失率最小**；而 `summary` 是上游自己写的压缩总结，字段、数值、失败经验在压缩传递过程中天然会损耗，
+下游拿到的只是一个"转述版"——**所以只要前后阶段需要共享过程细节，就应该直连 `messages`，不要图省事用 `summary`。**
+
+标准接线（三节点组合，`appender` 负责拼接）：
+
+```json
+[
+  {{ "source": "loop_a", "target": "merge_ab", "sourceHandle": "messages", "targetHandle": "base_list" }},
+  {{ "source": "card_b", "target": "merge_ab", "sourceHandle": "message_list", "targetHandle": "append_list" }},
+  {{ "source": "merge_ab", "target": "loop_b", "sourceHandle": "merged_list", "targetHandle": "messages" }}
+]
+```
+
+* `loop_a` 是上游 `agent_loop`，`loop_b` 是下一个 `agent_loop`，`merge_ab` 是 `appender`，
+  `card_b` 是 `message_card_builder`（内容来自 `string` 或 `template_renderer`），承载"进入下一阶段"的指令。
+* 新阶段指令**必须用 `role=user`**，不要拿它当 `system` 覆盖：历史里出现第二个 system 会语义冲突，且破坏前缀缓存（见 7.3）。
+* 直连要"只加不改"：**不要**用 `template_renderer` 把整段历史拼成一段新文本重排后再传——那会把结构化历史压成一段散文，
+  既丢结构，也让缓存前缀失效。
+
+### 7.2 弱关联阶段：传 `summary`
+
+仅当上游的过程细节对下游决策确实无用、且上下文预算紧张时，才用上游 `summary`（可直接接下游 `messages`，或经 `template_renderer` 织入）。
+它省 token，但**有损**；两个阶段越接近"各干各的"，越适合用 summary。
+
+### 7.3 直连时必须保护 KV Cache
+
+直连的优势一半来自信息完整，另一半来自**前缀缓存复用**：下游收到的消息是「上游历史 + 尾部追加一条 user 指令」，
+前缀与上游逐字一致，云侧可直接命中 KV Cache，长图里时延与成本都明显更低。因此：
+
+* ✅ **只在尾部追加**（`appender` 天然满足）。
+* ❌ **不要改写 / 删除 / 前插已有消息**：把新指令插到历史前面、重排历史、或另起一条 system 插到头部
+  （下游发现 `messages` 里没有 system 时会新构建一条 system 并插到 index 0）都会改变前缀，整段缓存作废。
+* ✅ 同一张图尽量保持同一个 `core` 模型与同一把密钥；模型 / 密钥跳变会让已缓存的前缀失效。
+* ✅ `agentloop` 的 hook 注入（`on_loop_start` 等）本身就是尾部追加的 `user` 消息，保持这种"只追加"的写法，不要在 hook 里改动历史。
+
+## 8. 校验脚本（格式 / 功能 / 关键词汇）
 
 沙盒内置自测脚本 `evals/validate.py`，做三重校验：
 
@@ -158,7 +201,7 @@ uv run evals/validate.py
 
 结论写入 `evals/outputs/validation.json`。**有 ❌（error）项一律不许提交合并**，⚠️（warn）项按需处理。
 
-## 8. 提交合并
+## 9. 提交合并
 
 校验全绿后调用 `Request(request_type="graph_merge", target="{name}")`，
 并在 reason 中简述图的功能点供用户 Code Review。批准后系统会：
