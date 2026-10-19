@@ -71,8 +71,8 @@
     keyword_check: [
       { key: 'keyword', label: '关键词', kind: 'text', ph: '要检查的关键词' },
       { key: 'type', label: '消息类型 type', kind: 'text', ph: '只检查该类型，如 user / system / workflow_hint；留空不限' },
-      { key: 'successed_prompt', label: '成功提示 successed_prompt', kind: 'text', ph: '命中时注入，可为空' },
-      { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text', ph: '未命中时注入，可为空' }
+      { key: 'successed_prompt', label: '成功提示 successed_prompt', kind: 'text', ph: '命中时注入（可有可无，但建议写清该怎么做）' },
+      { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text', ph: '未命中时注入；本 Hook 上的检查不拦不挡，提示词就是它唯一的产出，不写等于白写' }
     ]
   };
   FIELD_SCHEMA.command_on = FIELD_SCHEMA.command_run;
@@ -965,7 +965,8 @@
 
     if (!loose && meta.key === 'on_input_received') {
       card.appendChild(EV.el('div', 'hint',
-        '本 Hook 在每次以 role=user 注入历史时触发；用 @USERQUERY 引用本次收到的那批 type=user 输入（多条按换行拼接）。'));
+        '本 Hook 在每次以 role=user 注入历史时触发；用 @USERQUERY 引用本次收到的那批 type=user 输入（多条按换行拼接）。'
+        + '注意：本 Hook 上的检查不拦不挡、不影响循环能否结束，只把提示词注入给模型——两个提示词都留空就等于什么都没做。'));
     }
 
     if (hooks.length === 0) {
