@@ -466,6 +466,7 @@ body.settings-open [data-layer="settings"] { display: flex; }
 .cfg-edit { color: var(--wm-ink); }
 .cfg-del { color: #d0453b; border-color: rgba(208, 69, 59, 0.4); }
 .cfg-stop { color: #b0433b; border-color: rgba(208, 69, 59, 0.4); }
+.cfg-caret { padding: 4px 6px; font-size: 10px; line-height: 1.2; color: var(--wm-label-dim); }
 .cfg-save { background: var(--wm-bg-active); font-weight: 600; }
 
 .cfg-add-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

@@ -1521,6 +1521,41 @@
           putCfg(key, obj).then(function () { rerenderConfig(main, key); }).catch(function (e) { HOST.alert('删除失败：' + (e && e.message || '')); });
         });
         h.right.appendChild(del);
+        // sensor：删除键旁再挂一个箭头，展开下拉提供「彻底删除」（连正式文件一起删）
+        if (isSensor) {
+          const more = HOST.document.createElement('button');
+          more.className = 'btn cfg-caret';
+          more.textContent = '▾';
+          more.title = '更多删除选项';
+          more.addEventListener('click', function (ev) {
+            ev.stopPropagation();   // 别让全局 click 把刚弹出的菜单立刻收掉
+            const owner = 'cfg-' + k;
+            const wasOpen = !!HOST.document.querySelector('.settings-card-menu[data-owner="' + owner + '"]');
+            closeSettingsMenus();
+            if (wasOpen) return;   // 再点一次同一个箭头 = 收起
+            const menu = HOST.document.createElement('div');
+            menu.className = 'settings-card-menu';
+            menu.setAttribute('data-owner', owner);
+            const purge = HOST.document.createElement('button');
+            purge.className = 'settings-menu-btn danger';
+            purge.textContent = '彻底删除（连文件）';
+            purge.addEventListener('click', function () {
+              closeSettingsMenus();
+              if (!HOST.confirm('彻底删除 Sensor "' + k + '"？将杀死其进程、删除正式文件 ' + k + '.py 并从配置移除，不可恢复。')) return;
+              fetch('/api/config/sensor/' + encodeURIComponent(k) + '/purge', { method: 'POST' })
+                .then(function (r) { return r.json().then(function (b) { if (!r.ok) throw new Error((b && b.detail) || ('HTTP ' + r.status)); return b; }); })
+                .then(function () { delete cfgState.data[key]; delete cfgState.openKey[key]; rerenderConfig(main, key); })
+                .catch(function (e) { HOST.alert('彻底删除失败：' + (e && e.message || '')); });
+            });
+            menu.appendChild(purge);
+            HOST.document.body.appendChild(menu);
+            const b = more.getBoundingClientRect();
+            menu.style.right = (HOST.innerWidth - b.right) + 'px';
+            menu.style.top = (b.bottom + 4) + 'px';
+            syncNativeCover();
+          });
+          h.right.appendChild(more);
+        }
         if (!isOpen) return;
         const body = HOST.document.createElement('div');
         body.className = 'cfg-card-body';
