@@ -71,9 +71,9 @@ class Node(AgentNode):
         handler.add_alias("@TASKSPACE", host_path=taskspace_host, content=sandbox_dir)
         self.log(context, "SYSTEM", f"🗂️ [TASKSPACE] 专属工作目录: {sandbox_dir}")
 
-        # 3) 记忆 + 上游 messages + force_push
-        #    （只组装、不落盘；统一到第 5 步后按「最终顺序」一次性写入，见文末注释）
-        messages = self.load_memory_from_file(context)
+        # 3) 记忆 + 上游 messages + 系统提示 + force_push
+        #    （只组装、不落盘；统一到本步末尾按「最终顺序」一次性写入）
+        memory = self.load_memory_from_file(context)
         newly_user = []
 
         # 注入触发的「续跑」：记忆里已经吸收了上游上下文，不能再吸收一次
@@ -85,6 +85,18 @@ class Node(AgentNode):
         upstream = self.unpack(inputs, "messages") or []
         if skip_upstream:
             upstream = []
+
+        # graph 专属：范式「构建系统提示」的输出不再作为 system 角色插到 0 号位，
+        # 而是转成一条 user 消息、默认追加到「上游输入」的末尾——只追加、不动前缀，
+        # KV Cache 天然安全（主 Agent 仍是 system 头部，见 src/agent/agent.py）。
+        # 只在「从零开始的会话」（本节点记忆尚为空）注入一次，重跑 / 续跑不重复追加。
+        sys_msgs = []
+        if not memory:
+            results = handler.execute("on_build_system_prompt", epoch=0)
+            parts = [r["inject_prompt"] for r in results if r.get("inject_prompt")]
+            if parts:
+                sys_msgs = [{"role": "user", "content": "\n\n---\n\n".join(parts)}]
+
         if upstream:
             newly_user += [m for m in upstream if m.get("role") == "user"]
 
@@ -95,9 +107,10 @@ class Node(AgentNode):
             fps = [{"role": "user", "content": f"[人工指令] {m}"} for m in pending]
             newly_user += fps
 
-        messages = self._sanitize_messages(messages + upstream + fps)
+        # 最终顺序：记忆 → 上游输入 → 系统提示(user) → 人工指令
+        messages = self._sanitize_messages(memory + upstream + sys_msgs + fps)
 
-        # 4) on_input_received：对本批新增 user 消息触发
+        # 4) on_input_received：对本批新增 user 消息触发（系统提示不计入本批输入）
         if newly_user:
             await self._fire_hooks(
                 handler,
@@ -112,27 +125,16 @@ class Node(AgentNode):
                 fire_input=False,
             )
 
-        # 5) 系统提示：仅当 messages 无 system 角色时构建
-        sys_msgs = []
-        if not any(m.get("role") == "system" for m in messages):
-            results = handler.execute("on_build_system_prompt", epoch=0)
-            parts = [r["inject_prompt"] for r in results if r.get("inject_prompt")]
-            if parts:
-                sys_msg = {"role": "system", "content": "\n\n---\n\n".join(parts)}
-                messages.insert(0, sys_msg)
-                sys_msgs = [sys_msg]
-
-        # 🌟 本批新增内容按「最终顺序」一次性落盘：system 必须排在 0 号位。
-        # 若各写各的 append，system 会被写到文件尾部（insert(0) 只作用于内存），
-        # 重读时 system 不在 0 号位 → 前缀整体位移 → KV Cache 失效。
-        fresh = sys_msgs + upstream + fps
+        # 🌟 本批新增内容按内存里的「最终顺序」一次性落盘：
+        # 各写各的 append 会让文件顺序与喂给模型的顺序错位（前缀对不上 → KV Cache 失效）。
+        fresh = upstream + sys_msgs + fps
         if fresh:
             await asyncio.to_thread(self.append_memory_to_file, context, fresh)
 
-        # 6) on_loop_start
+        # 5) on_loop_start
         await self._fire_hooks(handler, "on_loop_start", messages, context, epoch=0)
 
-        # 7) 主循环
+        # 6) 主循环
         tools = get_system_schema()
         used_tools: Dict[str, list] = {}
         loop_epoch = 0
@@ -242,7 +244,7 @@ class Node(AgentNode):
                 fire_input=False,
             )
 
-        # 8) summary：优先 @TASKSPACE/<summary_file>，回退最后 assistant 文本
+        # 7) summary：优先 @TASKSPACE/<summary_file>，回退最后 assistant 文本
         summary = self._read_summary(context, taskspace_host)
         if not summary:
             summary = last_assistant_text or "任务完成"
