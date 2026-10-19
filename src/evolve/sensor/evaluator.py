@@ -4,7 +4,7 @@ Sensor 协议体检执行器 (evolve/sensor/evaluator.py)
 宿主扮演网关（真网关夹具）拉起沙盒 sensor 子进程，把"宿主机真的能看见"的部分全部测掉：
 
   L0 静态契约：PEP 723 / stdout 重定向 / 无强制退出 / 无硬编码密钥 / env 声明交叉校验
-  L1 协议夹具：握手时序 / stdout 纯净 / 空凭证逼出鉴权求助 + sessionId 回填 / 抗污染 /
+  L1 协议夹具：握手时序 / stdout 纯净 / 缺凭证逼出失败上报 + sessionId 回填 / 抗污染 /
               错误响应 / 下发不崩 / 永不退出 / 杀后重启可拉起
 
 外部渠道不 mock，故出向投递内容、幂等去重、游标续传属真实链路（合并阶段人审），
@@ -98,7 +98,7 @@ def _get_next_iteration_dir(workplace_root: str) -> tuple[str, int]:
 
 
 def _child_env(declared_keys: list) -> dict:
-    """构造 sensor 子进程环境：剥离 venv 痕迹 + 清空声明的凭证以逼出鉴权路径"""
+    """构造 sensor 子进程环境：剥离 venv 痕迹 + 清空声明的凭证以逼出缺凭证的失败上报路径"""
     env = dict(get_enriched_env())
     for key in _VENV_KEYS:
         env.pop(key, None)
@@ -526,18 +526,18 @@ def _runtime_checks(
             else "握手缺失或顺序错乱（必须先是 initialize，再是 session/new）",
         )
 
-        # 2. 空凭证逼出鉴权求助
+        # 2. 空凭证逼出失败上报
         got_prompt = fixture.wait_for(
             lambda: bool(fixture.prompts), _AUTH_PROMPT_TIMEOUT
         )
         add(
-            "auth_prompt",
-            "空凭证冷启动发出鉴权求助",
+            "failure_report",
+            "缺凭证冷启动上报失败详情",
             got_prompt,
             f"已捕获 session/prompt（t={fixture.auth_prompt_at and round(fixture.auth_prompt_at - fixture.started_at, 2)}s）"
             if got_prompt
             else f"超时 {_AUTH_PROMPT_TIMEOUT:.0f}s 未发出任何 session/prompt；"
-            "缺凭证时必须主动求助而不是静默哑掉",
+            "缺凭证时必须上报失败详情，不能静默哑掉",
         )
 
         prompt_text = ""
@@ -564,20 +564,16 @@ def _runtime_checks(
             f"应为网关回填的 {FIXTURE_SESSION_ID!r}（回填错了会导致注入静默失效）",
         )
 
-        # 4. 求助内容质量
+        # 4. 失败详情质量：必须点名缺失的凭证
         if got_prompt:
             hit_keys = [k for k in declared if k in prompt_text]
-            hint_ok = any(
-                word in prompt_text
-                for word in ("http", "配置", "获取", "控制台", "官网")
-            )
             add(
-                "auth_hint",
-                "求助文本含凭证名与获取入口",
-                bool(hit_keys) and hint_ok,
-                f"命中凭证名 {hit_keys}，{'含' if hint_ok else '未见'}获取入口提示"
+                "failure_detail",
+                "失败详情含缺失凭证名",
+                bool(hit_keys),
+                f"命中凭证名 {hit_keys}"
                 if hit_keys
-                else "求助文本里没有出现已声明的凭证名，用户不知道要填什么",
+                else "上报文本里没有出现已声明的凭证名，Agent 无从判断缺什么",
             )
 
         # 5. 抗污染：塞垃圾行

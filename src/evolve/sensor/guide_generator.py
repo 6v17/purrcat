@@ -1,6 +1,6 @@
 """
 Sensor 指南生成器模块 (evolve/sensor/guide_generator.py)
-单文件指南：覆盖 ACP 协议规范、鉴权求助、文件收发与提交全流程。
+单文件指南：覆盖 ACP 协议规范、凭证与配置、文件收发与提交全流程。
 """
 
 
@@ -8,7 +8,7 @@ def generate_sensor_guide(sensor_name: str, goal: str = "") -> str:
     goal_section = f"\n> 🎯 **本次构建目标**：{goal}\n" if goal else ""
     return f"""# {sensor_name} 传感器工厂指南 (GUIDE)
 
-本指南覆盖 ACP 协议规范、鉴权规范、文件收发与提交全流程，动手前请先通读。
+本指南覆盖 ACP 协议规范、凭证与配置、失败上报、文件收发与提交全流程，动手前请先通读。
 {goal_section}
 ## 1. Sensor 是什么
 
@@ -29,7 +29,10 @@ Sensor 是一个**独立的常驻子进程**，由宿主机 SensorManager 用 `u
 * 有游标/会话状态的（长轮询 cursor、扫码换的 token 等），持久化到脚本同目录的
   state 文件并随更新落盘——sensor 会被热重启，不落盘就丢消息或丢登录态
 * 一切外部网络调用放后台线程，主线程只跑 stdin 读取循环
-* 鉴权求助必须**同时**写清凭证名与"去哪获取"（控制台网址 + 步骤），协议体检会校验这两项
+* 连接成功**保持静默**：只有失败（缺凭证、连不上、异常）才用 session/prompt 上报失败详情，
+  详情里带上缺失/出错的凭证名；严禁每次连上成功后都推一条"连接成功"之类的调试信息
+* 凭证由 Agent 引导用户获取后直接填在沙盒 `sensor_config.json` 的 `env` 里（见第 3 节），
+  sensor 只需从环境变量读取，不必在会话里解释怎么申请
 * 合并前必须通过协议体检（见第 7 节），体检报告会被宿主复跑核对，无法用自述蒙混
 
 ## 2. 协议规范（JSON-RPC 2.0 over stdio）
@@ -111,27 +114,32 @@ Agent 发的文件（Agent 消息里含本地文件链接时网关自动追加�
 | `_purrcat/file` | 网关 → sensor（通知） | Agent 消息提及本地文件时网关自动追加（base64，解码后自行发送到外部渠道） |
 | `_purrcat/turn_end` | 网关 → sensor（通知） | 轮次终结标记（params 带 stopReason）；不消费则忽略 |
 
-## 3. 首次启动鉴权规范 ⭐（最重要）
+## 3. 凭证与配置 ⭐（最重要）
 
-Sensor 首次启动往往需要凭证（App Secret、API Token 等）。**严禁缺凭证时静默退出或空转**，必须：
+凭证在开发阶段一次性配置好：
 
-1. 启动时检测凭证是否为空；
-2. 为空则立即用 **session/prompt 发送文字消息向 Agent 求助**，说清四件事：缺哪些凭证、
-   **去哪获取**（外部平台控制台的网址与完整步骤，用户不看文档也能照做）、
-   去哪配置（前端配置中心 → Sensor 设置 → 填写 env 后启用）、凭证到位后自己会做什么；
-3. Agent 会转告用户并协助完成配置（配置保存后系统会热重启 sensor，届时读到新 env 自动恢复）；
-4. 主进程保持存活待命，不要退出。
+1. Agent 先引导用户到外部平台获取所需凭证（App Secret、API Token 等）；
+2. 拿到凭证后，由 Agent（或用户）**直接在沙盒的 `sensor_config.json` 里把 `env` 填成真实值**；
+3. 合并时系统会把沙盒里的 `env` 原样写进正式注册配置（`activate_sensor.json`）并注入环境变量——
+   **用户无需再去配置中心重填**。若某个键在沙盒里留空，合并会保留正式配置里已有的旧值，
+   不会把用户之前填好的凭证清空。
+
+因此 sensor 代码本身只需：
+
+* 从环境变量读取凭证（禁止硬编码密钥）；
+* 缺凭证或连接失败时用 session/prompt **上报失败详情**（含缺失/出错的凭证名），并保持进程存活待命；
+* 连上成功、事件处理成功时**保持静默**，不要推送任何成功调试信息。
 
 ## 4. 单文件骨架
 
 依赖用 PEP 723 内联声明（uv 会自动建环境）。沙盒初始化时已生成可运行的
-ACP 骨架（initialize → session/new → prompt 求助 → update 消费循环），
+ACP 骨架（initialize → session/new → 凭证校验 → update 消费循环），
 按 TODO 注释替换真实外部服务逻辑即可。
 
 ## 5. 测试方法
 
-沙盒根目录已内置**真网关夹具**，它会扮演网关拉起你的 sensor（凭证留空，逼出鉴权路径），
-自动核对握手顺序、求助发出、sessionId 回填、stdout 纯净、空转存活：
+沙盒根目录已内置**真网关夹具**，它会扮演网关拉起你的 sensor（凭证留空，逼出失败上报路径），
+自动核对握手顺序、失败上报、sessionId 回填、stdout 纯净、空转存活：
 
 ```bash
 cd /agent_vm/sensor_workplace/<uuid>
@@ -154,14 +162,16 @@ echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"session
 {{
   "name": "{sensor_name}",
   "env": {{ "MY_TOKEN": "" }},
+  "icon": "",
   "tool_detail": false,
   "source": "remote"
 }}
 ```
 
-* `env`：声明全部所需凭证（留空字符串占位，用户配置后注入）。
-  代码里 `os.environ.get("X")` 读到的每个键都**必须**在此声明——协议体检会做双向交叉校验，
-  漏声明会导致合并后用户无从配置
+* `env`：声明全部所需凭证。**开发阶段由 Agent 引导用户获取后在此填真实值**，合并即完成配置；
+  留空的键会保留正式配置里的旧值（不会清空用户已填的凭证）。代码里 `os.environ.get("X")`
+  读到的每个键都**必须**在此声明——协议体检会做双向交叉校验，漏声明会导致合并后用户无从配置
+* `icon`：配置页卡片头像的图标链接（可留空；留空或加载失败都会回退默认图标）
 * `tool_detail`：true 时 Agent 的工具调用细节（工具名/结果片段）也会推送到本 sensor；false（默认）时只推送回复正文
 * `source`：`"remote"`（默认，外部源在远程平台）或 `"local"`（外部源是可本地构造的文件/本地服务）。
   标 `local` 的 sensor 有机会把"外部事件 → 注入会话"这一段也纳入自动化闭环
@@ -178,7 +188,7 @@ echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"session
 | 3 | 契约自述 | sensor_config.json 合法，代码读的 env 键全部已声明 |
 | 4 | 依赖可装 | `uv run` 能建成环境并完成握手（PEP 723 有效） |
 | 5 | 握手时序 | 先 `initialize`(id=1) 再 `session/new`(id=2) |
-| 6 | 鉴权自服务 | 空凭证时主动求助，文本含凭证名与获取入口 |
+| 6 | 失败上报 | 缺凭证/连接失败时上报失败详情（含凭证名）；连接成功时静默，不发成功调试信息 |
 | 7 | sessionId 回填 | 用 session/new 响应回传的 sessionId 发所有 prompt（回填错会让注入静默失效） |
 | 8 | 故障可见 | 异常不崩溃，关键路径日志可读 |
 
@@ -193,7 +203,8 @@ echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"session
 
 1. 拷贝 `{sensor_name}.py` 至正式目录并写入 activate_sensor.json（enabled=true）
 2. Git 提交版本记录
-3. 热重启 Sensor 线程池——**若凭证未填，你会立刻收到该 sensor 的鉴权求助消息**，请转告用户协助配置。
+3. 热重启 Sensor 线程池——沙盒 `env` 里填好的凭证会**直接生效**（留空的键保留正式配置里的旧值），
+   用户无需在配置中心重填；若确有留空凭证，该 sensor 会主动上报失败详情，请引导用户补齐。
 
 ⚠️ 合并前系统会复核最近一次协议体检结论，且要求报告**晚于**最后一次代码改动：
 改完代码务必重跑 `sensor_test`，拿着过期报告申请合并会被直接拒绝。
