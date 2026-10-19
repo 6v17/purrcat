@@ -901,6 +901,10 @@
       var role = m.role || 'assistant';
       if (role === 'user') {
         h += '<div class="mrow end"><div class="msg user md">' + mdToHtml(m.content || '') + '</div></div>';
+      } else if (role === 'system') {
+        h += '<div class="mrow"><div style="width:100%;max-width:96%">'
+          + '<details class="fold" style="margin-top:0"><summary>系统提示 · System</summary>'
+          + '<div class="fb">' + esc(m.content || '') + '</div></details></div></div>';
       } else if (role === 'tool') {
         h += '<div class="mrow"><div class="msg" style="max-width:96%">'
           + '<details class="fold"><summary>工具结果 · ' + esc(m.name || 'Output') + '</summary>'
