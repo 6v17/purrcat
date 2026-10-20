@@ -72,8 +72,8 @@
 
 核心自我进化工具，统一入口 `action × type × target`，用于在隔离沙盒中研发 Skill / MCP / Sensor / Graph / AgentLoop / UI 插件。
 - `action`：`create`（搭全新骨架）/ `upgrade`（把正式区已有对象搬进沙盒）/ `install`（从官方市场或 URL 装到正式区）/ `merge`（代发合并审批）/ `test`（代发架构级测试）
-- `target`：一般为名字；仅 `install` 时可为 URL / 配置串；`test` 的 skill/sensor/mcp 填沙盒前缀 `uuid/名字`
-- **边界**：MCP 升级仅支持源码落在受管 mcps 目录者（外部下载型会报错）；`test` 仅 skill/sensor/mcp 有架构级测试，graph/agentloop/ui-plugin 需你自行在沙盒跑自测脚本
+- `target`：一般为名字；仅 `install` 时可为 URL / 配置串；`test` 时填沙盒前缀 `uuid/名字`
+- **边界**：MCP 升级仅支持源码落在受管 mcps 目录者（外部下载型会报错）；`test` 除 ui-plugin 外均有架构级测试（均免审，唯 skill 盲测需用户批准）
 - 沙盒内流程图以各工厂 GUIDE.md 为准。
 
 ### 一些提示

@@ -1,7 +1,11 @@
-"""KernelUpgrade(action='test')：代发架构级测试
+"""KernelUpgrade(action='test')：代发/直跑架构级测试
 
-只有架构必须安排的测试才在此代发（skill/sensor 走审批队列，mcp 直接后台评测）；
-graph / agentloop / ui-plugin 无架构级测试，需 Agent 自行在沙盒跑自测脚本。
+全部免审（除 skill 盲测需用户批准外）：
+- skill：代发 skill_test（Trigger 免审 + 盲测审批）
+- sensor：代发 sensor_test（宿主扮网关体检）
+- mcp：直接后台并发评测（需先产出 schema_dump.json）
+- agentloop / graph：宿主侧直跑静态三重校验（与合并网关同一套权威校验）
+- ui-plugin：无架构级测试，需 Agent 沙盒自测
 """
 
 import os
@@ -20,13 +24,10 @@ def test_module(t: str, target: str, reason: str) -> dict:
         return _test_sensor(target, reason)
     if t == "mcp":
         return _test_mcp(target)
-    if t in ("graph", "agentloop"):
-        return error_response(
-            f"❌ 架构未为 {t} 安排测试：请自行在沙盒内运行自测脚本完成格式/功能/关键词汇三重校验"
-            f"（agentloop 为 `uv run evals/validate.py`，graph 为 `uv run <图名>/evals/validate.py`），"
-            "全绿后调用 KernelUpgrade(action='merge', ...) 申请合并。",
-            "❌ 无架构级测试",
-        )
+    if t == "agentloop":
+        return _test_agentloop(target)
+    if t == "graph":
+        return _test_graph(target)
     return error_response(
         "❌ UI 插件无架构级测试：请在沙盒中自测（刷新页面验证交互），确认无误后告知用户。",
         "❌ 无架构级测试",
@@ -157,3 +158,84 @@ def _stale_schema_warning(schema_path: str) -> str:
             "`python scripts/evaluation.py` 刷新快照后再测；若改动无关描述，可忽略本提醒。"
         )
     return ""
+
+
+# ==========================================
+# agentloop / graph：宿主侧静态校验（免审，与合并网关同一套权威校验）
+# ==========================================
+def _split_workplace(target: str) -> tuple[str, str] | None:
+    parts = target.split("/")
+    if len(parts) != 2 or not all(parts):
+        return None
+    return parts[0], parts[1]
+
+
+def _test_agentloop(target: str) -> dict:
+    pair = _split_workplace(target)
+    if not pair:
+        return error_response(
+            f"执行失败：target 应为 'uuid/范式名'。当前输入为: '{target}'",
+            "❌ 路径格式错误",
+        )
+    workplace_id, name = pair
+
+    from src.evolve.agentloop.validator import validate_agentloop_file
+
+    yaml_path = os.path.join(
+        AGENT_VM_DIR, "agentloop_workplace", workplace_id, f"{name}.yaml"
+    )
+    if not os.path.exists(yaml_path):
+        return error_response(
+            f"❌ 沙盒中未找到 '{name}.yaml'（{yaml_path}）。请确认 target 与工作区一致。",
+            "❌ 文件不存在",
+        )
+    report = validate_agentloop_file(yaml_path, expected_name=name)
+    return _format_validation_report("agentloop", name, target, report)
+
+
+def _test_graph(target: str) -> dict:
+    pair = _split_workplace(target)
+    if not pair:
+        return error_response(
+            f"执行失败：target 应为 'uuid/图名'。当前输入为: '{target}'",
+            "❌ 路径格式错误",
+        )
+    workplace_id, name = pair
+
+    from src.evolve.graph.validator import validate_graph_folder
+
+    folder = os.path.join(AGENT_VM_DIR, "graph_workplace", workplace_id, name)
+    if not os.path.exists(os.path.join(folder, "graph.json")):
+        return error_response(
+            f"❌ 沙盒中未找到 '{name}/graph.json'（{folder}）。请确认 target 与工作区一致。",
+            "❌ 文件不存在",
+        )
+    report = validate_graph_folder(folder, expected_name=name)
+    return _format_validation_report("graph", name, target, report)
+
+
+def _format_validation_report(kind: str, name: str, target: str, report: dict) -> dict:
+    """把宿主侧校验报告铺开给 Agent（免审，与合并网关同一事实来源）。"""
+    checks = report.get("checks", [])
+    errs = [c for c in checks if c["level"] == "error" and not c["ok"]]
+    warns = [c for c in checks if c["level"] == "warn" and not c["ok"]]
+
+    if report.get("ok"):
+        body = (
+            f"✅ {kind} '{name}' 校验通过（错误 0，警告 {len(warns)}）。\n"
+            f"宿主合并网关会重跑同一套校验（防篡改），可直接申请合并。"
+        )
+    else:
+        lines = [f"❌ {kind} '{name}' 校验未通过（{len(errs)} 处错误，{len(warns)} 处警告）："]
+        for c in errs[:20]:
+            detail = f" —— {c['detail']}" if c.get("detail") else ""
+            lines.append(f"- ✗ {c['title']}{detail}")
+        if len(errs) > 20:
+            lines.append(f"- …另有 {len(errs) - 20} 处错误")
+        lines.append(
+            f"\n修正后重跑 KernelUpgrade(action='test', type='{kind}', target='{target}')；全绿后再申请合并。"
+        )
+        body = "\n".join(lines)
+
+    snip = f"{'✅' if report.get('ok') else '❌'} {kind} {name} 校验"
+    return text_response(body, snip)

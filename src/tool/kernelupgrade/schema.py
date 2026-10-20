@@ -14,8 +14,8 @@ KERNELUPGRADE_TOOL_SCHEMA = {
             "注意：MCP 只有源码落在受管 mcps 目录里的才能升级，外部自行下载、仅注册在 mcp_config.json 的 MCP 会报错；\n"
             "- install：从官方市场 / URL 安装到正式区（仅此 action 的 target 可为名字或 URL）；\n"
             "- merge：代发合并审批请求（等同原 Request 的 *_merge，仍需用户 Yes/No）；\n"
-            "- test：代发架构级测试（skill→Trigger+盲测审批、sensor→协议体检、mcp→后台并发评测）；"
-            "graph/agentloop/ui-plugin 无架构级测试，需你自行在沙盒跑自测脚本，调用本 action 会返回报错。"
+            "- test：代发/直跑架构级测试（skill→Trigger+盲测审批、sensor→协议体检、mcp→后台并发评测、"
+            "agentloop/graph→宿主侧静态三重校验，均免审）；ui-plugin 无架构级测试，需你自行在沙盒自测。"
         ),
         "parameters": {
             "type": "object",
@@ -41,8 +41,7 @@ KERNELUPGRADE_TOOL_SCHEMA = {
                     "type": "string",
                     "description": (
                         "目标对象。一般为名字。特殊情形：\n"
-                        "- action='test' 且 type='mcp'：填沙盒路径前缀 'uuid/mcp名'；"
-                        "type='skill' 填 '工作区uuid/技能名'；type='sensor' 填 '工作区uuid/传感器名'。\n"
+                        "- action='test' 时填沙盒前缀 'uuid/名字'（skill / sensor / mcp / graph / agentloop 均如此）。\n"
                         "- action='install'：type='skill' 可填官方收录名或指向含 SKILL.md 目录的 GitHub URL；"
                         "type='mcp' 可填官方收录名或 mcpServers 配置串（JSON）；"
                         "type='graph' 可填官方收录名或含 graph.json 的 GitHub URL；"
