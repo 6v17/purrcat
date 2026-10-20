@@ -32,11 +32,13 @@
   }
 
   /* ---------- 抽屉（可折叠分组） ---------- */
+  /* 会话列表：弹性限高——最多把「待审批」标题顶到容器底部，再多的会话在列表内滚动。
+     basis 为 0 表示它不参与收缩，剩余空间优先让给待审批；min-height 只保底留一行标题 */
   .drawer { display: flex; flex-direction: column; min-height: 0; }
-  .drawer.open#drawerSessions { flex: 1 1 auto; min-height: 0; }
-  .drawer:not(.open)#drawerSessions { flex: 0 0 auto; }
-  .drawer.open#drawerPending { flex: 0 1 auto; max-height: 56%; min-height: 0; }
-  .drawer:not(.open)#drawerPending { flex: 0 0 auto; }
+  .drawer.open#drawerSessions { flex: 1 1 0; min-height: 36px; }
+  .drawer:not(.open) { flex: 0 0 auto; }
+  /* 待审批：按内容自然高度，不设上限；整块放不下时才收缩，列表内滚动 */
+  .drawer.open#drawerPending { flex: 0 1 auto; }
   .dhead {
     flex: none; display: flex; align-items: center; gap: 8px;
     padding: 9px 12px; border-radius: 10px; cursor: pointer; user-select: none;
@@ -73,6 +75,7 @@
   .new-session:hover .ns-ic { color: var(--accent); }
 
   /* ---------- 列表 ---------- */
+  /* 列表各自滚动：会话列表超出限高时自己滚，待审批放不下时才自己滚 */
   .list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
   .item {
     width: 100%;
@@ -415,6 +418,8 @@
   function setPendingOpen(open) {
     pendingOpen = !!open;
     document.getElementById('drawerPending').classList.toggle('open', pendingOpen);
+    // 待审批展开时收起会话列表：两块同时铺开会把彼此挤得很矮（会话列表展开时也反向收起待审批）
+    if (pendingOpen) document.getElementById('drawerSessions').classList.remove('open');
   }
 
   function resolveReq(id, approved, ignore) {
@@ -544,7 +549,8 @@
 
   /* ---------------- 抽屉交互 ---------------- */
   document.getElementById('headSessions').addEventListener('click', function () {
-    document.getElementById('drawerSessions').classList.toggle('open');
+    // 展开会话列表时顺手收起待审批：两块同时铺开会把会话列表挤得很矮
+    if (document.getElementById('drawerSessions').classList.toggle('open')) setPendingOpen(false);
   });
   document.getElementById('headPending').addEventListener('click', function () {
     setPendingOpen(!pendingOpen);
@@ -556,6 +562,17 @@
 
   // 抽屉箭头图标（内联 SVG，避免额外图标依赖）
   document.querySelectorAll('.chev').forEach(function (c) { c.innerHTML = ICON_CHEV; });
+
+  // 标题不在列表滚动容器内，滚轮落在标题上时转发给对应列表，避免「滚轮没反应」
+  [['headSessions', 'list'], ['headPending', 'reqList']].forEach(function (pair) {
+    var head = document.getElementById(pair[0]);
+    var list = document.getElementById(pair[1]);
+    head.addEventListener('wheel', function (ev) {
+      if (list.scrollHeight <= list.clientHeight) return;
+      list.scrollTop += ev.deltaY;
+      ev.preventDefault();
+    }, { passive: false });
+  });
 
   window.addEventListener('message', function (e) {
     var m = e.data;
