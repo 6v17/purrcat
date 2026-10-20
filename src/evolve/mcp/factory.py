@@ -36,6 +36,20 @@ def _hot_reload_after_merge():
             )
         except Exception as e:
             print(f"⚠️ [MCP工厂] 合并后热加载失败（不影响代码合并，可手动刷新）: {e}")
+            # 失败必须让用户看见：否则只会在之后表现为"调得到工具、但 fetch 查不到服务器"
+            try:
+                from src.agent.manager import manager
+
+                manager.agent_force_push(
+                    "⚠️ 【MCP 热加载失败】合并已完成，但新 MCP 的工具列表刷新失败，"
+                    "`Fetch(source='mcp', serve_name=...)` 可能暂时查不到该服务器"
+                    "（工具本身仍可正常调用）。\n"
+                    f"错误：{e}\n"
+                    "可稍后重试（重新刷新 Schema 缓存），或重启应用。",
+                    type="system",
+                )
+            except Exception as notify_err:
+                print(f"⚠️ [MCP工厂] 热加载失败通知也发送失败: {notify_err}")
 
     threading.Thread(target=_worker, daemon=True, name="MCP-Merge-HotReload").start()
 

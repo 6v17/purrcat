@@ -3,7 +3,11 @@ import traceback
 
 from src.tool.utils.format import error_response, text_response, warning_response
 
-from .exceptions import MCPServerNotFoundError, MCPToolNotFoundError
+from .exceptions import (
+    MCPRefreshInProgressError,
+    MCPServerNotFoundError,
+    MCPToolNotFoundError,
+)
 from .mcp_fetch import fetch_mcp_tools
 from .skill_fetch import load_skill
 from .web_content_fetch import web_content_fetch
@@ -138,6 +142,15 @@ def Fetch(
         return error_response(
             f"无法找到 MCP 服务器 '{e.serve_name}'。当前可用: [{servers_str}]",
             "❌ 服务器未找到",
+        )
+    except MCPRefreshInProgressError as e:
+        return warning_response(
+            f"MCP Schema 缓存正在刷新中（通常是刚合并 MCP 后的热加载，需要对所有 server "
+            f"重新冷启动握手，一般数十秒）。\n"
+            f"本次查询 '{e.serve_name}' 的结果不可信——**不代表该服务器不存在**；"
+            f"工具本身此时已可正常调用。\n"
+            f"请稍候重试本次 fetch，或先 `Fetch(source='mcp')` 查看当前已注册的服务器列表。",
+            "⏳ 缓存刷新中",
         )
     except MCPToolNotFoundError as e:
         tools_str = ", ".join(e.available_tools) if e.available_tools else "无"

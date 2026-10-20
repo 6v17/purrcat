@@ -2,9 +2,13 @@
 
 from typing import Dict, List, Tuple
 
-from src.tool.callmcp.schema_manager import load_cached_schemas
+from src.tool.callmcp.schema_manager import is_refreshing, load_cached_schemas
 
-from .exceptions import MCPServerNotFoundError, MCPToolNotFoundError
+from .exceptions import (
+    MCPRefreshInProgressError,
+    MCPServerNotFoundError,
+    MCPToolNotFoundError,
+)
 
 
 def fetch_mcp_tools(
@@ -20,6 +24,10 @@ def fetch_mcp_tools(
     Returns:
         (schemas, None) 或抛出异常
     """
+    # 刷新窗口内缓存文件还是上一代内容，此时"服务器不存在"是假结论，不能报给 Agent
+    if is_refreshing():
+        raise MCPRefreshInProgressError(server_name)
+
     all_schemas = load_cached_schemas()
 
     available_servers = list(

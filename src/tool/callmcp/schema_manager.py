@@ -12,6 +12,16 @@ from src.utils.config import MCP_SCHEMA_CACHE_FILE
 # 【修复】全局锁，保护 Schema 文件的并发读写
 SCHEMA_LOCK = threading.Lock()
 
+# 【刷新中标记】拉取 Schema 需要逐个 server 冷启动握手（合并 MCP 后可能耗时数十秒），
+# 期间缓存文件还是上一代内容；标记出来是为了让 fetch 提示"稍候重试"，
+# 而不是把旧列表当成权威结论、误报"找不到服务器"。
+_REFRESHING = threading.Event()
+
+
+def is_refreshing() -> bool:
+    """Schema 缓存是否正在刷新"""
+    return _REFRESHING.is_set()
+
 
 async def _fetch_server_schemas_async(server_name: str, config: dict) -> List[Dict]:
     """异步拉取单个 Server 的 Schema"""
@@ -61,19 +71,24 @@ async def _fetch_all_schemas_async() -> List[Dict]:
 
 def fetch_and_cache_schemas() -> List[Dict]:
     """拉取所有 Schema 并写入 JSONL 文件"""
-    with SCHEMA_LOCK:
-        schemas = _run_sync(_fetch_all_schemas_async)
+    # 先置位再抢锁：把"排队等锁"这段空窗也算进刷新中，避免 fetch 读到上一代缓存
+    _REFRESHING.set()
+    try:
+        with SCHEMA_LOCK:
+            schemas = _run_sync(_fetch_all_schemas_async)
 
-        # 确保缓存目录存在
-        os.makedirs(os.path.dirname(MCP_SCHEMA_CACHE_FILE), exist_ok=True)
+            # 确保缓存目录存在
+            os.makedirs(os.path.dirname(MCP_SCHEMA_CACHE_FILE), exist_ok=True)
 
-        # 【核心修复】：恢复为 JSONL (逐行 JSON) 格式，修复盲测框架报 index out of bounds 的问题！
-        with open(MCP_SCHEMA_CACHE_FILE, "w", encoding="utf-8") as f:
-            for schema in schemas:
-                f.write(json.dumps(schema, ensure_ascii=False) + "\n")
+            # 【核心修复】：恢复为 JSONL (逐行 JSON) 格式，修复盲测框架报 index out of bounds 的问题！
+            with open(MCP_SCHEMA_CACHE_FILE, "w", encoding="utf-8") as f:
+                for schema in schemas:
+                    f.write(json.dumps(schema, ensure_ascii=False) + "\n")
 
-        print(f"信息: [MCP] Schema 已缓存至 {MCP_SCHEMA_CACHE_FILE}")
-        return schemas
+            print(f"信息: [MCP] Schema 已缓存至 {MCP_SCHEMA_CACHE_FILE}")
+            return schemas
+    finally:
+        _REFRESHING.clear()
 
 
 def load_cached_schemas() -> List[Dict]:

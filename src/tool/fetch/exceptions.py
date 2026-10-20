@@ -31,6 +31,14 @@ class MCPToolNotFoundError(FetchExecutionError):
         super().__init__(f"MCP 服务器 {serve_name} 中未找到工具")
 
 
+class MCPRefreshInProgressError(FetchExecutionError):
+    """Schema 缓存正在刷新（合并 MCP 后的热加载），本次查询结果不可信，需稍候重试"""
+
+    def __init__(self, serve_name: str = ""):
+        self.serve_name = serve_name
+        super().__init__(f"MCP Schema 缓存正在刷新（查询 {serve_name}）")
+
+
 class WebNetworkError(FetchExecutionError):
     """Web 抓取网络异常"""
 
