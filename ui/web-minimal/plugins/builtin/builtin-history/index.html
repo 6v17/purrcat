@@ -1682,12 +1682,13 @@
   }
   function setMode(name) {
     closeModeMenu();
-    if (name === currentMode) return;
+    if (name === currentMode) { focusInput(); return; }
     // 草稿态：会话尚未创建，先把选择的 Agent Loop 记到宿主，首条消息建会话时再生效
     if (!curSessionId) {
       callAction('session.setDraftParadigm', { paradigm: name })
         .then(function () { currentMode = name; setModeLabel(); })
-        .catch(function (e) { alert('Mode 切换失败: ' + String((e && e.message) || e)); });
+        .catch(function (e) { toast('切换 Agent Loop 失败：' + errText(e)); })
+        .finally(focusInput);
       return;
     }
     fetch('/api/sessions/' + encodeURIComponent(curSessionId) + '/paradigm', {
@@ -1695,11 +1696,21 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paradigm: name })
     }).then(function (r) {
-      if (!r.ok) throw new Error('切换失败');
+      if (r.ok) return null;
+      // 后端错误体带 detail（如「Agent 正在忙，请稍后再切换范式」），必须原样透出，
+      // 否则用户只看到「切换失败」这个空壳，不知道是被什么挡住的
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        throw new Error((d && d.detail) || ('HTTP ' + r.status));
+      });
+    }).then(function () {
       currentMode = name;
       setModeLabel();
-    }).catch(function (e) { alert('Mode 切换失败: ' + String(e.message || e)); });
+    }).catch(function (e) { toast('切换 Agent Loop 失败：' + errText(e)); })
+      .finally(focusInput);
   }
+  // 菜单点选后焦点停在菜单按钮上，用户接着打字会「打不进输入框」，切完把焦点还给输入框
+  function focusInput() { if (!readOnly) input.focus(); }
+  function errText(e) { return String((e && e.message) || e) || '未知错误'; }
   function closeModeMenu() { modeMenu.classList.remove('open'); }
   function openModeMenu() {
     loadModes().then(function () { renderModeMenu(); modeMenu.classList.add('open'); });
