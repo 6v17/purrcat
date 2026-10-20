@@ -63,8 +63,13 @@ def _test_skill(target: str) -> dict:
             "\n✅ 后台盲测申请已提交用户审批，获批后系统将自动在后台运行，"
             "期间请挂起等待，禁止轮询。"
         )
+    uuid = target.split("/")[0]
+    artifact_note = (
+        f"\n📁 产物目录：`/agent_vm/skill_workplace/{uuid}/iteration-N/`"
+        "（N 为迭代序号；内含 trigger_result.json、eval_result.json、benchmark.json、report.html）"
+    )
     return text_response(
-        f"{trigger_note}{blind_note}", f"⏳ skill_test 已受理: {result['id']}"
+        f"{trigger_note}{blind_note}{artifact_note}", f"⏳ skill_test 已受理: {result['id']}"
     )
 
 
@@ -81,10 +86,13 @@ def _test_sensor(target: str) -> dict:
         reason="",
         extra={"eval_started": False},
     )
+    uuid = target.split("/")[0]
     return text_response(
         "🔬 Sensor 协议体检无需审批，系统即将自动启动（宿主亲自扮演网关实跑你的 sensor），"
         "完成后通过系统级通知汇报结果。\n"
-        "💡 体检全绿后才能申请合并；若改动了代码，务必重跑本体检。",
+        "💡 体检全绿后才能申请合并；若改动了代码，务必重跑本体检。"
+        f"\n📁 产物目录：`/agent_vm/sensor_workplace/{uuid}/iteration-N/`"
+        "（N 为迭代序号；内含 benchmark.json、handshake.json、report.html、sensor_stderr.log）",
         f"⏳ sensor_test 已受理: {result['id']}",
     )
 
@@ -130,6 +138,8 @@ def _test_mcp(target: str) -> dict:
     msg = (
         f"🚀 MCP '{mcp_name}' 的并发测试流水线已在后台启动！\n"
         f"💡 提示：测试完成后系统会主动推送结果报告，请耐心等待系统级通知。\n"
+        f"📁 产物目录：`/agent_vm/mcp_workplace/{workplace_id}/{mcp_name}/iteration-N/`"
+        "（N 为迭代序号；内含 report.html，沙盒 evals/outputs/ 的快照与执行结果会一并归档）"
     )
     if stale_warning:
         msg = f"{stale_warning}\n\n{msg}"
@@ -226,6 +236,18 @@ def _format_validation_report(kind: str, name: str, target: str, report: dict) -
     errs = [c for c in checks if c["level"] == "error" and not c["ok"]]
     warns = [c for c in checks if c["level"] == "warn" and not c["ok"]]
 
+    uuid = target.split("/")[0]
+    if kind == "graph":
+        report_path = (
+            f"/agent_vm/graph_workplace/{uuid}/{name}/evals/outputs/validation.json"
+        )
+    else:
+        report_path = f"/agent_vm/agentloop_workplace/{uuid}/evals/outputs/validation.json"
+    artifact_note = (
+        "\n📁 产物目录：本次校验由宿主侧直接执行、不向沙盒写文件；"
+        f"你在沙盒自跑校验脚本时，报告落在 `{report_path}`。"
+    )
+
     if report.get("ok"):
         body = (
             f"✅ {kind} '{name}' 校验通过（错误 0，警告 {len(warns)}）。\n"
@@ -245,5 +267,6 @@ def _format_validation_report(kind: str, name: str, target: str, report: dict) -
         )
         body = "\n".join(lines)
 
+    body += artifact_note
     snip = f"{'✅' if report.get('ok') else '❌'} {kind} {name} 校验"
     return text_response(body, snip)
