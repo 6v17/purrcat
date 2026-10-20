@@ -271,6 +271,16 @@
     overflow: hidden;
   }
   .right-head { flex: none; padding: 4px 6px 6px; font-size: 12px; color: var(--wm-label-2nd, #4c5560); font-weight: 600; }
+  /* 右侧搜索框：仅 Skill / MCP / Graph 分类显示，用于过滤下面的条目 */
+  .right-search {
+    flex: none; width: 100%; margin-bottom: 6px;
+    font-family: inherit; font-size: 12.5px; color: var(--wm-label, #16191d);
+    background: var(--wm-bg-input, #f2f4f7); border: 1px solid transparent;
+    border-radius: 8px; padding: 6px 9px; outline: none;
+  }
+  .right-search:focus { border-color: var(--wm-accent, #16191d); background: #fff; }
+  .right-search.hide { display: none; }
+  .right-search::placeholder { color: var(--wm-label-dim, #8b96a3); }
   .items { flex: 1; min-height: 0; overflow-y: auto; }
   .item {
     display: block; width: 100%; text-align: left; font-size: 12.5px; color: var(--wm-label, #16191d);
@@ -432,6 +442,7 @@
         <div class="cats" id="cats"></div>
         <div class="right">
           <div class="right-head" id="rName"></div>
+          <input class="right-search hide" id="rSearch" type="text" placeholder="搜索" spellcheck="false" autocomplete="off" />
           <div class="items" id="rItems"></div>
         </div>
       </div>
@@ -1399,17 +1410,38 @@
   }
 
   // 右侧提示/条目
-  function showRight(title, items) {
+  var rSearch = document.getElementById('rSearch');
+  var rightItems = [];        // 当前分类的完整条目；搜索只过滤展示，不丢数据
+  var rightSearchable = false;
+
+  // 搜索框只在 Skill / MCP / Graph 分类下出现
+  function setSearchable(on) {
+    rightSearchable = !!on;
+    rSearch.classList.toggle('hide', !rightSearchable);
+    if (!rightSearchable) rSearch.value = '';
+  }
+
+  function showRight(title, items, searchable) {
     rName.textContent = title;
+    rightItems = items || [];
+    setSearchable(searchable);
+    renderRight();
+  }
+
+  function renderRight() {
+    var q = rightSearchable ? (rSearch.value || '').trim().toLowerCase() : '';
+    var list = !q ? rightItems : rightItems.filter(function (it) {
+      return (it.text + ' ' + (it.hint || '')).toLowerCase().indexOf(q) >= 0;
+    });
     rItems.innerHTML = '';
-    if (!items || !items.length) {
+    if (!list.length) {
       var e = document.createElement('div');
       e.className = 'lb-empty';
-      e.textContent = '暂无可用项';
+      e.textContent = q ? '无匹配项' : '暂无可用项';
       rItems.appendChild(e);
       return;
     }
-    items.forEach(function (it) {
+    list.forEach(function (it) {
       var b = document.createElement('button');
       b.className = 'item' + (hasQuote(it.label) ? ' sel' : '');
       b.textContent = it.text;
@@ -1421,6 +1453,8 @@
       rItems.appendChild(b);
     });
   }
+
+  rSearch.addEventListener('input', function () { renderRight(); });
   // 已选状态回显
   function markSel() {
     var bs = rItems.querySelectorAll('.item');
@@ -1456,7 +1490,7 @@
     fetchList(t).then(function (items) {
       if (activeCat !== t) return;
       var names = { skill: '选择 Skill', mcp: '选择 MCP', graph: '选择 Graph' };
-      showRight(names[t] || t, items);
+      showRight(names[t] || t, items, true);
       markSel();
     });
   }
@@ -1523,6 +1557,7 @@
   }
   function openSelfHost() {
     setActive('selfhost');
+    setSearchable(false);
     rName.textContent = '自托管';
     rItems.innerHTML = '';
     var wrap = document.createElement('div');
