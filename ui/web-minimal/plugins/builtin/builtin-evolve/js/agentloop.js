@@ -67,10 +67,10 @@
       { key: 'return_log', label: '回传输出 return_log', kind: 'bool' },
       { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text' }
     ],
-    // in检查：仅「收到输入时」可用（只检查送入该钩子的那批 role=user 消息）
+    // in检查：仅「收到输入时」可用（此时送入钩子的消息恒为 type=user）
     keyword_check: [
       { key: 'keyword', label: '关键词', kind: 'text', ph: '要检查的关键词' },
-      { key: 'type', label: '消息类型 type', kind: 'text', ph: '只检查该类型，如 user / system / workflow_hint；留空不限' },
+      { key: 'type', label: '消息类型 type', kind: 'text', ph: '只检查该类型；本钩子收到的恒为 user，留空即不限' },
       { key: 'successed_prompt', label: '成功提示 successed_prompt', kind: 'text', ph: '命中时注入（可有可无，但建议写清该怎么做）' },
       { key: 'failed_prompt', label: '失败提示 failed_prompt', kind: 'text', ph: '未命中时注入；本 Hook 上的检查不拦不挡，提示词就是它唯一的产出，不写等于白写' }
     ]
@@ -965,7 +965,8 @@
 
     if (!loose && meta.key === 'on_input_received') {
       card.appendChild(EV.el('div', 'hint',
-        '本 Hook 在每次以 role=user 注入历史时触发；用 @USERQUERY 引用本次收到的那批 type=user 输入（多条按换行拼接）。'
+        '本 Hook 只在收到 type=user 的输入时触发；用 @USERQUERY 引用本次收到的那批 type=user 输入（多条按换行拼接）。'
+        + '钩子自身的注入（workflow_hint）、循环打回提示等系统消息不会触发它。'
         + '注意：本 Hook 上的检查不拦不挡、不影响循环能否结束，只把提示词注入给模型——两个提示词都留空就等于什么都没做。'));
     }
 
@@ -1315,7 +1316,7 @@
     inner.appendChild(canvas);
     inner.appendChild(EV.el('div', 'viz-hint',
       '箭头表示信息流转方向；「有工具调用 / 无工具调用 / 失败 / 成功」为分支条件。'
-      + '「收到输入时」在每次以 role=user 注入历史时触发（用户输入、强制注入、钩子注入）。'
+      + '「收到输入时」只在收到 type=user 输入时触发（真人输入、传感器推送）；钩子注入与循环打回提示不触发它。'
       + '拖拽平移、滚轮缩放；该图随当前编辑内容实时生成，保存前后皆可预览。'));
 
     var model = null;

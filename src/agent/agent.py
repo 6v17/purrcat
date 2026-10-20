@@ -93,7 +93,6 @@ class Agent:
             stage_name, agent=self, epoch=epoch, **kwargs
         )
         all_success = True
-        injected = []
         for res in results:
             if not res.get("success"):
                 all_success = False
@@ -105,9 +104,8 @@ class Agent:
                         "content": json.dumps(hint_data, ensure_ascii=False),
                     }
                 )
-                injected.append(hint_data)
-        # 🌟 任何以 role=user 注入历史的消息都会触发「收到输入时」钩子
-        self._fire_input_received(injected)
+        # 🌟 此处注入的都是 workflow_hint（系统提示），不算收到用户输入，
+        # 不触发「收到输入时」钩子（只有 type=user 的真人输入才触发）
         return all_success
 
     def _fire_input_received(self, messages):
@@ -115,8 +113,10 @@ class Agent:
 
         messages 是本批以 role=user 注入历史的消息列表：
         元素形如 {"type": ..., "content": ...}，可能只有 1 条，也可能同批多条。
-        钩子自身的注入不再递归触发（_in_input_hook 防重入）。
+        只有 type=user 的消息算「收到用户输入」，其余（system / workflow_hint 等
+        系统注入）一律不触发；钩子自身的注入不再递归触发（_in_input_hook 防重入）。
         """
+        messages = [m for m in messages if m.get("type") == "user"]
         if not messages or self._in_input_hook:
             return
         self._in_input_hook = True
@@ -307,7 +307,8 @@ class Agent:
             self._append_history(
                 {"role": "user", "content": json.dumps(batch_data, ensure_ascii=False)}
             )
-            # 🌟 强制注入 / 消费队列：整批（1 条或多条）交给「收到输入时」钩子
+            # 🌟 强制注入 / 消费队列：整批（1 条或多条）交给「收到输入时」钩子，
+            # 由 _fire_input_received 内部只保留 type=user 的消息（system 等注入不算）
             self._fire_input_received(local_push)
 
     def process_message(self):
@@ -519,8 +520,7 @@ class Agent:
                                 "content": json.dumps(hint_data, ensure_ascii=False),
                             }
                         )
-                        # 🌟 打回提示同样是以 role=user 注入的消息，触发「收到输入时」钩子
-                        self._fire_input_received([hint_data])
+                        # 🌟 打回提示是 workflow_hint 系统注入，不算收到用户输入，不触发钩子
                         print(
                             f"[Debug] 当前第 {loop_epoch} 轮条件不足，被打回重新触发模型迭代。"
                         )

@@ -110,7 +110,8 @@ class Node(AgentNode):
         # 最终顺序：记忆 → 上游输入 → 系统提示(user) → 人工指令
         messages = self._sanitize_messages(memory + upstream + sys_msgs + fps)
 
-        # 4) on_input_received：对本批新增 user 消息触发（系统提示不计入本批输入）
+        # 4) on_input_received：只对本批新增的 type=user 输入触发
+        # （系统提示 workflow_hint 不计入本批输入，也不触发该钩子）
         if newly_user:
             await self._fire_hooks(
                 handler,
@@ -122,7 +123,6 @@ class Node(AgentNode):
                     {"type": "user", "content": str(m.get("content", ""))}
                     for m in newly_user
                 ],
-                fire_input=False,
             )
 
         # 🌟 本批新增内容按内存里的「最终顺序」一次性落盘：
@@ -234,15 +234,7 @@ class Node(AgentNode):
             hint_msg = {"role": "user", "content": json.dumps(hint, ensure_ascii=False)}
             messages.append(hint_msg)
             await asyncio.to_thread(self.append_memory_to_file, context, [hint_msg])
-            await self._fire_hooks(
-                handler,
-                "on_input_received",
-                messages,
-                context,
-                epoch=0,
-                received_messages=[hint],
-                fire_input=False,
-            )
+            # 🌟 打回提示是 workflow_hint 系统注入，不算收到用户输入，不触发钩子
 
         # 7) summary：优先 @TASKSPACE/<summary_file>，回退最后 assistant 文本
         summary = self._read_summary(context, taskspace_host)
@@ -255,11 +247,11 @@ class Node(AgentNode):
         self.log(context, "SYSTEM", f"📊 [总结内容]:\n{display_summary}")
         return {"messages": messages, "summary": summary}
 
-    async def _fire_hooks(
-        self, handler, stage, messages, context, fire_input=True, **kwargs
-    ):
-        """执行 hook → 以 role=user 注入 inject_prompt →（可选）触发 on_input_received。
+    async def _fire_hooks(self, handler, stage, messages, context, **kwargs):
+        """执行 hook → 以 role=user 注入 inject_prompt。
 
+        注入的都是 workflow_hint（系统提示），不算「收到用户输入」，因此不会触发
+        on_input_received（只有本批新增的 type=user 输入才触发）。
         返回 all_success（无 hook 时视为 True）。
         """
         results = handler.execute(stage, **kwargs)
@@ -277,25 +269,6 @@ class Node(AgentNode):
             await asyncio.to_thread(
                 self.append_memory_to_file, context, messages[-len(injected) :]
             )
-            # 非递归触发「收到输入时」：钩子自身的注入不再触发下一层
-            if fire_input:
-                sub = handler.execute(
-                    "on_input_received", epoch=0, received_messages=injected
-                )
-                sub_msgs = []
-                for r in sub:
-                    if r.get("inject_prompt"):
-                        h = {"type": "workflow_hint", "content": r["inject_prompt"]}
-                        m = {
-                            "role": "user",
-                            "content": json.dumps(h, ensure_ascii=False),
-                        }
-                        messages.append(m)
-                        sub_msgs.append(m)
-                if sub_msgs:
-                    await asyncio.to_thread(
-                        self.append_memory_to_file, context, sub_msgs
-                    )
 
         return all_success
 
