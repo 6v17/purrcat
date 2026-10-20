@@ -108,25 +108,68 @@ class InstallSkillsBatchReq(BaseModel):
 
 
 def _parse_skill_github_url(url: str):
-    """解析 GitHub skill URL，返回 (owner, repo, branch, path)；不匹配则抛 400
+    """解析 GitHub 链接，返回 (owner, repo, branch, path)；不匹配则抛 400
 
-    兼容 tree（目录）与 blob（文件）两种链接；若链接直接指向 SKILL.md 等文件，
-    则取其所在文件夹作为 skill 目录。
+    支持三种写法：
+    - 裸仓库链接 `https://github.com/owner/repo`（skill 目录即仓库根）
+    - 目录链接 `https://github.com/owner/repo/tree/<branch>/path/to/skill`
+    - 文件链接 `https://github.com/owner/repo/blob/<branch>/path/SKILL.md`（取其所在文件夹）
+
+    裸仓库链接无法从 URL 得知分支，branch 返回空串，由 `_fetch_repo_zip` 探测默认分支。
     """
     match = re.match(
         r"https?://github\.com/([^/]+)/([^/]+)/(?:tree|blob)/([^/]+)(?:/(.*))?", url
     )
-    if not match:
-        raise HTTPException(
-            status_code=400,
-            detail="URL格式错误！正确格式示例: https://github.com/owner/repo/tree/branch/path/to/skill",
-        )
-    owner, repo, branch, path = match.groups()
-    path = (path or "").strip("/")
-    # 链接指向具体文件（如 SKILL.md）时，skill 目录取其所在文件夹
-    if path and "." in path.split("/")[-1]:
-        path = "/".join(path.split("/")[:-1])
-    return owner, repo, branch, path
+    if match:
+        owner, repo, branch, path = match.groups()
+        path = (path or "").strip("/")
+        # 链接指向具体文件（如 SKILL.md）时，skill 目录取其所在文件夹
+        if path and "." in path.split("/")[-1]:
+            path = "/".join(path.split("/")[:-1])
+        return owner, repo, branch, path
+
+    # 裸仓库链接（允许尾斜杠与 .git 后缀）
+    match = re.match(r"https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$", url)
+    if match:
+        owner, repo = match.groups()
+        return owner, repo, "", ""
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "URL格式错误！支持仓库根链接 `https://github.com/owner/repo`，"
+            "或目录/文件链接 `https://github.com/owner/repo/tree/<branch>/path/to/skill`"
+        ),
+    )
+
+
+# 裸仓库链接的默认分支探测候选（API 查询失败时按此顺序兜底试下载）
+DEFAULT_BRANCH_CANDIDATES = ("main", "master")
+
+
+def _fetch_repo_zip(owner: str, repo: str, branch: str) -> bytes:
+    """下载仓库 zip 字节流；branch 为空（裸仓库链接）时自动探测默认分支"""
+    candidates = []
+    if branch:
+        candidates.append(branch)
+    else:
+        try:
+            info = _http_get_json(f"https://api.github.com/repos/{owner}/{repo}", timeout=10)
+            default_branch = info.get("default_branch") if isinstance(info, dict) else ""
+        except Exception:
+            default_branch = ""
+        if default_branch:
+            candidates.append(default_branch)
+        candidates += [b for b in DEFAULT_BRANCH_CANDIDATES if b not in candidates]
+
+    last_err = None
+    for b in candidates:
+        zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{b}.zip"
+        try:
+            return _http_download(zip_url)
+        except Exception as e:
+            last_err = e
+    raise last_err or ValueError(f"仓库 {owner}/{repo} 下载失败")
 
 
 def _extract_skill_from_zip(zip_data: bytes, repo: str, path: str) -> str:
@@ -183,8 +226,7 @@ def _extract_skill_from_zip(zip_data: bytes, repo: str, path: str) -> str:
 def _download_skill_from_github(url: str) -> str:
     """根据 GitHub URL 下载第三方 Skill 到本地 SKILL_DIR，返回 skill 名"""
     owner, repo, branch, path = _parse_skill_github_url(url)
-    zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
-    zip_data = urllib.request.urlopen(zip_url).read()
+    zip_data = _fetch_repo_zip(owner, repo, branch)
     return _extract_skill_from_zip(zip_data, repo, path)
 
 
@@ -250,9 +292,8 @@ def install_skills_batch_api(req: InstallSkillsBatchReq):
 
     installed, failed = [], []
     for (owner, repo, branch), paths in groups.items():
-        zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
         try:
-            zip_data = urllib.request.urlopen(zip_url).read()
+            zip_data = _fetch_repo_zip(owner, repo, branch)
         except Exception as e:
             for path in paths:
                 failed.append({"path": path or repo, "error": f"仓库下载失败: {e}"})

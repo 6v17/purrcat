@@ -19,7 +19,8 @@ from .shared import market
 
 def install_module(t: str, target: str) -> dict:
     m = market()
-    raw = (target or "").strip()
+    # Agent 常把 URL/配置串包在反引号或引号里，先剥掉外层包装再判类型
+    raw = (target or "").strip().strip("`\"'").strip()
     if not raw:
         return error_response(
             "install 需要 target（名字 / URL / MCP 配置串）", "❌ 参数错误"
@@ -209,8 +210,7 @@ def _install_graph_from_url(url: str, m) -> str:
     from src.utils.config import GRAPHS_DIR
 
     owner, repo, branch, path = m._parse_skill_github_url(url)
-    zip_url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.zip"
-    zip_data = m._http_download(zip_url)
+    zip_data = m._fetch_repo_zip(owner, repo, branch)
 
     name = os.path.basename(path) if path else repo
     dest_dir = os.path.join(GRAPHS_DIR, name)
