@@ -13,7 +13,7 @@ import shutil
 import zipfile
 
 from src.tool.utils.format import error_response, text_response
-from src.utils.config import AGENT_VM_DIR
+from src.utils.config import AGENT_VM_DIR, SKILL_DIR
 from .shared import market
 
 
@@ -43,35 +43,64 @@ def install_module(t: str, target: str) -> dict:
 # skill
 # ------------------------------------------
 def _install_skill(target: str, m) -> dict:
-    """target = 官方市场收录名；或 GitHub URL（指向含 SKILL.md 的目录）"""
+    """target = 官方市场收录名；或 GitHub URL；或本地文件夹路径（需含 SKILL.md）"""
     if target.startswith(("http://", "https://")):
         name = m._download_skill_from_github(target)
     else:
-        registry = m._http_get_json(m.SKILL_REGISTRY_URL)
-        raw = registry.get("skills", {}) if isinstance(registry, dict) else {}
-        items = list(raw.items()) if isinstance(raw, dict) else enumerate(raw or [])
-        link = ""
-        for key, entry in items:
-            if not isinstance(entry, dict):
-                continue
-            if (
-                str(key or "").lower() == target.lower()
-                or str(entry.get("name", "")).lower() == target.lower()
-            ):
-                link = entry.get("skill-single-link") or ""
-                break
-        if not link:
-            return error_response(
-                f"❌ 市场注册表中找不到 Skill '{target}'，也不是合法 URL。",
-                "❌ 未收录",
-            )
-        name = m._download_skill_from_github(link)
+        local_dir = _local_skill_dir(target)
+        if local_dir is not None:
+            if not os.path.exists(os.path.join(local_dir, "SKILL.md")):
+                return error_response(
+                    f"❌ 目录 '{local_dir}' 下未找到 SKILL.md，无法作为 Skill 安装。",
+                    "❌ 缺少 SKILL.md",
+                )
+            name = _copy_skill_dir(local_dir)
+        else:
+            registry = m._http_get_json(m.SKILL_REGISTRY_URL)
+            raw = registry.get("skills", {}) if isinstance(registry, dict) else {}
+            items = list(raw.items()) if isinstance(raw, dict) else enumerate(raw or [])
+            link = ""
+            for key, entry in items:
+                if not isinstance(entry, dict):
+                    continue
+                if (
+                    str(key or "").lower() == target.lower()
+                    or str(entry.get("name", "")).lower() == target.lower()
+                ):
+                    link = entry.get("skill-single-link") or ""
+                    break
+            if not link:
+                return error_response(
+                    f"❌ '{target}' 不是可访问的本地目录，市场注册表中也找不到该 Skill。",
+                    "❌ 未收录",
+                )
+            name = m._download_skill_from_github(link)
 
     _reload_skills()
     return text_response(
         f"✅ Skill '{name}' 已安装并热加载入内存！",
         f"🧩 Skill {name} 已安装",
     )
+
+
+def _local_skill_dir(target: str) -> str | None:
+    """target 指向存在的本地目录时返回其路径（兼容 /agent_vm/ 沙盒视角前缀），否则 None"""
+    path = _resolve_agent_vm_path(target)
+    return path if os.path.isdir(path) else None
+
+
+def _copy_skill_dir(src_dir: str) -> str:
+    """把本地 Skill 文件夹覆盖式拷入正式区，返回 skill 名（取文件夹名）"""
+    src = os.path.abspath(src_dir)
+    name = os.path.basename(os.path.normpath(src))
+    dest = os.path.join(SKILL_DIR, name)
+    # 来源已在正式区时无需自拷贝（否则会先删后拷把源一起删掉）
+    if os.path.abspath(dest) != src:
+        if os.path.isdir(dest):
+            shutil.rmtree(dest)
+        os.makedirs(SKILL_DIR, exist_ok=True)
+        shutil.copytree(src, dest)
+    return name
 
 
 def _reload_skills():
