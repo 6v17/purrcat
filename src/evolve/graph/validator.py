@@ -471,7 +471,9 @@ def main():
     except OSError:
         pass
 
-    print("\n提示：修正 ✗ 项后重跑本脚本；全绿后再用 KernelUpgrade(action='merge', type='graph') 申请合并。")
+    print(
+        "\n提示：修正 ✗ 项后重跑本脚本；全绿后再用 KernelUpgrade(action='merge', type='graph') 申请合并。"
+    )
     return 0 if ok else 1
 
 

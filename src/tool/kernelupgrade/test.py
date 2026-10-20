@@ -17,11 +17,11 @@ from src.utils.graph_api import graph_file
 from src.evolve import run_mcp_eval_background
 
 
-def test_module(t: str, target: str, reason: str) -> dict:
+def test_module(t: str, target: str) -> dict:
     if t == "skill":
-        return _test_skill(target, reason)
+        return _test_skill(target)
     if t == "sensor":
-        return _test_sensor(target, reason)
+        return _test_sensor(target)
     if t == "mcp":
         return _test_mcp(target)
     if t == "agentloop":
@@ -34,7 +34,7 @@ def test_module(t: str, target: str, reason: str) -> dict:
     )
 
 
-def _test_skill(target: str, reason: str) -> dict:
+def _test_skill(target: str) -> dict:
     from src.tool.request.request import _validate_skill_test
 
     err = _validate_skill_test(target)
@@ -45,7 +45,7 @@ def _test_skill(target: str, reason: str) -> dict:
     result = submit_request(
         request_type="skill_test",
         target=target,
-        reason=reason,
+        reason="",
         extra={"trigger_started": False, "has_graph": has_graph},
     )
 
@@ -68,7 +68,7 @@ def _test_skill(target: str, reason: str) -> dict:
     )
 
 
-def _test_sensor(target: str, reason: str) -> dict:
+def _test_sensor(target: str) -> dict:
     from src.tool.request.request import _validate_sensor_test
 
     err = _validate_sensor_test(target)
@@ -78,7 +78,7 @@ def _test_sensor(target: str, reason: str) -> dict:
     result = submit_request(
         request_type="sensor_test",
         target=target,
-        reason=reason,
+        reason="",
         extra={"eval_started": False},
     )
     return text_response(
@@ -99,15 +99,21 @@ def _test_mcp(target: str) -> dict:
         )
     workplace_id, mcp_name = parts
 
-    schema_path = os.path.join(
-        AGENT_VM_DIR,
-        "mcp_workplace",
-        workplace_id,
-        mcp_name,
-        "evals",
-        "outputs",
-        "schema_dump.json",
-    )
+    mcp_dir = os.path.join(AGENT_VM_DIR, "mcp_workplace", workplace_id, mcp_name)
+    if not os.path.isdir(mcp_dir):
+        return error_response(
+            f"执行被拒绝：未找到沙盒工作区 '{target}'，请确认 workplace_id 与 MCP 名无误。",
+            "❌ 沙盒不存在",
+        )
+    evals_file = os.path.join(mcp_dir, "evals", "evals.json")
+    if not os.path.exists(evals_file):
+        return error_response(
+            "❌ 执行被拒绝：沙盒内未找到 `evals/evals.json`，测试流水线无用例可跑。\n"
+            "请先编写测试用例再申请测试。",
+            "❌ 缺少测试用例",
+        )
+
+    schema_path = os.path.join(mcp_dir, "evals", "outputs", "schema_dump.json")
     if not os.path.exists(schema_path):
         return error_response(
             "❌ 执行被拒绝：未检测到测试前置产物！\n\n"
@@ -119,9 +125,7 @@ def _test_mcp(target: str) -> dict:
     stale_warning = _stale_schema_warning(schema_path)
     from src.agent.manager import manager
 
-    run_mcp_eval_background(
-        workplace_id, mcp_name, manager.get_active_session_id()
-    )
+    run_mcp_eval_background(workplace_id, mcp_name, manager.get_active_session_id())
 
     msg = (
         f"🚀 MCP '{mcp_name}' 的并发测试流水线已在后台启动！\n"
@@ -145,7 +149,9 @@ def _stale_schema_warning(schema_path: str) -> str:
         dirnames[:] = [d for d in dirnames if d not in skip]
         for fn in filenames:
             if fn.endswith(".py"):
-                newest_src = max(newest_src, os.path.getmtime(os.path.join(dirpath, fn)))
+                newest_src = max(
+                    newest_src, os.path.getmtime(os.path.join(dirpath, fn))
+                )
     evals_json = os.path.join(mcp_dir, "evals", "evals.json")
     if os.path.exists(evals_json):
         newest_src = max(newest_src, os.path.getmtime(evals_json))
@@ -226,7 +232,9 @@ def _format_validation_report(kind: str, name: str, target: str, report: dict) -
             f"宿主合并网关会重跑同一套校验（防篡改），可直接申请合并。"
         )
     else:
-        lines = [f"❌ {kind} '{name}' 校验未通过（{len(errs)} 处错误，{len(warns)} 处警告）："]
+        lines = [
+            f"❌ {kind} '{name}' 校验未通过（{len(errs)} 处错误，{len(warns)} 处警告）："
+        ]
         for c in errs[:20]:
             detail = f" —— {c['detail']}" if c.get("detail") else ""
             lines.append(f"- ✗ {c['title']}{detail}")

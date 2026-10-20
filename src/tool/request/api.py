@@ -146,6 +146,12 @@ def _grant_file_permission(req_type: str, target: str):
         json.dump(config, f, indent=2, ensure_ascii=False)
 
 
+def _split_merge_target(target: str) -> tuple[str, str]:
+    """合并目标统一为 'uuid/名字'，返回 (workplace_id, name)。"""
+    workplace_id, _, name = (target or "").partition("/")
+    return workplace_id.strip(), name.strip()
+
+
 def resolve_request(
     req_id: str,
     approved: bool,
@@ -194,107 +200,89 @@ def resolve_request(
                         feedback = f"测试启动失败：未找到 {target} 对应的工厂沙盒目录（应为 'uuid/技能名'）。"
                 # ---- 技能合并逻辑 ----
                 elif req_type == "skill_merge":
-                    import glob
                     from src.evolve import skill_request_handle
 
-                    paths = glob.glob(
-                        os.path.join(AGENT_VM_DIR, "skill_workplace", "*", target)
+                    workplace_id, name = _split_merge_target(target)
+                    workplace_root = os.path.join(
+                        AGENT_VM_DIR, "skill_workplace", workplace_id
                     )
-                    if paths:
-                        workplace_root = os.path.dirname(paths[0])
+                    if name and os.path.isdir(os.path.join(workplace_root, name)):
                         sys_note = skill_request_handle(
-                            workplace_root, target, is_approved=True
+                            workplace_root, name, is_approved=True
                         )
                         feedback = f"{sys_note}\n(用户批注: {feedback})"
                     else:
-                        feedback = f"合并失败：未找到 {target} 对应的工厂沙盒目录。"
+                        feedback = f"合并失败：未找到沙盒对象 '{target}'（应为 'uuid/技能名'）。"
                 # ---- MCP 合并逻辑 ----
                 elif req_type == "mcp_merge":
-                    import glob
                     from src.evolve import mcp_request_handle
 
-                    paths = glob.glob(
-                        os.path.join(AGENT_VM_DIR, "mcp_workplace", "*", target)
+                    workplace_id, name = _split_merge_target(target)
+                    workplace_root = os.path.join(
+                        AGENT_VM_DIR, "mcp_workplace", workplace_id
                     )
-                    if paths:
-                        workplace_root = os.path.dirname(paths[0])
+                    if name and os.path.isdir(os.path.join(workplace_root, name)):
                         sys_note = mcp_request_handle(
-                            workplace_root, target, is_approved=True
+                            workplace_root, name, is_approved=True
                         )
                         feedback = f"{sys_note}\n(用户批注: {feedback})"
                     else:
-                        feedback = (
-                            f"合并失败：未找到 {target} 对应的 MCP 工厂沙盒目录。"
-                        )
+                        feedback = f"合并失败：未找到沙盒对象 '{target}'（应为 'uuid/MCP名'）。"
                 # ---- Sensor 合并逻辑 ----
                 elif req_type == "sensor_merge":
-                    import glob
                     from src.evolve import sensor_request_handle
 
                     # sensor 沙盒结构：sensor_workplace/<uuid>/<name>.py（单文件而非目录）
-                    paths = glob.glob(
-                        os.path.join(AGENT_VM_DIR, "sensor_workplace", "*", target)
+                    workplace_id, name = _split_merge_target(target)
+                    workplace_root = os.path.join(
+                        AGENT_VM_DIR, "sensor_workplace", workplace_id
                     )
-                    py_path = os.path.join(
-                        AGENT_VM_DIR, "sensor_workplace", "*", f"{target}.py"
-                    )
-                    if not paths:
-                        paths = glob.glob(py_path)
-                    if paths:
-                        workplace_root = (
-                            os.path.dirname(paths[0])
-                            if paths[0].endswith(".py")
-                            else paths[0]
-                        )
+                    if name and os.path.isfile(
+                        os.path.join(workplace_root, f"{name}.py")
+                    ):
                         sys_note = sensor_request_handle(
-                            workplace_root, target, is_approved=True
+                            workplace_root, name, is_approved=True
                         )
                         feedback = f"{sys_note}\n(用户批注: {feedback})"
                     else:
-                        feedback = (
-                            f"合并失败：未找到 {target} 对应的 Sensor 工厂沙盒文件。"
-                        )
+                        feedback = f"合并失败：未找到沙盒对象 '{target}'（应为 'uuid/Sensor名'）。"
                 # ---- AgentLoop 合并逻辑 ----
                 elif req_type == "agentloop_merge":
-                    import glob
                     from src.evolve import agentloop_request_handle
 
                     # agentloop 沙盒结构：agentloop_workplace/<uuid>/<name>.yaml（单文件）
-                    paths = glob.glob(
-                        os.path.join(
-                            AGENT_VM_DIR, "agentloop_workplace", "*", f"{target}.yaml"
-                        )
+                    workplace_id, name = _split_merge_target(target)
+                    workplace_root = os.path.join(
+                        AGENT_VM_DIR, "agentloop_workplace", workplace_id
                     )
-                    if paths:
-                        workplace_root = os.path.dirname(paths[0])
+                    if name and os.path.isfile(
+                        os.path.join(workplace_root, f"{name}.yaml")
+                    ):
                         sys_note = agentloop_request_handle(
-                            workplace_root, target, is_approved=True
+                            workplace_root, name, is_approved=True
                         )
                         feedback = f"{sys_note}\n(用户批注: {feedback})"
                     else:
-                        feedback = (
-                            f"合并失败：未找到 {target} 对应的 AgentLoop 工厂沙盒文件。"
-                        )
+                        feedback = f"合并失败：未找到沙盒对象 '{target}'（应为 'uuid/范式名'）。"
                 # ---- Graph 合并逻辑 ----
                 elif req_type == "graph_merge":
-                    import glob
                     from src.evolve import graph_request_handle
 
                     # graph 沙盒结构：graph_workplace/<uuid>/<name>/graph.json（文件夹）
-                    paths = glob.glob(
-                        os.path.join(
-                            AGENT_VM_DIR, "graph_workplace", "*", target, "graph.json"
-                        )
+                    workplace_id, name = _split_merge_target(target)
+                    workplace_root = os.path.join(
+                        AGENT_VM_DIR, "graph_workplace", workplace_id
                     )
-                    if paths:
-                        workplace_root = os.path.dirname(os.path.dirname(paths[0]))
+                    if name and os.path.isfile(
+                        os.path.join(workplace_root, name, "graph.json")
+                    ):
                         sys_note = graph_request_handle(
-                            workplace_root, target, is_approved=True
+                            workplace_root, name, is_approved=True
                         )
                         feedback = f"{sys_note}\n(用户批注: {feedback})"
                     else:
                         feedback = (
-                            f"合并失败：未找到 {target} 对应的 Graph 工厂沙盒目录。"
+                            f"合并失败：未找到沙盒对象 '{target}'（应为 'uuid/图名'）。"
                         )
             except Exception as e:
                 approved = False

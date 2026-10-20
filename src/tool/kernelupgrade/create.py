@@ -12,18 +12,16 @@ from src.evolve import (
 from .shared import record_trace_meta
 
 
-def create_module(t: str, target: str, goal: str) -> dict:
+def create_module(t: str, target: str) -> dict:
     if t == "skill":
-        sys_note, workplace_id = skill_improve_init(
-            target, is_upgrade=False, goal=goal
-        )
+        sys_note, workplace_id = skill_improve_init(target, is_upgrade=False)
         record_trace_meta(workplace_id)
         if not workplace_id:
             return error_response(sys_note, "❌ Skill 创建失败")
         return text_response(f"{sys_note}", f"🎉 {target} 进化沙盒已就绪")
 
     if t == "mcp":
-        sys_note, workplace_id = mcp_improve_init(target, goal=goal)
+        sys_note, workplace_id = mcp_improve_init(target)
         if not workplace_id:
             return error_response(sys_note, "❌ MCP 创建失败")
         return text_response(
@@ -32,9 +30,7 @@ def create_module(t: str, target: str, goal: str) -> dict:
         )
 
     if t == "sensor":
-        sys_note, workplace_id = sensor_factory_init(
-            target, is_upgrade=False, goal=goal
-        )
+        sys_note, workplace_id = sensor_factory_init(target, is_upgrade=False)
         if not workplace_id:
             return error_response(sys_note, "❌ Sensor 创建失败")
         return text_response(
@@ -43,9 +39,7 @@ def create_module(t: str, target: str, goal: str) -> dict:
         )
 
     if t == "agentloop":
-        sys_note, workplace_id = agentloop_factory_init(
-            target, is_upgrade=False, goal=goal
-        )
+        sys_note, workplace_id = agentloop_factory_init(target, is_upgrade=False)
         if not workplace_id:
             return error_response(sys_note, "❌ AgentLoop 创建失败")
         return text_response(
@@ -54,9 +48,7 @@ def create_module(t: str, target: str, goal: str) -> dict:
         )
 
     if t == "graph":
-        sys_note, workplace_id = graph_factory_init(
-            target, is_upgrade=False, goal=goal
-        )
+        sys_note, workplace_id = graph_factory_init(target, is_upgrade=False)
         if not workplace_id:
             return error_response(sys_note, "❌ Graph 创建失败")
         return text_response(
@@ -65,7 +57,7 @@ def create_module(t: str, target: str, goal: str) -> dict:
         )
 
     # ui-plugin：宿主直接把 agent_vm/ui-plugin/ 当插件根扫描，无 UUID 沙盒
-    sys_note, plugin_dir = ui_plugin_init(target, goal=goal)
+    sys_note, plugin_dir = ui_plugin_init(target)
     if not plugin_dir:
         return error_response(sys_note, "❌ UI 插件框架创建失败")
     return text_response(

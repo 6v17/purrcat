@@ -41,21 +41,14 @@ KERNELUPGRADE_TOOL_SCHEMA = {
                     "type": "string",
                     "description": (
                         "目标对象。一般为名字。特殊情形：\n"
-                        "- action='test' 时填沙盒前缀 'uuid/名字'（skill / sensor / mcp / graph / agentloop 均如此）。\n"
+                        "- action='merge'/'test' 填沙盒前缀 'uuid/名字'（skill / sensor / mcp / graph / agentloop 均如此），"
+                        "用于唯一定位要合并/测试的沙盒对象。\n"
                         "- action='install'：type='skill' 可填官方收录名或指向含 SKILL.md 目录的 GitHub URL；"
                         "type='mcp' 可填官方收录名或 mcpServers 配置串（JSON）；"
                         "type='graph' 可填官方收录名或含 graph.json 的 GitHub URL；"
                         "type='agentloop' 可填官方收录名、YAML 文件路径或 URL；其余填官方收录名。\n"
                         "- action='create'/'upgrade'：type='ui-plugin' 填插件 id（小写字母/数字/-/_）。"
                     ),
-                },
-                "goal": {
-                    "type": "string",
-                    "description": "仅 action='create'/'upgrade'：本次开发目标，会写入沙盒的 GOAL.md 并影响生成的指南与骨架。",
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "仅 action='merge'/'test'：申请理由，明确告诉用户为什么需要这次审批（merge 请简述修改点供人类 Code Review）。",
                 },
             },
             "required": ["action", "type", "target"],

@@ -216,8 +216,7 @@ echo '{{"jsonrpc":"2.0","method":"session/update","params":{{"update":{{"session
 
 ## 8. 提交合并
 
-建议体检通过后再调用 `KernelUpgrade(action="merge", type="sensor", target="{sensor_name}")`，
-并在 reason 中简述功能点供用户 Code Review。批准后系统会：
+建议体检通过后再调用 `KernelUpgrade(action="merge", type="sensor", target="uuid/{sensor_name}")` 申请合并审批（uuid 为沙盒目录名）。批准后系统会：
 
 1. 拷贝 `{sensor_name}.py` 至正式目录并写入 activate_sensor.json（enabled=true）
 2. Git 提交版本记录

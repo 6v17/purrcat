@@ -14,9 +14,9 @@ from src.evolve import (
 from .shared import data_root, record_trace_meta
 
 
-def upgrade_module(t: str, target: str, goal: str) -> dict:
+def upgrade_module(t: str, target: str) -> dict:
     if t == "skill":
-        sys_note, workplace_id = skill_improve_init(target, is_upgrade=True, goal=goal)
+        sys_note, workplace_id = skill_improve_init(target, is_upgrade=True)
         record_trace_meta(workplace_id)
         if not workplace_id:
             return error_response(sys_note, "❌ Skill 升级失败")
@@ -37,7 +37,7 @@ def upgrade_module(t: str, target: str, goal: str) -> dict:
                 "无法搬入沙盒。若需改动它，请改为新建一个受管 MCP。",
                 "❌ 无可升级的受管 MCP 源码",
             )
-        sys_note, workplace_id = mcp_upgrade_init(target, goal=goal)
+        sys_note, workplace_id = mcp_upgrade_init(target)
         if not workplace_id:
             return error_response(sys_note, "❌ MCP 升级失败")
         return text_response(
@@ -46,9 +46,7 @@ def upgrade_module(t: str, target: str, goal: str) -> dict:
         )
 
     if t == "sensor":
-        sys_note, workplace_id = sensor_factory_init(
-            target, is_upgrade=True, goal=goal
-        )
+        sys_note, workplace_id = sensor_factory_init(target, is_upgrade=True)
         if not workplace_id:
             return error_response(sys_note, "❌ Sensor 升级失败")
         return text_response(
@@ -57,9 +55,7 @@ def upgrade_module(t: str, target: str, goal: str) -> dict:
         )
 
     if t == "agentloop":
-        sys_note, workplace_id = agentloop_factory_init(
-            target, is_upgrade=True, goal=goal
-        )
+        sys_note, workplace_id = agentloop_factory_init(target, is_upgrade=True)
         if not workplace_id:
             return error_response(sys_note, "❌ AgentLoop 升级失败")
         return text_response(
@@ -68,7 +64,7 @@ def upgrade_module(t: str, target: str, goal: str) -> dict:
         )
 
     if t == "graph":
-        sys_note, workplace_id = graph_factory_init(target, is_upgrade=True, goal=goal)
+        sys_note, workplace_id = graph_factory_init(target, is_upgrade=True)
         if not workplace_id:
             return error_response(sys_note, "❌ Graph 升级失败")
         return text_response(

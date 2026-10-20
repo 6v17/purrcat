@@ -222,8 +222,7 @@ uv run evals/validate.py
 
 ## 9. 提交合并
 
-校验全绿后调用 `KernelUpgrade(action="merge", type="graph", target="{name}")`，
-并在 reason 中简述图的功能点供用户 Code Review。批准后系统会：
+校验全绿后调用 `KernelUpgrade(action="merge", type="graph", target="uuid/{name}")` 申请合并审批（uuid 为沙盒目录名）。批准后系统会：
 1. 把整个 `{name}/` 文件夹拷贝到正式目录 `~/.purrcat/graph/`；
 2. Git 提交版本记录，落盘即被后续任务读取（热更新，无需重启）。
 

@@ -216,7 +216,7 @@ def graph_factory_init(name: str, is_upgrade: bool, goal: str = "") -> tuple[str
         f"🧪 自测脚本：`{base}/evals/validate.py`，在沙盒根目录执行 "
         f"`uv run {base}/evals/validate.py` 即可完成格式 / 功能 / 关键词汇三重校验"
         f"（结论写入 {base}/evals/outputs/validation.json）。\n"
-        f'🔀 校验全绿后，用 KernelUpgrade(action="merge", type="graph", target="{base}") 申请合并。'
+        f'🔀 校验全绿后，用 KernelUpgrade(action="merge", type="graph", target="{short_uuid}/{base}") 申请合并。'
     ), short_uuid
 
 

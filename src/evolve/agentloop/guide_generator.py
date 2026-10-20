@@ -232,8 +232,7 @@ uv run evals/validate.py
 
 ## 6. 提交合并
 
-校验全绿后调用 `KernelUpgrade(action="merge", type="agentloop", target="{name}")`，
-并在 reason 中简述范式功能点供用户 Code Review。批准后系统会：
+校验全绿后调用 `KernelUpgrade(action="merge", type="agentloop", target="uuid/{name}")` 申请合并审批（uuid 为沙盒目录名）。批准后系统会：
 1. 把 `{name}.yaml` 拷贝到正式目录 `~/.purrcat/paradigms/`；
 2. Git 提交版本记录。
 合并前系统会**宿主侧重跑同一套校验**（防止篡改脚本），有错直接拒绝——所以务必先自查再申请。

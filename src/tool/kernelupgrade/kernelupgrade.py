@@ -28,8 +28,6 @@ def KernelUpgrade(action: str, type: str, target: str, **kwargs) -> dict:
         act = (action or "").strip()
         t = (type or "").strip()
         tgt = (target or "").strip()
-        goal = kwargs.get("goal", "") or ""
-        reason = kwargs.get("reason", "") or ""
 
         if act not in ACTIONS:
             return error_response(
@@ -45,14 +43,14 @@ def KernelUpgrade(action: str, type: str, target: str, **kwargs) -> dict:
             return error_response("target 不能为空", "❌ 参数错误")
 
         if act == "create":
-            return create_module(t, tgt, goal)
+            return create_module(t, tgt)
         if act == "upgrade":
-            return upgrade_module(t, tgt, goal)
+            return upgrade_module(t, tgt)
         if act == "install":
             return install_module(t, tgt)
         if act == "merge":
-            return merge_module(t, tgt, reason)
-        return test_module(t, tgt, reason)
+            return merge_module(t, tgt)
+        return test_module(t, tgt)
 
     except Exception as e:
         traceback.print_exc()

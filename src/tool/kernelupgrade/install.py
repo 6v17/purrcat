@@ -220,7 +220,8 @@ def _install_graph_from_url(url: str, m) -> str:
         prefix = f"{root_folder}/{path}".rstrip("/") + "/"
         graph_json_in_zip = prefix + "graph.json"
         if not any(
-            not f.is_dir() and f.filename.rstrip("/").lower() == graph_json_in_zip.lower()
+            not f.is_dir()
+            and f.filename.rstrip("/").lower() == graph_json_in_zip.lower()
             for f in z.infolist()
         ):
             raise ValueError(f"目录 '{path or repo}' 下未找到 graph.json")
@@ -230,7 +231,7 @@ def _install_graph_from_url(url: str, m) -> str:
         for fi in z.infolist():
             if not fi.filename.startswith(prefix):
                 continue
-            rel = fi.filename[len(prefix):]
+            rel = fi.filename[len(prefix) :]
             if not rel:
                 continue
             local = os.path.join(dest_dir, rel)
@@ -252,7 +253,9 @@ def _install_agentloop(target: str, m) -> dict:
 
     if target.startswith(("http://", "https://")):
         raw = m._http_download(target)
-        name = os.path.splitext(os.path.basename(target.split("?")[0]))[0] or "agentloop"
+        name = (
+            os.path.splitext(os.path.basename(target.split("?")[0]))[0] or "agentloop"
+        )
         _write_agentloop_yaml(PARADIGMS_DIR, name, raw)
         return text_response(
             f"✅ AgentLoop '{name}' 已从 URL 安装到 {PARADIGMS_DIR}。",
@@ -292,7 +295,7 @@ def _resolve_agent_vm_path(path: str) -> str:
     """兼容沙盒视角的 /agent_vm 前缀路径"""
     p = path.replace("\\", "/")
     if p.startswith("/agent_vm/"):
-        return os.path.join(AGENT_VM_DIR, p[len("/agent_vm/"):])
+        return os.path.join(AGENT_VM_DIR, p[len("/agent_vm/") :])
     return path
 
 

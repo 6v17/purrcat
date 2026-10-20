@@ -72,7 +72,7 @@ MCP 合并后将在**宿主机**上运行（宿主机读取 mcp_config.json 并�
 ## 7. 流水线
 ① 编写 `tools/`、`core/` → ② 建环境（Windows 跑 `powershell -ExecutionPolicy Bypass -File setup.ps1`，macOS/Linux 跑 `bash setup.sh`）→ ③ `scripts/` 真实链路自测 →
 ④ `python scripts/evaluation.py` 生成 schema_dump 与执行产物 →
-⑤ `KernelUpgrade(action="test", type="mcp", target="工作区uuid/{mcp_name}")` 呼叫宿主机盲测 →
+⑤ `KernelUpgrade(action="test", type="mcp", target="uuid/{mcp_name}")` 呼叫宿主机盲测 →
 ⑥ 检查并修正 `mcp_server_config.json` →
-⑦ 测试全绿后通过 `KernelUpgrade(action="merge", type="mcp", target="工作区uuid/{mcp_name}")` 申请合并。
+⑦ 测试全绿后通过 `KernelUpgrade(action="merge", type="mcp", target="uuid/{mcp_name}")` 申请合并（uuid 为沙盒目录名）。
 """

@@ -92,5 +92,5 @@ description: 1-200 字符，祈使句，描述用户意图而非底层实现，�
 
 ## 6. 提交合并
 
-**严禁在未经过沙盒盲测的情况下直接申请合并！** 测试通过后调用 `KernelUpgrade(action="merge", type="skill", target="{skill_name}")`，并在 reason 中简述修改点供用户 Code Review。
+**严禁在未经过沙盒盲测的情况下直接申请合并！** 测试通过后调用 `KernelUpgrade(action="merge", type="skill", target="uuid/{skill_name}")` 申请合并审批（uuid 为沙盒目录名）。
 """
