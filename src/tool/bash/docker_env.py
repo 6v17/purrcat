@@ -84,6 +84,11 @@ _docker_manager_instance: Optional["DockerManager"] = None
 # 共享专属沙盒的容器名（start/stop 逻辑都以它为准）
 SANDBOX_CONTAINER_NAME = "agent_computer"
 
+# 容器运行参数版本：tmpfs 缓存挂载 / 缓存环境变量等变更后必须重建容器才会生效，
+# 旧容器标签不匹配时自动销毁重建（工作目录是 bind mount，文件不受影响）
+SANDBOX_ENV_REVISION = "2"
+ENV_REVISION_LABEL = "purrcat.env_rev"
+
 
 def _stop_sandbox_on_exit():
     """主进程退出时把沙盒容器休眠（保留容器内的系统变更，进程不残留运行）。
@@ -109,7 +114,15 @@ if multiprocessing.current_process().name == "MainProcess":
 
 def _get_container_env() -> dict:
     # 既然主机开了 TUN 模式，容器不需要任何代理环境变量，直接跟主机共享网络上下文
-    return {}
+    # 缓存目录统一指向 tmpfs（/tmp），避免 pip/npm/uv 的下载缓存写进容器可写层、
+    # 把 docker 数据盘 vhdx 越撑越大（tmpfs 随容器停机释放）
+    return {
+        "XDG_CACHE_HOME": "/tmp/.cache",
+        "PIP_CACHE_DIR": "/tmp/.cache/pip",
+        "UV_CACHE_DIR": "/tmp/.cache/uv",
+        "npm_config_cache": "/tmp/.cache/npm",
+        "YARN_CACHE_FOLDER": "/tmp/.cache/yarn",
+    }
 
 
 class DockerManager:
@@ -197,6 +210,19 @@ class DockerManager:
                     existing_container.remove(force=True)
                     raise NotFound("mount mismatch, force recreate")
 
+            # 🌟 运行参数版本校验：tmpfs 缓存挂载等改动只对新容器生效，
+            # 旧容器不带标签会继续把缓存写进可写层（vhdx 持续膨胀）
+            rev = (existing_container.labels or {}).get(ENV_REVISION_LABEL)
+            if rev != SANDBOX_ENV_REVISION:
+                print(
+                    f"⚠️ 沙盒 ({self.container_name}) 运行参数版本 {rev or '未标注'} "
+                    f"≠ 当前 {SANDBOX_ENV_REVISION}，销毁重建（工作目录文件不受影响）..."
+                )
+                if existing_container.status == "running":
+                    existing_container.stop(timeout=2)
+                existing_container.remove(force=True)
+                raise NotFound("env revision mismatch, force recreate")
+
             if existing_container.status != "running":
                 print(f"[-] 发现休眠沙盒 ({self.container_name})，正在唤醒...")
                 existing_container.start()
@@ -225,6 +251,14 @@ class DockerManager:
             "environment": env_vars,
             "extra_hosts": {"host.docker.internal": "host-gateway"},
             "shm_size": "2gb",
+            # 标签用于下次启动校验运行参数版本（不匹配则重建容器）
+            "labels": {ENV_REVISION_LABEL: SANDBOX_ENV_REVISION},
+            # 临时目录挂 tmpfs：编译中间产物、下载包不会写进容器可写层，
+            # 停机即释放，避免 docker 数据盘 vhdx 无限膨胀
+            "tmpfs": {
+                "/tmp": "rw,exec,nosuid,nodev,size=2g,mode=1777",
+                "/var/tmp": "rw,exec,nosuid,nodev,size=1g,mode=1777",
+            },
             "cap_add": ["SYS_ADMIN"],
             "security_opt": ["seccomp=unconfined"],
             # 暴露常见前端开发服务器端口到宿主机高位端口，避免与宿主机本地服务冲突
@@ -258,12 +292,38 @@ class DockerManager:
                 apt_cmd = f'sh -c \'echo "Acquire::http::Proxy \\"{proxy_url}\\";\\nAcquire::https::Proxy \\"{proxy_url}\\";" > /etc/apt/apt.conf.d/99proxy\''
                 self.container.exec_run(apt_cmd, user="root")
 
+            self._run_setup_script()
             self._started = True
             print("✅ 全新沙盒环境启动就绪！")
         except ImageNotFound:
             raise DockerImageNotFoundError(f"找不到镜像: {self.image}")
         except DockerException as e:
             raise DockerImageNotFoundError(f"容器启动异常: {e}")
+
+    def _run_setup_script(self):
+        """重建容器后执行工作目录里的 .agent_env/setup.sh
+
+        容器可写层随重建丢失（apt/pip 装过的依赖没了），用户可以在
+        <工作目录>/.agent_env/setup.sh 里写恢复脚本，重建后自动执行一次。
+        """
+        if self.workspace_dir is None:
+            return
+        host_path = os.path.join(self.workspace_dir, ".agent_env", "setup.sh")
+        if not os.path.isfile(host_path):
+            return
+        print(f"[*] 发现 {host_path}，重建后自动执行以恢复容器环境（可能需要几分钟）...")
+        try:
+            exit_code, output = self.container.exec_run(
+                ["bash", f"{self.container_workspace}/.agent_env/setup.sh"],
+                workdir=self.container_workspace,
+                demux=False,
+            )
+            text = (output or b"").decode("utf-8", "replace").strip()
+            if text:
+                print(text[-2000:])
+            print(f"[{'*' if exit_code == 0 else '!'}] setup.sh 退出码: {exit_code}")
+        except Exception as e:
+            print(f"[!] setup.sh 执行失败(忽略): {e}")
 
     def stop(self):
         with self.pool_lock:

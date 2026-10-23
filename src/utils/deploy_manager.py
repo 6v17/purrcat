@@ -551,4 +551,10 @@ def get_overview() -> dict:
             }
             for k, v in _tasks.items()
         }
-    return {"items": items, "tasks": tasks}
+    try:
+        from src.utils.disk_maintenance import get_disk_status
+
+        disk = get_disk_status()
+    except Exception as e:
+        disk = {"supported": False, "detail": f"磁盘状态检测失败: {e}"}
+    return {"items": items, "tasks": tasks, "disk": disk}

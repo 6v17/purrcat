@@ -243,6 +243,19 @@ async def _bg_heavy_init(enable_tui: bool):
 
     asyncio.create_task(asyncio.to_thread(_reconcile_sessions))
 
+    # 6. 低频磁盘维护：启动时只读探测一次数据盘空洞（仅缓存，不压缩不提权），
+    #    构建缓存超过 7 天未清理则后台清一次（Docker 未运行会自动跳过）
+    def _disk_maintenance_probe():
+        from src.utils.disk_maintenance import get_disk_status, maybe_weekly_prune
+
+        try:
+            get_disk_status()
+        except Exception as e:
+            print(f"[!] 启动磁盘状态探测失败(忽略): {e}")
+        maybe_weekly_prune()
+
+    asyncio.create_task(asyncio.to_thread(_disk_maintenance_probe))
+
     SYSTEM_READY_EVENT.set()
     if not enable_tui:
         print("[*] 所有后台子系统派发完毕！")

@@ -1103,6 +1103,7 @@
     editStr: {},      // tab+'::'+key -> 编辑区文本
     sandboxRegistry: '',
     deployLogOpen: {},
+    diskLogOpen: false,
   };
   function makeSection(title, main) {
     const sec = HOST.document.createElement('div');
@@ -1665,6 +1666,138 @@
     const list = HOST.document.createElement('div');
     list.className = 'cfg-stepper';
     sec.appendChild(list);
+    // 磁盘维护卡片：只读展示 vhdx 空洞，用户点按钮才执行回收
+    const diskTitle = HOST.document.createElement('div');
+    diskTitle.className = 'settings-subgroup';
+    diskTitle.textContent = '磁盘维护';
+    sec.appendChild(diskTitle);
+    const diskWrap = HOST.document.createElement('div');
+    sec.appendChild(diskWrap);
+    function fmtBytes(n) {
+      n = Number(n) || 0;
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let i = 0;
+      while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+      return (i === 0 ? Math.round(n) : n.toFixed(2)) + ' ' + units[i];
+    }
+    function diskAction(path, btn) {
+      btn.disabled = true;
+      fetch('/api/config/' + path, { method: 'POST' }).then(function (r) {
+        if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || '操作冲突'); });
+        return r.json().catch(function () { return {}; });
+      }).then(function (d) {
+        delete cfgState.data.deploy;
+        draw();
+        if (d && d.message) HOST.alert(d.message);
+      }).catch(function (e) { btn.disabled = false; HOST.alert('失败：' + (e && e.message || '')); });
+    }
+    function renderDisk(d) {
+      diskWrap.innerHTML = '';
+      if (!d) return;
+      const card = HOST.document.createElement('div');
+      card.className = 'cfg-card';
+      const head = HOST.document.createElement('div');
+      head.className = 'cfg-card-head';
+      const left = HOST.document.createElement('div');
+      left.className = 'cfg-card-head-l';
+      const title = HOST.document.createElement('div');
+      title.className = 'cfg-card-title';
+      const nm = HOST.document.createElement('div');
+      nm.className = 'cfg-card-name';
+      nm.textContent = 'Docker 数据盘';
+      title.appendChild(nm);
+      const chip = HOST.document.createElement('span');
+      if (!d.supported) {
+        chip.className = 'cfg-chip bad';
+        chip.textContent = '不可用';
+      } else if (d.dead_ratio == null) {
+        chip.className = 'cfg-chip off';
+        chip.textContent = '待检测';
+      } else {
+        chip.className = 'cfg-chip ' + (d.needs_compact ? 'warn' : 'ok');
+        chip.textContent = '空洞 ' + Math.round(d.dead_ratio * 100) + '%';
+      }
+      title.appendChild(chip);
+      left.appendChild(title);
+      const sub = HOST.document.createElement('div');
+      sub.className = 'cfg-card-sub';
+      sub.textContent = d.detail || '';
+      left.appendChild(sub);
+      if (d.sandbox && d.sandbox.age_days != null) {
+        const sub2 = HOST.document.createElement('div');
+        sub2.className = 'cfg-card-sub';
+        sub2.textContent = '沙盒容器已使用 ' + d.sandbox.age_days + ' 天' +
+          (d.sandbox.age_days >= 14 ? '（使用较久，建议重建一次释放可写层）' : '');
+        left.appendChild(sub2);
+      }
+      head.appendChild(left);
+
+      const taskRunning = d.task && d.task.state === 'running';
+      const act = HOST.document.createElement('div');
+      act.className = 'cfg-card-act';
+
+      const cp = HOST.document.createElement('button');
+      cp.className = 'btn cfg-deploy-btn ' + (taskRunning ? 'running' : 'missing');
+      cp.disabled = !d.supported || taskRunning;
+      cp.textContent = (taskRunning && d.task.kind === 'compact') ? '回收中…' : '一键回收';
+      cp.title = '停止 Docker/WSL 后用 diskpart 压缩 vhdx，需要一次管理员授权（UAC）';
+      cp.addEventListener('click', function () {
+        if (!HOST.confirm('一键回收会短暂停止 Docker 与 WSL，并弹出一次管理员授权（UAC）。现在执行？')) return;
+        diskAction('deploy/disk/compact', cp);
+      });
+      act.appendChild(cp);
+
+      const pr = HOST.document.createElement('button');
+      pr.className = 'btn cfg-deploy-btn missing';
+      pr.disabled = !d.docker_running || taskRunning;
+      pr.textContent = (taskRunning && d.task.kind === 'prune') ? '清理中…' : '清理构建缓存';
+      pr.addEventListener('click', function () { diskAction('deploy/disk/prune', pr); });
+      act.appendChild(pr);
+
+      const rb = HOST.document.createElement('button');
+      rb.className = 'btn cfg-deploy-btn failed';
+      rb.disabled = !d.docker_running || taskRunning;
+      rb.textContent = '重建沙盒';
+      rb.title = '删除沙盒容器（可写层与容器内缓存清空），下次工具调用自动重建';
+      rb.addEventListener('click', function () {
+        if (!HOST.confirm('重建沙盒容器？容器内 apt/pip 装过的依赖与缓存会丢失，工作目录内的文件不受影响。')) return;
+        diskAction('deploy/disk/rebuild', rb);
+      });
+      act.appendChild(rb);
+
+      head.appendChild(act);
+      card.appendChild(head);
+
+      const needBody = d.needs_compact || taskRunning || (d.task && d.task.state !== 'idle' && d.task.log && d.task.log.length);
+      if (needBody) {
+        const body = HOST.document.createElement('div');
+        body.className = 'cfg-card-body';
+        if (d.needs_compact) {
+          const tip = HOST.document.createElement('div');
+          tip.className = 'cfg-tip';
+          tip.style.margin = '0';
+          tip.textContent = '空洞占比已超过 ' + Math.round((d.threshold || 0.3) * 100) +
+            '%（约 ' + fmtBytes(d.dead_bytes) + '），建议执行一次「一键回收」，压缩后 Docker 会自动恢复运行。';
+          body.appendChild(tip);
+        }
+        if (d.task && d.task.log && d.task.log.length) {
+          const tg = HOST.document.createElement('button');
+          tg.className = 'cfg-log-toggle';
+          tg.textContent = cfgState.diskLogOpen ? '收起维护日志 ▾' : '查看维护日志 ▸';
+          tg.addEventListener('click', function () { cfgState.diskLogOpen = !cfgState.diskLogOpen; renderDisk(d); });
+          body.appendChild(tg);
+          if (cfgState.diskLogOpen) {
+            const lg = HOST.document.createElement('pre');
+            lg.className = 'settings-log';
+            lg.style.minHeight = '80px';
+            lg.textContent = d.task.log.join('\n');
+            body.appendChild(lg);
+          }
+        }
+        card.appendChild(body);
+      }
+      diskWrap.appendChild(card);
+    }
     if (!cfgState.sandboxRegistry) {
       fetch('/api/config/sandbox-registry').then(function (r) { return r.json(); }).then(function (d) { if (d) cfgState.sandboxRegistry = d.sandbox_registry || 'ghcr.io/purrpod'; }).catch(function () { cfgState.sandboxRegistry = 'ghcr.io/purrpod'; });
     }
@@ -1743,6 +1876,7 @@
           row.appendChild(body);
           list.appendChild(row);
         });
+        renderDisk(ov && ov.disk);
       });
     }
     draw();

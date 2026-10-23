@@ -386,6 +386,50 @@ def api_deploy_item(item: str):
     return {"status": "ok", "message": message}
 
 
+# ── 磁盘维护（部署页：vhdx 空洞观测 + 一键回收 + 构建缓存清理 + 沙盒重建）──
+
+
+@router.get("/deploy/disk")
+def api_get_disk_status():
+    """只读取 Docker 数据盘占盘 / 有效数据估算 / 空洞占比（前端轮询，不阻塞不提权）"""
+    from src.utils.disk_maintenance import get_disk_status
+
+    return get_disk_status()
+
+
+@router.post("/deploy/disk/compact")
+def api_compact_disk():
+    """一键回收 vhdx 空洞（后台线程，会短暂停止 Docker/WSL 并触发一次 UAC 授权）"""
+    from src.utils.disk_maintenance import start_compact
+
+    ok, message = start_compact()
+    if not ok:
+        raise HTTPException(status_code=409, detail=message)
+    return {"status": "ok", "message": message}
+
+
+@router.post("/deploy/disk/prune")
+def api_prune_disk():
+    """清理 Docker 构建缓存（后台线程，从源头降低 vhdx 增长速度）"""
+    from src.utils.disk_maintenance import start_prune
+
+    ok, message = start_prune()
+    if not ok:
+        raise HTTPException(status_code=409, detail=message)
+    return {"status": "ok", "message": message}
+
+
+@router.post("/deploy/disk/rebuild")
+def api_rebuild_sandbox():
+    """删除沙盒容器，下次工具调用自动重建（丢弃容器累积的可写层与缓存）"""
+    from src.utils.disk_maintenance import rebuild_sandbox
+
+    ok, message = rebuild_sandbox()
+    if not ok:
+        raise HTTPException(status_code=409, detail=message)
+    return {"status": "ok", "message": message}
+
+
 # ── 沙盒镜像源（部署页自定义，写入 settings.json 的 sandbox_registry）──
 @router.get("/sandbox-registry")
 def api_get_sandbox_registry():
