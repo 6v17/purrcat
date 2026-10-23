@@ -622,6 +622,139 @@ curl -X POST 'http://127.0.0.1:8000/api/config/deploy/uv'
 
 ---
 
+## GET `/api/config/deploy/disk`
+
+只读返回 Docker 数据盘（WSL2 vhdx）的实际占盘、有效数据估算与空洞占比，供部署页轮询。不阻塞、不提权；非 Windows 或未安装 Docker Desktop 时返回 `supported: false`。
+
+**请求**
+
+无参数。
+
+**响应**
+
+```json
+{
+  "supported": true,
+  "vhdx_path": "C:\\Users\\<user>\\AppData\\Local\\Docker\\wsl\\disk\\docker_data.vhdx",
+  "allocated": 40380727296,
+  "logical": 139586437120,
+  "live_estimate": 3120000000,
+  "dead_bytes": 37260727296,
+  "dead_ratio": 0.9227,
+  "threshold": 0.3,
+  "needs_compact": true,
+  "docker_running": true,
+  "sandbox": {
+    "image": "my_agent_env:latest",
+    "created_at": 1761200000.0,
+    "age_days": 3.2
+  },
+  "last_prune_at": null,
+  "last_compact_at": 1761234000.0,
+  "detail": "实际占盘 37.6 GB · 有效数据约 3.1 GB · 空洞约 34.8 GB（92%）",
+  "task": { "state": "idle", "kind": null, "log": [], "finished_at": null }
+}
+```
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `supported` | boolean | 当前平台是否支持观测与压缩（Windows + Docker Desktop） |
+| `vhdx_path` | string / `null` | vhdx 路径；可在 `settings.json` 用 `docker_vhdx_path` 覆盖 |
+| `allocated` | integer | 实际占盘字节数（vhdx 为稀疏文件，逻辑大小不等于占盘） |
+| `logical` | integer | 文件逻辑大小（字节） |
+| `live_estimate` | integer / `null` | 有效数据估算，来自 `docker system df` 各行 Size 合计，会略高估 |
+| `dead_bytes` | integer | 空洞字节数 = `allocated - live_estimate`，下限为 0 |
+| `dead_ratio` | number / `null` | 空洞占比（0-1） |
+| `threshold` | number | 提示阈值，固定 `0.3` |
+| `needs_compact` | boolean | 占比 ≥ 阈值且空洞 ≥ 1GB 时为 `true` |
+| `docker_running` | boolean | Docker 引擎是否运行；未运行时无法估算有效数据 |
+| `sandbox` | object / `null` | 沙盒容器信息：`image` / `created_at`（Unix 秒）/ `age_days` |
+| `last_prune_at` | number / `null` | 上次构建缓存清理时间（Unix 秒） |
+| `last_compact_at` | number / `null` | 上次压缩时间（Unix 秒） |
+| `task` | object | 最近一次维护任务：`state`（`idle` / `running` / `success` / `failed`）、`kind`（`compact` / `prune`）、`log`、`finished_at` |
+
+`GET /api/config/deploy` 的响应中也会附带同一个 `disk` 字段。
+
+**示例**
+
+```bash
+curl 'http://127.0.0.1:8000/api/config/deploy/disk'
+```
+
+---
+
+## POST `/api/config/deploy/disk/compact`
+
+一键回收 vhdx 空洞。后台线程依次停止沙盒容器、停止 Docker Desktop、执行 `wsl --shutdown`，再提权（一次 UAC）执行 `diskpart compact vdisk`，完成后按需重新拉起 Docker。进度通过 `GET /api/config/deploy/disk` 的 `task` 字段查看。
+
+**请求**
+
+无参数（无请求体）。
+
+**响应**
+
+```json
+{ "status": "ok", "message": "压缩已开始，Docker 会短暂停止" }
+```
+
+已有维护任务在执行时返回 `409`：`{ "detail": "磁盘维护任务正在执行中，请稍候" }`；非 Windows 返回 `409`：`{ "detail": "仅支持 Windows 下的 Docker Desktop" }`。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/config/deploy/disk/compact'
+```
+
+---
+
+## POST `/api/config/deploy/disk/prune`
+
+清理 Docker 构建缓存（`docker builder prune -af`），后台线程执行，用于从源头降低 vhdx 增长速度。
+
+**请求**
+
+无参数（无请求体）。
+
+**响应**
+
+```json
+{ "status": "ok", "message": "已开始清理构建缓存" }
+```
+
+已有维护任务在执行时返回 `409`；Docker 未运行时不执行清理，结果记录在 `task.log`。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/config/deploy/disk/prune'
+```
+
+---
+
+## POST `/api/config/deploy/disk/rebuild`
+
+删除沙盒容器 `agent_computer`。容器可写层（apt/pip 安装与缓存）随容器销毁，`/agent_vm` 的 bind mount 工作目录不受影响；下次工具调用会自动基于镜像重建。若工作目录存在 `.agent_env/setup.sh`，重建后会自动执行一次以恢复容器内环境。
+
+**请求**
+
+无参数（无请求体）。
+
+**响应**
+
+```json
+{ "status": "ok", "message": "沙盒容器已删除，下次工具调用会自动重建（工作目录文件不受影响）" }
+```
+
+未检测到 docker 命令或 Docker 未运行时返回 `409`。
+
+**示例**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/api/config/deploy/disk/rebuild'
+```
+
+---
+
 ## GET `/api/config/sandbox-registry`
 
 读取沙箱镜像 registry 前缀（`settings.json` 的 `sandbox_registry`）。
