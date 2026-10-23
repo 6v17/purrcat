@@ -1625,6 +1625,12 @@
     }
   }
   plusBtn.addEventListener('click', function () { toggleRef(); });
+  // 点击面板以外的区域（含输入框、历史列表）自动收起；点＋本身或面板内部不收起
+  document.addEventListener('click', function (e) {
+    if (!refPanel.classList.contains('open')) return;
+    if (refPanel.contains(e.target) || plusBtn.contains(e.target)) return;
+    toggleRef(false);
+  });
 
   // ---------- Mode（切换 Agent Loop / paradigm，对齐原 UI 的热切换）----------
   var modeWrap = document.getElementById('modeWrap');
