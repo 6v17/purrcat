@@ -69,7 +69,8 @@ def _test_skill(target: str) -> dict:
         "（N 为迭代序号；内含 trigger_result.json、eval_result.json、benchmark.json、report.html）"
     )
     return text_response(
-        f"{trigger_note}{blind_note}{artifact_note}", f"⏳ skill_test 已受理: {result['id']}"
+        f"{trigger_note}{blind_note}{artifact_note}",
+        f"⏳ skill_test 已受理: {result['id']}",
     )
 
 
@@ -242,7 +243,9 @@ def _format_validation_report(kind: str, name: str, target: str, report: dict) -
             f"/agent_vm/graph_workplace/{uuid}/{name}/evals/outputs/validation.json"
         )
     else:
-        report_path = f"/agent_vm/agentloop_workplace/{uuid}/evals/outputs/validation.json"
+        report_path = (
+            f"/agent_vm/agentloop_workplace/{uuid}/evals/outputs/validation.json"
+        )
     artifact_note = (
         "\n📁 产物目录：本次校验由宿主侧直接执行、不向沙盒写文件；"
         f"你在沙盒自跑校验脚本时，报告落在 `{report_path}`。"

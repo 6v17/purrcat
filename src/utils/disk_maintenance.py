@@ -65,9 +65,7 @@ def _find_vhdx() -> str | None:
         _vhdx_cache["path"] = override
         return override
 
-    local = os.environ.get("LOCALAPPDATA") or os.path.expanduser(
-        r"~\AppData\Local"
-    )
+    local = os.environ.get("LOCALAPPDATA") or os.path.expanduser(r"~\AppData\Local")
     candidates = []
     roots = [
         os.path.join(local, "Docker", "wsl"),
@@ -202,7 +200,10 @@ def get_task() -> dict:
 
 def _parse_rfc3339(text: str) -> float | None:
     """解析 docker 的 Created 时间（纳秒精度），失败返回 None"""
-    m = re.match(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})", text or "")
+    m = re.match(
+        r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})",
+        text or "",
+    )
     if not m:
         return None
     frac = (m.group(2) or "")[:6].ljust(6, "0")

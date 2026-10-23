@@ -4,9 +4,9 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0]
+## [1.1.0]
 
-First stable release. This version reworks the front-end delivery model and the workflow engine, and slims down the tool set.
+First stable release. Since 1.0.0-beta.4 this version reworks the front-end delivery model, the workflow engine and the tool set, and adds evolution factories for agent loops and graphs, sensor operations, and sandbox disk maintenance.
 
 **English**
 
@@ -15,6 +15,12 @@ First stable release. This version reworks the front-end delivery model and the 
 - **UI plugin system (`ui-plugin`)**: a new plugin type that lets developers fully customize the style and behavior of front-end panel views. Ships with a hot-swappable subprocess plugin runtime, a dedicated plugin market with automatic dependency install, plugin root/dependency/origin metadata, and the `create_ui_plugin` KernelUpgrade capability with an authoring guide.
 - **Minimal UI with built-in plugins**: the app now runs on minimal UI mode and bundles the essential built-in plugins — session/history, sessions & pending approvals, task, memory graph, built-in browser, market, evolve factory, and background. User can build a efficient channel that is uniquely themselves.
 - **Developer documentation**: a modular server API reference (`docs/api/*`) and plugin development guides (`docs/plugins`: graph / agentloop / sensor / ui-plugin), with CI validating that the docs stay in sync with the server routes.
+- **AgentLoop and Graph evolution factories**: create, edit, and validate agent loops and workflows from the Evolve panel — sandbox category selector, editable graph canvas, in-panel save, host-side validation, and deletion of sandboxes that are no longer needed. The factories are also reachable from the KernelUpgrade and Request tools.
+- **Sensor operations**: runtime status with stop/restart controls, a purge action that removes the deployed script, per-sensor icons, and a config refresh button in minimal UI.
+- **Sandbox disk maintenance**: the Deploy panel now reports the Docker data disk (WSL2 vhdx) real size, estimated live data, and dead-space ratio read-only at startup; compaction runs only after the user clicks the button (one UAC prompt). A weekly `docker builder prune` plus tmpfs cache mounts keep the disk from growing back, and the sandbox container can be rebuilt from the panel.
+- **Global persona editor**: edit and save `SOUL.md` from Settings.
+- **Skill install from a local folder path**.
+- **Search box** in the plus-panel picker for skills, MCP servers, and graphs.
 
 ### Changed
 
@@ -24,6 +30,11 @@ First stable release. This version reworks the front-end delivery model and the 
 - **Tool set simplified**: removed the ComputerUse tool and its exclusive dependencies, and removed the install request types from the Request tool.
 - **Marketplace**: added the ui-plugin market, agentloop market endpoints and tab, installing skills from a GitHub link, deleting installed plugins, and a reinstall action.
 - **Infrastructure**: cross-layer API port coordination between the app layers; host-native settings; per-session token usage (including subagents) persisted and surfaced in the minimal UI ring.
+- **AgentLoop message handoff**: injected turns are marked as resume so the loop no longer re-reads upstream input; the graph system prompt is delivered as a trailing user message; check actions warn when `failed_prompt` is missing; an agent loop without input runs with an empty paradigm instead of failing.
+- **Graph validation**: every validator check is reported, and branch merges require a summary.
+- **Sensor merge**: the protocol check is advisory, and credentials must be filled before merging.
+- **Request tool**: test/merge request types removed; KernelUpgrade is split into per-action modules and test results include the sandbox artifact directory.
+- **Defaults**: the default model is DeepSeek Flash with vision enabled; the minimal UI chat input grows automatically up to 240px.
 
 ### Fixed
 
@@ -37,6 +48,18 @@ First stable release. This version reworks the front-end delivery model and the 
 - Boot-session race, context-ring visibility and link color in minimal UI.
 - Stale eval run directory cleaned before copy; bogus token-savings card skipped.
 - Skill upgrade target guarded and empty rollback commit tolerated.
+- Backend active session not synced when switching or deleting sessions.
+- System messages rendered inside the assistant bubble in the task plugin.
+- Agent loop re-absorbing upstream input on injection; final memory dumped out of order.
+- Built-in browser: bounds not synced per frame, and `target=_blank` links covering the chat instead of opening a new tab.
+- Copy of selection and visible text in the built-in browser, with rebuild deferred while selecting.
+- `purrcat://` links now resolve through the task artifact endpoint.
+- Paradigm switch failures now surface as a toast and restore input focus.
+- `on_input_received` firing on non-user input.
+- Fetch now returns an explicit refreshing notice; MCP hot-reload failures are reported.
+- Session drawer height capped, with session and pending drawers mutually exclusive.
+- Bare GitHub repository URLs accepted for skill and graph install.
+- Reference panel not closing on outside click.
 
 ---
 
@@ -47,6 +70,12 @@ First stable release. This version reworks the front-end delivery model and the 
 - **UI 插件体系（`ui-plugin`）**：新增插件类型，开发者可自由定制前端面板的样式与功能。配套热插拔子进程插件运行时、带依赖自动安装的独立插件市场、插件根目录/依赖/来源元数据，以及 `create_ui_plugin` 的 KernelUpgrade 能力与编写指南。
 - **极简 UI 与内置插件**：应用现以极简 UI 模式运行，并内置一批必要插件——会话/历史、会话与待审批、任务、记忆图谱、内置浏览器、市场、进化工厂、背景。用户可根据需要搭建专属于自己的沟通信道。
 - **开发者文档**：模块化的服务端 API 参考（`docs/api/*`）与插件开发指南（`docs/plugins`：graph / agentloop / sensor / ui-plugin），并加入 CI 校验文档与服务端路由一致。
+- **AgentLoop 与 Graph 进化工厂**：在进化面板中创建、编辑并校验 agent loop 与工作流——新增沙盒分类选择、可编辑的图画布、面板内保存与宿主侧校验，不再需要的沙盒可直接删除。工厂同时接入 KernelUpgrade 与 Request 工具。
+- **Sensor 运维能力**：展示运行状态并支持停止/重启，新增清除（purge）操作删除已部署脚本，补充 sensor 图标与配置刷新按钮。
+- **沙盒磁盘维护**：部署面板在启动时只读展示 Docker 数据盘（WSL2 vhdx）的实际占盘、有效数据估算与空洞占比，超过阈值才提示，用户点击按钮后才执行压缩（一次 UAC 授权）；每周 `docker builder prune` 与 tmpfs 缓存挂载从源头抑制膨胀，并支持一键重建沙盒容器。
+- **全局人格编辑器**：在设置中编辑并保存 `SOUL.md`。
+- **技能支持从本地文件夹路径安装**。
+- **加号面板的选择器新增搜索框**，支持技能、MCP 与图。
 
 ### 变更
 
@@ -56,6 +85,11 @@ First stable release. This version reworks the front-end delivery model and the 
 - **工具简化**：删除 ComputerUse 工具及其专属依赖，删除 Request 工具的 install 请求类型。
 - **市场**：新增 ui-plugin 市场、agentloop 市场端点与标签页、从 GitHub 链接安装技能、卸载已装插件与"重装"操作。
 - **基础设施**：应用各层之间统一 API 端口协调；宿主原生设置；按会话持久化 token 用量（含子代理）并在极简 UI 圆环展示。
+- **AgentLoop 消息交接**：注入回合标记为 resume，循环不再重复读取上游输入；图的系统提示改为以末尾用户消息下发；check 动作缺少 `failed_prompt` 时给出告警；无输入的 agent loop 以空范式运行而不再报错。
+- **图校验**：上报每一项校验结果，分支合流必须提供摘要。
+- **Sensor 合入**：协议自检改为建议性质，合入前必须填写凭据。
+- **Request 工具**：移除 test/merge 请求类型；KernelUpgrade 按动作拆分为独立模块，测试结果会带出沙盒产物目录。
+- **默认值**：默认模型切换为 DeepSeek Flash 并开启视觉；极简 UI 聊天输入框自动增高至 240px 上限。
 
 ### 修复
 
@@ -69,6 +103,18 @@ First stable release. This version reworks the front-end delivery model and the 
 - 极简 UI 启动会话竞态、上下文圆环可见性与链接颜色。
 - 复制前清理过期的评测运行目录；跳过错误的 token 节省卡片。
 - 技能升级目标加保护，并容忍空的回滚提交。
+- 切换或删除会话时后端活动会话未同步。
+- 任务插件中系统消息被渲染进助手气泡。
+- 注入时 agent 循环重复吸收上游输入；最终记忆落盘顺序错乱。
+- 内置浏览器边界未逐帧同步，`target=_blank` 链接覆盖聊天区而非新开标签页。
+- 内置浏览器选中文本与可见文本的复制，选择期间延后重建。
+- `purrcat://` 链接改由任务产物端点解析。
+- 范式切换失败现在以 toast 提示并恢复输入焦点。
+- `on_input_received` 对非用户输入也会触发。
+- Fetch 返回明确的刷新提示；MCP 热重载失败会提示。
+- 限制会话抽屉高度，会话与待审批抽屉互斥。
+- 技能与图安装接受裸 GitHub 仓库地址。
+- 参考面板点击外部不关闭。
 
 ## [1.0.0-beta.4]
 

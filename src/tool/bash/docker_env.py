@@ -311,7 +311,9 @@ class DockerManager:
         host_path = os.path.join(self.workspace_dir, ".agent_env", "setup.sh")
         if not os.path.isfile(host_path):
             return
-        print(f"[*] 发现 {host_path}，重建后自动执行以恢复容器环境（可能需要几分钟）...")
+        print(
+            f"[*] 发现 {host_path}，重建后自动执行以恢复容器环境（可能需要几分钟）..."
+        )
         try:
             exit_code, output = self.container.exec_run(
                 ["bash", f"{self.container_workspace}/.agent_env/setup.sh"],

@@ -154,8 +154,12 @@ def _fetch_repo_zip(owner: str, repo: str, branch: str) -> bytes:
         candidates.append(branch)
     else:
         try:
-            info = _http_get_json(f"https://api.github.com/repos/{owner}/{repo}", timeout=10)
-            default_branch = info.get("default_branch") if isinstance(info, dict) else ""
+            info = _http_get_json(
+                f"https://api.github.com/repos/{owner}/{repo}", timeout=10
+            )
+            default_branch = (
+                info.get("default_branch") if isinstance(info, dict) else ""
+            )
         except Exception:
             default_branch = ""
         if default_branch:
