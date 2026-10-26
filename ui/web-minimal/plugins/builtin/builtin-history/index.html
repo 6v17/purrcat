@@ -171,15 +171,17 @@
   /* 文件预览弹窗（图片 / 视频 / 文本），对齐完整模式的链接预览弹层 */
   .pv-mask { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; background: rgba(15,17,21,.42); padding: 14px; }
   .pv-mask.on { display: flex; }
-  .pv { width: 100%; height: 100%; max-width: 1200px; background: var(--wm-bl-0, #fff); border-radius: 14px; box-shadow: 0 12px 40px rgba(15,17,21,.28); display: flex; flex-direction: column; overflow: hidden; }
+  /* 弹窗尺寸按容器比例收缩（不再铺满全屏），高度由内容决定并封顶，避免窄栏里拉成白色长条 */
+  .pv { width: min(720px, 92%); height: auto; max-height: 70%; background: var(--wm-bl-0, #fff); border-radius: 14px; box-shadow: 0 12px 40px rgba(15,17,21,.28); display: flex; flex-direction: column; overflow: hidden; }
   .pv-head { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--wm-border-soft, rgba(15,17,21,.06)); }
   .pv-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--wm-label, #16191d); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pv-btn { flex: none; width: 26px; height: 26px; padding: 0; display: flex; align-items: center; justify-content: center; border: none; border-radius: 7px; background: transparent; color: var(--wm-label-dim, #8b96a3); cursor: pointer; }
   .pv-btn:hover { background: var(--wm-bg-hover, #e9edf1); color: var(--wm-label, #16191d); }
   .pv-btn svg { width: 15px; height: 15px; }
-  .pv-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: auto; background: var(--wm-bl-100, #f2f4f7); }
-  .pv-img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .pv-video { max-width: 100%; max-height: 100%; background: #000; }
+  .pv-body { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: auto; background: var(--wm-bl-100, #f2f4f7); }
+  /* 图片/视频按自身比例缩放，只受容器宽度与视口高度约束，不拉伸也不留大片空白 */
+  .pv-img { max-width: 100%; max-height: 46vh; object-fit: contain; }
+  .pv-video { max-width: 100%; max-height: 46vh; background: #000; }
   .pv-text { align-self: stretch; width: 100%; margin: 0; padding: 12px 14px; font-family: var(--wm-mono, ui-monospace, Consolas, monospace); font-size: 12.5px; line-height: 1.6; color: var(--wm-label, #16191d); white-space: pre-wrap; word-break: break-all; }
   /* 消息里的本地文件链接（点击唤起预览） */
   .filelink { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
