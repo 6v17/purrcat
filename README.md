@@ -8,7 +8,7 @@ Let expression no longer be a lossy compression — let the Agent work your way.
 
 **Build an Agent That Works Your Way**
 
-[Documentation](https://purrpod.github.io/)
+[Documentation](https://purrpod.github.io/) · [中文](README.zh-CN.md)
 
 </div>
 

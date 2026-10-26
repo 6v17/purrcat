@@ -197,22 +197,25 @@
 
   .empty { align-self: center; color: var(--wm-label-dim, #8b96a3); font-size: 13px; margin-top: 48px; }
 
-  /* markdown */
-  .md { font-size: 14px; line-height: 1.65; color: var(--wm-label, #16191d); }
+  /* markdown：作为 flex 子项必须限制宽度（否则长代码/宽表格按 max-content 无限撑开），
+     长串（URL/命令）允许任意位置断行，避免字体横向溢出 */
+  .md { font-size: 14px; line-height: 1.65; color: var(--wm-label, #16191d); min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
   .md h1, .md h2, .md h3, .md h4 { font-weight: 700; margin: 0.7em 0 0.35em; line-height: 1.3; }
   .md h1 { font-size: 1.25em; } .md h2 { font-size: 1.12em; } .md h3, .md h4 { font-size: 1em; }
   .md p { margin: 0.4em 0; }
   .md ul, .md ol { margin: 0.4em 0; padding-left: 1.4em; }
   .md li { margin: 0.2em 0; }
   .md code { font-family: var(--wm-mono, Consolas, monospace); font-size: 0.88em; background: rgba(15,17,21,.06); border-radius: 4px; padding: 1px 4px; }
-  .md pre { background: var(--wm-bg-input, #f2f4f7); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0.5em 0; }
+  /* 代码块：按容器宽度自动换行（行高随内容增长），不再横向无限延伸 */
+  .md pre { background: var(--wm-bg-input, #f2f4f7); border-radius: 8px; padding: 10px 12px; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0.5em 0; }
   .md pre code { background: transparent; padding: 0; display: block; }
   .md blockquote { border-left: 3px solid var(--wm-bl-300, #c7cfd9); margin: 0.4em 0; padding: 2px 12px; color: var(--wm-label-2nd, #4c5560); }
   .md a { color: var(--wm-label, #16191d); text-decoration: none; }
   /* 可点击的链接统一用蓝色区分：外链（带 href）与可预览的本地文件链接 */
   .md a[href], .md a.filelink, .filelink { color: #2f6fdb; }
   .md a:hover { text-decoration: underline; }
-  .md table { border-collapse: collapse; margin: 0.5em 0; }
+  /* 表格：块级化后在自身内部横向滚动，宽表格不会再顶破气泡 */
+  .md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0.5em 0; }
   .md th, .md td { border: 1px solid var(--wm-border, rgba(15,17,21,.08)); padding: 4px 8px; }
   .md hr { border: none; border-top: 1px solid var(--wm-border, rgba(15,17,21,.08)); margin: 0.8em 0; }
 
